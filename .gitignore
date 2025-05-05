@@ -1,2 +1,6 @@
 .env
 test.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

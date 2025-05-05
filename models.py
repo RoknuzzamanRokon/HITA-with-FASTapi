@@ -4,13 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData
 from enum import Enum
 from datetime import datetime
-
-# Database Configuration
-DATABASE_URL = "sqlite:///./hotel.db"  # SQLite database
-engine = create_engine(DATABASE_URL)
-Base = declarative_base()
-metadata = MetaData()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from database import Base # Import Base from database.py
 
 # User Roles
 class UserRole(str, Enum):
@@ -24,6 +18,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
+    email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     role = Column(SQLEnum(UserRole), default=UserRole.GENERAL_USER)
     api_key = Column(String, nullable=True)

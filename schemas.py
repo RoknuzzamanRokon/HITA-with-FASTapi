@@ -20,3 +20,15 @@ class User(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class HotelCreate(BaseModel):
+    name: str
+    location: str
+    price: int
+
+
+# Rebuild forward references
+UserCreate.model_rebuild()
+HotelCreate.model_rebuild()
+User.model_rebuild()
+Token.model_rebuild()

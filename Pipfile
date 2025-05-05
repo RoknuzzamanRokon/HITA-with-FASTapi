@@ -10,6 +10,7 @@ python-jose = {extras = ["cryptography"], version = "*"}
 passlib = {extras = ["bcrypt"], version = "*"}
 python-multipart = "*"
 fastapi = "*"
+pydantic = "*"
 
 [dev-packages]
 
