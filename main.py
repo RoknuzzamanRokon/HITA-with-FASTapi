@@ -25,6 +25,58 @@ app = FastAPI()
 
 
 
+
+@app.post("/create-super-user", response_model=User)
+def create_super_user(
+    user_data: dict,  
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Create a super user (only accessible by another super_user)."""
+    # Check if the current user is a super_user
+    if current_user.role != models.UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user can create another super_user."
+        )
+
+    # Validate input data
+    if not user_data.get("username") or not user_data.get("email") or not user_data.get("password"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input. 'username', 'email', and 'password' are required."
+        )
+
+    # Check if email already exists
+    existing_user = db.query(models.User).filter(models.User.email == user_data["email"]).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists."
+        )
+
+    # Generate a unique ID for the super_user
+    unique_id = secrets.token_hex(5)
+
+    # Hash the password
+    hashed_password = secrets.token_hex(8)  
+
+    # Create the super_user
+    super_user = models.User(
+        id=unique_id,
+        username=user_data["username"],
+        email=user_data["email"],
+        hashed_password=hashed_password,
+        role=models.UserRole.SUPER_USER,
+        is_active=True
+    )
+    db.add(super_user)
+    db.commit()
+    db.refresh(super_user)
+
+    return super_user
+
+
 @app.post("/create-admin", response_model=User)
 def create_admin_user(
     admin_data: dict,  
