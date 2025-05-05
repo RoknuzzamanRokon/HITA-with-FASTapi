@@ -11,6 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from typing import List, Annotated
 import schemas
 import logging
+import secrets
 
 
 
@@ -20,6 +21,60 @@ logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
+
+
+
+
+@app.post("/create-admin", response_model=User)
+def create_admin_user(
+    admin_data: dict,  
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Create an admin user (only accessible by super_user)."""
+    # Check if the current user is a super_user
+    if current_user.role != models.UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user can create admin users."
+        )
+
+    # Validate input data
+    if not admin_data.get("name") or not admin_data.get("email") or not admin_data.get("business_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input. 'name', 'email', and 'business_id' are required."
+        )
+
+    # Check if email already exists
+    existing_user = db.query(models.User).filter(models.User.email == admin_data["email"]).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists."
+        )
+
+    # Generate a unique ID for the admin user
+    unique_id = secrets.token_hex(5)
+
+    # Create the admin user
+    admin_user = models.User(
+        id=unique_id,
+        username=admin_data["name"],
+        email=admin_data["email"],
+        hashed_password=secrets.token_hex(8),
+        role=models.UserRole.ADMIN_USER,
+        api_key=None,  
+        is_active=True
+    )
+    db.add(admin_user)
+    db.commit()
+    db.refresh(admin_user)
+    return admin_user
+
+
+
+
 
 
 @app.post("/register", response_model=User)
@@ -42,6 +97,8 @@ def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"message_from_system": "cannot input valid field."}
         )
+
+
 
 
 
