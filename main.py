@@ -12,16 +12,15 @@ from typing import List, Annotated
 import schemas
 import logging
 
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
 
-from fastapi.encoders import jsonable_encoder
 
 @app.post("/register", response_model=User)
 def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
@@ -44,6 +43,9 @@ def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
             content={"message_from_system": "cannot input valid field."}
         )
 
+
+
+
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]):
     """Login and get an access token."""
@@ -61,6 +63,9 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 async def read_users_me(current_user: Annotated[User, Depends(get_current_user)]):
     """Get details of the current user."""
     return current_user
+
+
+
 
 # Placeholder for registration URL
 @app.get("/registration")

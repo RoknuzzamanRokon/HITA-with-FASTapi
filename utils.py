@@ -38,7 +38,9 @@ def create_user(db: Session, user: UserCreate):
     return db_user
 
 
-
+def generate_unique_id(length: int = 10) -> str:
+    """Generate a unique ID with the specified length."""
+    return secrets.token_hex(length // 2)  
 
 
 
