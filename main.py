@@ -73,6 +73,34 @@ def create_admin_user(
     return admin_user
 
 
+@app.delete("/delete-user/{user_id}")
+def delete_user(
+    user_id: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Delete a user by ID (only accessible by super_user)."""
+    # Check if the current user is a super_user
+    if current_user.role != models.UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user can delete users."
+        )
+
+    # Find the user by ID
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
+        )
+
+    # Delete the user
+    db.delete(user)
+    db.commit()
+
+    return {"message": f"User with ID {user_id} has been deleted."}
+
 
 
 
