@@ -26,8 +26,23 @@ from fastapi.encoders import jsonable_encoder
 @app.post("/register", response_model=User)
 def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     """Register a new user."""
-    db_user = create_user(db, user)
-    return jsonable_encoder(db_user)
+
+    existing_user = db.query(models.User).filter(
+        (models.User.username == user.username) | (models.User.email == user.email)
+    ).first()
+    if existing_user:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"message_from_system": "User Already exist."}
+        )
+    try:
+        db_user = create_user(db, user)
+        return jsonable_encoder(db_user)
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"message_from_system": "cannot input valid field."}
+        )
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]):
