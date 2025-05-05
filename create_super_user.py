@@ -1,7 +1,14 @@
 from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
+from passlib.context import CryptContext
 import secrets
+
+# Use bcrypt for password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 def create_super_user():
     db: Session = SessionLocal()
@@ -12,22 +19,25 @@ def create_super_user():
             print("A super_user already exists.")
             return
 
-        # Generate a unique ID and hashed password
+        # Generate a fixed or random password and hash it
+        plain_password = "supersecret123"  # You can replace this with input or generate it
+        hashed_password = get_password_hash(plain_password)
+
+        # Generate a unique ID
         unique_id = secrets.token_hex(5)
-        hashed_password = secrets.token_hex(8)  # Replace with a proper password hashing function
 
         # Create the super_user
         super_user = models.User(
             id=unique_id,
-            username="superuser",
-            email="superuser@example.com",
+            username="ursamroko",
+            email="ursamroko@romel.com",
             hashed_password=hashed_password,
             role=models.UserRole.SUPER_USER,
             is_active=True
         )
         db.add(super_user)
         db.commit()
-        print("Super user created successfully!")
+        print(f"Super user created successfully! Login password: {plain_password}")
     finally:
         db.close()
 
