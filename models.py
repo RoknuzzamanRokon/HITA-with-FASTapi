@@ -16,10 +16,10 @@ class UserRole(str, Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(10), primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
-    password_hash = Column(String)
+    hashed_password = Column(String)
     role = Column(SQLEnum(UserRole), default=UserRole.GENERAL_USER)
     api_key = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)

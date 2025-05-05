@@ -9,7 +9,7 @@ class UserCreate(BaseModel):
 
 # Schema for returning user details
 class User(BaseModel):
-    id: int
+    id: str
     username: str
     email: str
 

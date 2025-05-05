@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from typing import Annotated
 from sqlalchemy.orm import Session
 from database import get_db
+import secrets
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -20,13 +21,28 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+
+
 def create_user(db: Session, user: UserCreate):
     hashed_password = pwd_context.hash(user.password)
-    db_user = User(username=user.username, email=user.email, password_hash=hashed_password)
+    unique_id = secrets.token_hex(5)  
+    db_user = User(
+        id=unique_id, 
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+
+
+
+
+
 
 def authenticate_user(db: Session, username: str, password: str):
     user = db.query(User).filter(User.username == username).first()

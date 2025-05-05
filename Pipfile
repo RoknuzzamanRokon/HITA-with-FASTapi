@@ -11,6 +11,7 @@ passlib = {extras = ["bcrypt"], version = "*"}
 python-multipart = "*"
 fastapi = "*"
 pydantic = "*"
+alembic = "*"
 
 [dev-packages]
 
