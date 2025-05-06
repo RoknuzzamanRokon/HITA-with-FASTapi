@@ -8,7 +8,8 @@ import os
 
 
 # Database Configuration
-DATABASE_URL = os.getenv("DB_CONNECTION")
+# DATABASE_URL = os.getenv("DB_CONNECTION")
+DATABASE_URL = "sqlite:///./hita.db"
 
 
 

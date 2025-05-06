@@ -10,7 +10,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def create_super_user():
+def create_super_admin():
     db: Session = SessionLocal()
     try:
         # Check if a super_user already exists
@@ -20,7 +20,7 @@ def create_super_user():
             return
 
         # Generate a fixed or random password and hash it
-        plain_password = "supersecret123"  # You can replace this with input or generate it
+        plain_password = "ursamroko123"  # You can replace this with input or generate it
         hashed_password = get_password_hash(plain_password)
 
         # Generate a unique ID
@@ -42,4 +42,4 @@ def create_super_user():
         db.close()
 
 if __name__ == "__main__":
-    create_super_user()
+    create_super_admin()

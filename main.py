@@ -11,7 +11,15 @@ from fastapi.encoders import jsonable_encoder
 from typing import List, Annotated
 import schemas
 import logging
+from passlib.context import CryptContext
 import secrets
+
+# Use bcrypt for password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 
 
@@ -25,9 +33,8 @@ app = FastAPI()
 
 
 
-
 @app.post("/create-super-user", response_model=User)
-def create_super_user(
+def create_super_admin(
     user_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
@@ -59,7 +66,7 @@ def create_super_user(
     unique_id = secrets.token_hex(5)
 
     # Hash the password
-    hashed_password = secrets.token_hex(8)  
+    hashed_password = pwd_context.hash(user_data["password"])
 
     # Create the super_user
     super_user = models.User(
@@ -92,10 +99,10 @@ def create_admin_user(
         )
 
     # Validate input data
-    if not admin_data.get("name") or not admin_data.get("email") or not admin_data.get("business_id"):
+    if not admin_data.get("name") or not admin_data.get("email") or not admin_data.get("business_id") or not admin_data.get("password"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid input. 'name', 'email', and 'business_id' are required."
+            detail="Invalid input. 'name', 'email', 'business_id', and 'password' are required."
         )
 
     # Check if email already exists
@@ -109,12 +116,14 @@ def create_admin_user(
     # Generate a unique ID for the admin user
     unique_id = secrets.token_hex(5)
 
+    hashed_password = pwd_context.hash(admin_data["password"]) # Hash the email as a placeholder password
+
     # Create the admin user
     admin_user = models.User(
         id=unique_id,
         username=admin_data["name"],
         email=admin_data["email"],
-        hashed_password=secrets.token_hex(8),
+        hashed_password=hashed_password,
         role=models.UserRole.ADMIN_USER,
         api_key=None,  
         is_active=True
