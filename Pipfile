@@ -12,6 +12,8 @@ python-multipart = "*"
 fastapi = "*"
 pydantic = "*"
 alembic = "*"
+pymysql = "*"
+python-dotenv = "*"
 
 [dev-packages]
 
