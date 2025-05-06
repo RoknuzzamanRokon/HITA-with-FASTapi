@@ -33,7 +33,7 @@ app = FastAPI()
 
 
 
-@app.post("/create-super-user", response_model=User)
+@app.post("/create-super-admin", response_model=User)
 def create_super_admin(
     user_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -84,7 +84,25 @@ def create_super_admin(
     return super_user
 
 
-@app.post("/create-admin", response_model=User)
+
+
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]):
+    """Login and get an access token."""
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+
+@app.post("/create-admin-user", response_model=User)
 def create_admin_user(
     admin_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -191,22 +209,8 @@ def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
 
 
 
-
-@app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]):
-    """Login and get an access token."""
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token = create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@app.get("/users/me", response_model=User)
-async def read_users_me(current_user: Annotated[User, Depends(get_current_user)]):
+@app.get("/user/me", response_model=User)
+async def read_user_me(current_user: Annotated[User, Depends(get_current_user)]):
     """Get details of the current user."""
     return current_user
 
