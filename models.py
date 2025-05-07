@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import MetaData
 from enum import Enum
 from datetime import datetime
-from database import Base # Import Base from database.py
+from database import Base 
 
 # User Roles
 class UserRole(str, Enum):

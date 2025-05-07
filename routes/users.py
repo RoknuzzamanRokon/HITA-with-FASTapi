@@ -7,7 +7,7 @@ from typing import Annotated
 import models
 from passlib.context import CryptContext
 import secrets
-
+from datetime import datetime, timedelta
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -157,8 +157,38 @@ def delete_user(
 
 
 @router.get("/me", response_model=UserResponse)
-async def read_user_me(current_user: Annotated[models.User, Depends(get_current_user)]):
-    """Get details of the current user."""
+async def read_user_me(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Get details of the current user and deduct 10 points for general_user."""
+    # Check if the user is a general_user
+    if current_user.role == models.UserRole.GENERAL_USER:
+        # Get the user's points
+        user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+        if not user_points or user_points.current_points < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient points to access this endpoint."
+            )
+
+        # Deduct 10 points
+        user_points.current_points -= 10
+        user_points.total_used_points += 10
+        db.commit()
+
+        # Log the transaction
+        transaction = models.PointTransaction(
+            giver_id=current_user.id,
+            receiver_id=None,  # No receiver for this transaction
+            points=10,
+            transaction_type="deduction",
+            created_at=datetime.utcnow()
+        )
+        db.add(transaction)
+        db.commit()
+
+    # Return the user's details
     return {
         "id": current_user.id,
         "username": current_user.username,
@@ -166,9 +196,6 @@ async def read_user_me(current_user: Annotated[models.User, Depends(get_current_
         "user_status": current_user.role.value,
         "created_at": current_user.created_at,
     }
-
-
-
 
 
 
@@ -224,7 +251,8 @@ def give_points(
 
     return {"message": f"Successfully gave {points} points to {receiver.username}."}
 
-@router.get("/points/me")
+
+@router.get("/points/check/me")
 def get_point_details(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
@@ -263,3 +291,68 @@ def get_point_details(
         ]
     }
 
+
+
+
+
+@router.get("/super/check/all")
+def super_check_all(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Get details of all users (only accessible by super_user)."""
+    # Ensure the current user is a super_user
+    if current_user.role != models.UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user can access this endpoint."
+        )
+
+    # Query all users
+    users = db.query(models.User).all()
+
+    # Prepare the response
+    response = {
+        "admin_users": [],
+        "general_users": []
+    }
+
+    for user in users:
+        # Get user points
+        user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
+        points_info = {
+            "total_points": user_points.total_points if user_points else 0,
+            "current_points": user_points.current_points if user_points else 0,
+            "paid_status": "Paid" if user_points and user_points.current_points > 0 else "Unpaid",
+            "total_rq": db.query(models.PointTransaction).filter(
+                models.PointTransaction.giver_id == user.id
+            ).count()  # Count how many requests the user has sent
+        }
+
+        # Check if the user has transactions in the last 7 days
+        last_7_days = datetime.utcnow() - timedelta(days=7)
+        recent_transactions = db.query(models.PointTransaction).filter(
+            (models.PointTransaction.giver_id == user.id) |
+            (models.PointTransaction.receiver_id == user.id),
+            models.PointTransaction.created_at >= last_7_days
+        ).count()
+
+        # Determine using_rq_status
+        using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
+
+        # Add user details to the appropriate list
+        user_info = {
+            "id": user.id,
+            "email": user.email,
+            "points": points_info,
+            "created_at": user.created_at,
+            "user_status": user.role.value,
+            "is_active": user.is_active,
+            "using_rq_status": using_rq_status
+        }
+        if user.role == models.UserRole.ADMIN_USER:
+            response["admin_users"].append(user_info)
+        elif user.role == models.UserRole.GENERAL_USER:
+            response["general_users"].append(user_info)
+
+    return response
