@@ -12,8 +12,8 @@ import secrets
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(
-    prefix="/users",
-    tags=["users"],
+    prefix="/user",
+    tags=["user"],
     responses={404: {"description": "Not found"}},
 )
 
@@ -167,4 +167,99 @@ async def read_user_me(current_user: Annotated[models.User, Depends(get_current_
         "created_at": current_user.created_at,
     }
 
+
+
+
+
+
+
+@router.post("/points/give")
+def give_points(
+    receiver_email: str,
+    points: int,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Give points to another user."""
+    # Validate giver's role
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user or admin_user can give points."
+        )
+
+    # Find the receiver by email
+    receiver = db.query(models.User).filter(models.User.email == receiver_email).first()
+    if not receiver:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receiver not found."
+        )
+
+    # Ensure admin_user can only give points to general_user
+    if current_user.role == models.UserRole.ADMIN_USER and receiver.role != models.UserRole.GENERAL_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin users can only give points to general users."
+        )
+
+    # Update receiver's points
+    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == receiver.id).first()
+    if not user_points:
+        user_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
+        db.add(user_points)
+
+    user_points.total_points += points
+    user_points.current_points += points
+
+    # Log the transaction
+    transaction = models.PointTransaction(
+        giver_id=current_user.id,
+        receiver_id=receiver.id,
+        points=points,
+        transaction_type="give"
+    )
+    db.add(transaction)
+    db.commit()
+
+    return {"message": f"Successfully gave {points} points to {receiver.username}."}
+
+@router.get("/points/me")
+def get_point_details(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Get point details for the current user."""
+    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+    if not user_points:
+        return {
+            "total_points": 0,
+            "current_points": 0,
+            "total_used_points": 0,
+            "transactions": []
+        }
+
+    # Get transaction history
+    transactions = db.query(models.PointTransaction).filter(
+        (models.PointTransaction.giver_id == current_user.id) |
+        (models.PointTransaction.receiver_id == current_user.id)
+    ).all()
+
+    return {
+        "total_points": user_points.total_points,
+        "current_points": user_points.current_points,
+        "total_used_points": user_points.total_used_points,
+        "transactions": [
+            {
+                "id": t.id,
+                "giver_id": t.giver_id,
+                "giver_email": t.giver_email,  # Include giver_email
+                "receiver_id": t.receiver_id,
+                "receiver_email": t.receiver_email,  # Include receiver_email
+                "points": t.points,
+                "transaction_type": t.transaction_type,
+                "created_at": t.created_at
+            } for t in transactions
+        ]
+    }
 

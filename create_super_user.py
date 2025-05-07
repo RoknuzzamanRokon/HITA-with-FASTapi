@@ -20,7 +20,7 @@ def create_super_admin():
             return
 
         # Generate a fixed or random password and hash it
-        plain_password = "ursamroko123"  # You can replace this with input or generate it
+        plain_password = "ursamroko123"  
         hashed_password = get_password_hash(plain_password)
 
         # Generate a unique ID
