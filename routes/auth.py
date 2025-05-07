@@ -63,6 +63,8 @@ async def login():
     """Placeholder for login URL."""
     return {"message": "Use the /auth/token endpoint to log in with your username and password."}
 
+
+
 @router.get("/logout")
 async def logout():
     """Placeholder for logout URL."""
