@@ -9,11 +9,11 @@ sqlalchemy = "*"
 python-jose = {extras = ["cryptography"], version = "*"}
 passlib = {extras = ["bcrypt"], version = "*"}
 python-multipart = "*"
-fastapi = "*"
-pydantic = "*"
 alembic = "*"
 pymysql = "*"
 python-dotenv = "*"
+fastapi = "*"
+pydantic = "*"
 
 [dev-packages]
 

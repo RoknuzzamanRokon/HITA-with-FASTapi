@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 
 # Schema for creating a new user
 class UserCreate(BaseModel):
@@ -26,9 +27,20 @@ class HotelCreate(BaseModel):
     location: str
     price: int
 
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    user_status: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
 
 # Rebuild forward references
 UserCreate.model_rebuild()
 HotelCreate.model_rebuild()
 User.model_rebuild()
 Token.model_rebuild()
+UserResponse.model_rebuild()

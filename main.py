@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal, get_db, Base
 import models
-from schemas import UserCreate, Token, User
+from schemas import UserCreate, Token, User, UserResponse
 from utils import create_user, authenticate_user, create_access_token, get_current_user
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -209,10 +209,18 @@ def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
 
 
 
-@app.get("/user/me", response_model=User)
-async def read_user_me(current_user: Annotated[User, Depends(get_current_user)]):
+@app.get("/user/me", response_model=UserResponse)
+async def read_user_me(current_user: Annotated[models.User, Depends(get_current_user)]):
     """Get details of the current user."""
-    return current_user
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "user_status": current_user.role.value,
+        "created_at": current_user.created_at,
+    }
+
+
 
 
 
