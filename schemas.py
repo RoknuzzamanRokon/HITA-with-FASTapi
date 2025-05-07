@@ -1,18 +1,18 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
 
 # Schema for creating a new user
 class UserCreate(BaseModel):
     username: str
-    email: str
+    email: EmailStr
     password: str
 
 # Schema for returning user details
 class User(BaseModel):
     id: str
     username: str
-    email: str
+    email: EmailStr
 
     class Config:
         from_attributes = True
@@ -30,12 +30,12 @@ class HotelCreate(BaseModel):
 class UserResponse(BaseModel):
     id: str
     username: str
-    email: str
+    email: EmailStr
     user_status: str
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Rebuild forward references

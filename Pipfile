@@ -13,7 +13,8 @@ alembic = "*"
 pymysql = "*"
 python-dotenv = "*"
 fastapi = "*"
-pydantic = "*"
+email-validator = "*"
+pydantic = {extras = ["email"], version = "*"}
 
 [dev-packages]
 
