@@ -4,24 +4,25 @@ from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
 from dotenv import load_dotenv
 import os
+from sqlalchemy.engine import Engine
+import sqlalchemy.dialects.sqlite  # Import the SQLite dialect directly
 
-
+# Load environment variables
+load_dotenv()
 
 # Database Configuration
-# DATABASE_URL = os.getenv("DB_CONNECTION")
-DATABASE_URL = "sqlite:///./hita.db"
+DATABASE_URL = os.getenv("DB_CONNECTION")
+# DATABASE_URL = "sqlite:///./hita.db"
 
-
-
-
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 
 @event.listens_for(engine, "connect")
 def enable_sqlite_fk_constraints(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-
+    # Check if the database dialect is SQLite
+    if isinstance(engine.dialect, sqlalchemy.dialects.sqlite.dialect):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

@@ -1,15 +1,15 @@
 import os
 import sys
 from logging.config import fileConfig
-
+from database import Base, DATABASE_URL
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-
+from models import Base  # Import your Base from models.py
+target_metadata = Base.metadata 
 # Ensure project root is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import your Base and DATABASE_URL
-from database import Base, DATABASE_URL
 
 # This is the Alembic Config object
 config = context.config
