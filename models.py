@@ -70,3 +70,33 @@ class UserPoint(Base):
 
     # Relationships
     user = relationship("User", back_populates="user_points", foreign_keys=[user_id])  # Explicitly specify foreign_keys
+
+
+
+
+
+
+
+
+
+class DemoHotel(Base):
+    __tablename__ = "demo_hotel"  # Ensure this matches the table name in your database
+
+    id = Column(Integer, primary_key=True, index=True)  # Primary key
+    ittid = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=False)
+    latitude = Column(String(50), nullable=True)
+    longitude = Column(String(50), nullable=True)
+    address_line1 = Column(String(255), nullable=True)
+    address_line2 = Column(String(255), nullable=True)
+    city_name = Column(String(100), nullable=True)
+    state_name = Column(String(100), nullable=True)
+    state_code = Column(String(10), nullable=True)
+    country_name = Column(String(100), nullable=True)
+    country_code = Column(String(10), nullable=True)
+    postal_code = Column(String(20), nullable=True)
+    city_code = Column(String(50), nullable=True)
+    city_location_id = Column(String(50), nullable=True)
+    master_city_name = Column(String(100), nullable=True)
+    location_ids = Column(String(255), nullable=True)
+    akbar_status = Column(Boolean, default=True)  # Assuming it's a boolean field

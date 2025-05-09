@@ -8,6 +8,8 @@ import models
 from passlib.context import CryptContext
 import secrets
 from datetime import datetime, timedelta
+
+    
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -19,6 +21,45 @@ router = APIRouter(
 
 
 
+
+
+def deduct_points_for_general_user(current_user: models.User, db: Session, points: int = 10):
+    """Deduct points for general_user."""
+    # Get the user's points
+    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+    if not user_points or user_points.current_points < points:
+        raise HTTPException(
+            status_code=400,
+            detail="Insufficient points to access this endpoint."
+        )
+
+    # Deduct points
+    user_points.current_points -= points
+    user_points.total_used_points += points
+
+    # Check if a deduction transaction already exists for the user
+    existing_transaction = db.query(models.PointTransaction).filter(
+        models.PointTransaction.giver_id == current_user.id,
+        models.PointTransaction.transaction_type == "deduction"
+    ).first()
+
+    if existing_transaction:
+        # Update the existing transaction
+        existing_transaction.points += points
+        existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
+    else:
+        # Create a new transaction if none exists
+        transaction = models.PointTransaction(
+            giver_id=current_user.id,
+            points=points,
+            transaction_type="deduction",
+            created_at=datetime.utcnow()
+        )
+        db.add(transaction)
+
+    db.commit()
+
+    
 
 
 @router.post("/create-super-admin", response_model=User)
@@ -154,39 +195,15 @@ def delete_user(
 
     return {"message": f"User with ID {user_id} has been deleted."}
 
-
-
 @router.get("/me", response_model=UserResponse)
 async def read_user_me(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
     """Get details of the current user and deduct 10 points for general_user."""
-    # Check if the user is a general_user
+    # Deduct points for general_user
     if current_user.role == models.UserRole.GENERAL_USER:
-        # Get the user's points
-        user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-        if not user_points or user_points.current_points < 10:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient points to access this endpoint."
-            )
-
-        # Deduct 10 points
-        user_points.current_points -= 10
-        user_points.total_used_points += 10
-        db.commit()
-
-        # Log the transaction
-        transaction = models.PointTransaction(
-            giver_id=current_user.id,
-            receiver_id=None,  # No receiver for this transaction
-            points=10,
-            transaction_type="deduction",
-            created_at=datetime.utcnow()
-        )
-        db.add(transaction)
-        db.commit()
+        deduct_points_for_general_user(current_user, db)
 
     # Return the user's details
     return {
@@ -198,8 +215,6 @@ async def read_user_me(
     }
 
 
-
-
 @router.post("/points/give")
 def give_points(
     receiver_email: str,
@@ -207,7 +222,7 @@ def give_points(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Give points to another user."""
+    """Give points to another user and deduct from giver."""
     # Validate giver's role
     if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
         raise HTTPException(
@@ -230,21 +245,36 @@ def give_points(
             detail="Admin users can only give points to general users."
         )
 
-    # Update receiver's points
-    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == receiver.id).first()
-    if not user_points:
-        user_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
-        db.add(user_points)
+    # Get or create user points for giver and receiver
+    giver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+    if not giver_points or giver_points.current_points < points:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Insufficient points to give."
+        )
 
-    user_points.total_points += points
-    user_points.current_points += points
+    receiver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == receiver.id).first()
+    if not receiver_points:
+        receiver_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
+        db.add(receiver_points)
 
-    # Log the transaction
+    # Deduct from giver
+    giver_points.current_points -= points
+    giver_points.total_used_points += points
+
+    # Add to receiver
+    receiver_points.total_points += points
+    receiver_points.current_points += points
+
+    # Log the transaction with emails
     transaction = models.PointTransaction(
         giver_id=current_user.id,
         receiver_id=receiver.id,
+        giver_email=current_user.email,
+        receiver_email=receiver.email,
         points=points,
-        transaction_type="give"
+        transaction_type="give",
+        created_at=datetime.utcnow()
     )
     db.add(transaction)
     db.commit()
@@ -259,13 +289,17 @@ def get_point_details(
 ):
     """Get point details for the current user."""
     user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-    if not user_points:
-        return {
-            "total_points": 0,
-            "current_points": 0,
-            "total_used_points": 0,
-            "transactions": []
-        }
+    total = user_points.total_points if user_points else 0
+    current = user_points.current_points if user_points else 0
+    used = user_points.total_used_points if user_points else 0
+
+    # Rename total_used_points to total_points_used
+    data = {
+        "total_points": total,
+        "current_points": current,
+        "total_points_used": used,
+        "transactions": []
+    }
 
     # Get transaction history
     transactions = db.query(models.PointTransaction).filter(
@@ -273,23 +307,21 @@ def get_point_details(
         (models.PointTransaction.receiver_id == current_user.id)
     ).all()
 
-    return {
-        "total_points": user_points.total_points,
-        "current_points": user_points.current_points,
-        "total_used_points": user_points.total_used_points,
-        "transactions": [
-            {
-                "id": t.id,
-                "giver_id": t.giver_id,
-                "giver_email": t.giver_email,  # Include giver_email
-                "receiver_id": t.receiver_id,
-                "receiver_email": t.receiver_email,  # Include receiver_email
-                "points": t.points,
-                "transaction_type": t.transaction_type,
-                "created_at": t.created_at
-            } for t in transactions
-        ]
-    }
+    for t in transactions:
+        data["transactions"].append({
+            "id": t.id,
+            "giver_id": t.giver_id,
+            "giver_email": t.giver_email,
+            "receiver_id": t.receiver_id,
+            "receiver_email": t.receiver_email,
+            "points": t.points,
+            "transaction_type": t.transaction_type,
+            "created_at": t.created_at,
+        })
+
+    return data
+
+
 
 
 
