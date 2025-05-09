@@ -13,6 +13,16 @@ import schemas
 import logging
 from passlib.context import CryptContext
 import secrets
+from custom_openapi import custom_openapi  # Import the custom OpenAPI function
+
+# Include routers
+from routes.auth import router as auth_router
+from routes.users import router as users_router
+from routes.hotels import router as hotels_router
+
+
+
+app = FastAPI()
 
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -28,12 +38,17 @@ logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
-app = FastAPI()
 
-# Include routers
-from routes.auth import router as auth_router
-from routes.users import router as users_router
-from routes.hotels import router as hotels_router
+
+# Apply the custom OpenAPI schema
+app.openapi = lambda: custom_openapi(app)
+
+# Example route
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Hotel API"}
+
+
 
 app.include_router(auth_router)
 app.include_router(users_router)
@@ -65,10 +80,3 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("/")
-async def create_hotel(hotel: schemas.HotelCreate, db: Annotated[Session, Depends(get_db)]):
-    db_hotel = models.Hotel(**hotel.dict())
-    db.add(db_hotel)
-    db.commit()
-    db.refresh(db_hotel)
-    return db_hotel
