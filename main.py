@@ -17,7 +17,8 @@ from custom_openapi import custom_openapi  # Import the custom OpenAPI function
 # Include routers
 from routes.auth import router as auth_router
 from routes.users import router as users_router
-from routes.hotelsDemo import router as hotels_router
+from routes.hotelsDemo import router as hotels_demo_router
+from routes.hotels import router as hotels_router
 
 
 
@@ -51,6 +52,7 @@ def read_root():
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(hotels_demo_router)
 app.include_router(hotels_router)
 
 

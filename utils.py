@@ -22,7 +22,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-
 def create_user(db: Session, user: UserCreate):
     hashed_password = pwd_context.hash(user.password)
     unique_id = secrets.token_hex(5)  
@@ -41,9 +40,6 @@ def create_user(db: Session, user: UserCreate):
 def generate_unique_id(length: int = 10) -> str:
     """Generate a unique ID with the specified length."""
     return secrets.token_hex(length // 2)  
-
-
-
 
 
 def authenticate_user(db: Session, username: str, password: str):
@@ -75,3 +71,11 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Annotate
     if user is None:
         raise credentials_exception
     return user
+
+def require_role(required_roles: list, current_user: User):
+    if current_user.role not in required_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to perform this action",
+        )
+    return current_user

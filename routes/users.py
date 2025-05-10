@@ -20,9 +20,6 @@ router = APIRouter(
 )
 
 
-
-
-
 def deduct_points_for_general_user(current_user: models.User, db: Session, points: int = 10):
     """Deduct points for general_user."""
     # Get the user's points
@@ -58,8 +55,6 @@ def deduct_points_for_general_user(current_user: models.User, db: Session, point
         db.add(transaction)
 
     db.commit()
-
-    
 
 
 @router.post("/create-super-admin", response_model=User)
@@ -325,9 +320,6 @@ def get_point_details(
 
 
 
-
-
-
 @router.get("/super/check/all")
 def super_check_all(
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -359,7 +351,7 @@ def super_check_all(
             "paid_status": "Paid" if user_points and user_points.current_points > 0 else "Unpaid",
             "total_rq": db.query(models.PointTransaction).filter(
                 models.PointTransaction.giver_id == user.id
-            ).count()  # Count how many requests the user has sent
+            ).count() 
         }
 
         # Check if the user has transactions in the last 7 days
