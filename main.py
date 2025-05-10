@@ -14,11 +14,10 @@ import logging
 from passlib.context import CryptContext
 import secrets
 from custom_openapi import custom_openapi  # Import the custom OpenAPI function
-
 # Include routers
 from routes.auth import router as auth_router
 from routes.users import router as users_router
-from routes.hotels import router as hotels_router
+from routes.hotelsDemo import router as hotels_router
 
 
 
@@ -73,10 +72,4 @@ async def login():
 async def logout():
     return {"message": "Logout URL"}
 
-# Hotels Routes
-router = APIRouter(
-    prefix="/hotels",
-    tags=["hotels"],
-    responses={404: {"description": "Not found"}},
-)
 
