@@ -72,13 +72,6 @@ class UserPoint(Base):
     user = relationship("User", back_populates="user_points", foreign_keys=[user_id])  # Explicitly specify foreign_keys
 
 
-
-
-
-
-
-
-
 class DemoHotel(Base):
     __tablename__ = "demo_hotel"  # Ensure this matches the table name in your database
 
@@ -99,4 +92,86 @@ class DemoHotel(Base):
     city_location_id = Column(String(50), nullable=True)
     master_city_name = Column(String(100), nullable=True)
     location_ids = Column(String(255), nullable=True)
-    akbar_status = Column(Boolean, default=True)  # Assuming it's a boolean field
+
+
+class Hotel(Base):
+    __tablename__ = "hotels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ittid = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    latitude = Column(String(50), nullable=True)  # Adjusted to match the original schema
+    longitude = Column(String(50), nullable=True)  # Adjusted to match the original schema
+    address_line1 = Column(String(255), nullable=True)
+    address_line2 = Column(String(255), nullable=True)
+    postal_code = Column(String(20), nullable=True)
+    rating = Column(String(10), nullable=True)  # Adjusted to string for simplicity
+    property_type = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    map_status = Column(SQLEnum("pending", "updated", name="map_status_enum"), default="pending")
+    content_update_status = Column(String(15), nullable=True)
+
+    # Relationships
+    locations = relationship("Location", back_populates="hotel")
+    provider_mappings = relationship("ProviderMapping", back_populates="hotel")
+    contacts = relationship("Contact", back_populates="hotel")
+    chains = relationship("Chain", back_populates="hotel")
+
+
+class Location(Base):
+    __tablename__ = "locations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ittid = Column(String(100), ForeignKey("hotels.ittid"), nullable=False)
+    city_name = Column(String(100), nullable=True)
+    state_name = Column(String(100), nullable=True)
+    state_code = Column(String(50), nullable=True)
+    country_name = Column(String(100), nullable=True)
+    country_code = Column(String(2), nullable=True)
+    master_city_name = Column(String(100), nullable=True)
+    city_code = Column(String(50), nullable=True)
+    city_location_id = Column(String(50), nullable=True)
+
+    # Relationships
+    hotel = relationship("Hotel", back_populates="locations")
+
+
+class ProviderMapping(Base):
+    __tablename__ = "provider_mappings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ittid = Column(String(100), ForeignKey("hotels.ittid"), nullable=False)
+    provider_name = Column(String(50), nullable=False)
+    provider_id = Column(String(255), nullable=False)
+    system_type = Column(SQLEnum("a", "b", "c", "d", "e", name="system_type_enum"), default="a")
+    vervotech_id = Column(String(50), nullable=True)
+    giata_code = Column(String(50), nullable=True)
+
+    # Relationships
+    hotel = relationship("Hotel", back_populates="provider_mappings")
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ittid = Column(String(100), ForeignKey("hotels.ittid"), nullable=False)
+    contact_type = Column(SQLEnum("phone", "email", "fax", "website", name="contact_type_enum"), nullable=False)
+    value = Column(String(255), nullable=False)
+
+    # Relationships
+    hotel = relationship("Hotel", back_populates="contacts")
+
+
+class Chain(Base):
+    __tablename__ = "chains"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ittid = Column(String(100), ForeignKey("hotels.ittid"), nullable=False)
+    chain_name = Column(String(100), nullable=True)
+    chain_code = Column(String(50), nullable=True)
+    brand_name = Column(String(100), nullable=True)
+
+    # Relationships
+    hotel = relationship("Hotel", back_populates="chains")
