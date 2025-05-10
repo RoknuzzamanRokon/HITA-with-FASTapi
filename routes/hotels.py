@@ -118,3 +118,5 @@ async def read_hotel(
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
     return hotel
+
+

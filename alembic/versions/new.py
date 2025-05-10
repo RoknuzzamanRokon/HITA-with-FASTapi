@@ -710,7 +710,6 @@ def downgrade() -> None:
     sa.Column('CountryCode', mysql.VARCHAR(length=2), nullable=True),
     sa.Column('CityCode', mysql.VARCHAR(length=50), nullable=True),
     sa.Column('created_at', mysql.TIMESTAMP(), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
-    sa.Column('akbar_status', mysql.VARCHAR(length=10), nullable=True),
     mysql_default_charset='utf8mb4',
     mysql_engine='InnoDB'
     )

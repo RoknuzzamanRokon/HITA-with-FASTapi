@@ -48,7 +48,6 @@ class HotelBase(BaseModel):
     city_location_id: Optional[str] = Field(None, max_length=50)
     master_city_name: Optional[str] = Field(None, max_length=100)
     location_ids: Optional[str] = Field(None, max_length=255)
-    akbar_status: bool = Field(...)
 
 class HotelCreate(HotelBase):
     pass
@@ -70,7 +69,6 @@ class HotelUpdate(BaseModel):
     city_location_id: Optional[str]
     master_city_name: Optional[str]
     location_ids: Optional[str]
-    akbar_status: Optional[bool]
 
 class HotelRead(HotelBase):
     id: int
