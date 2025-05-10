@@ -245,22 +245,23 @@ def give_points(
             detail="Admin users can only give points to general users."
         )
 
-    # Get or create user points for giver and receiver
-    giver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-    if not giver_points or giver_points.current_points < points:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Insufficient points to give."
-        )
-
+    # Get or create user points for receiver
     receiver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == receiver.id).first()
     if not receiver_points:
         receiver_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
         db.add(receiver_points)
 
-    # Deduct from giver
-    giver_points.current_points -= points
-    giver_points.total_used_points += points
+    # Super users have unlimited points, skip deduction
+    if current_user.role != models.UserRole.SUPER_USER:
+        giver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+        if not giver_points or giver_points.current_points < points:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient points to give."
+            )
+        # Deduct from giver
+        giver_points.current_points -= points
+        giver_points.total_used_points += points
 
     # Add to receiver
     receiver_points.total_points += points
