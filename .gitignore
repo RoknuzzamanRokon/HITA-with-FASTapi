@@ -1,6 +1,29 @@
+# Environment files
 .env
-test.py
+
+# Python bytecode
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Test files
+test.py
+
+# Logs
+*.log
+
+# Virtual environments
+venv/
+.env/
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+
+hita.db
