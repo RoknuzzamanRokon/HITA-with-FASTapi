@@ -6,6 +6,11 @@ import models
 from models import User  # Import the User model
 from utils import require_role, get_current_user  # Import get_current_user
 
+from pydantic import BaseModel
+from typing import List
+
+
+
 router = APIRouter(
     prefix="/v1.0/hotels",
     tags=["Hotels Integrations"],
@@ -110,4 +115,40 @@ def get_hotel_with_provider(
     provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid).all()
     chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
     contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-    return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "contacts": contacts}
+    return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "chains": chains, "contacts": contacts}
+
+
+
+
+
+class ITTIDRequest(BaseModel):
+    ittid: List[str]  
+    
+@router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
+def get_hotels_with_providers(
+    request: ITTIDRequest,
+    db: Session = Depends(get_db)
+):
+    """Get hotels along with their provider mappings based on a list of ittid values."""
+    hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
+    if not hotels:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No hotels found for the provided ittid values."
+        )
+
+    result = []
+    for hotel in hotels:
+        locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
+        provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid).all()
+        chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
+        contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
+        result.append({
+            "hotel": hotel,
+            "provider_mappings": provider_mappings,
+            "locations": locations,
+            "contacts": contacts,
+            "chains": chains
+        })
+
+    return result
