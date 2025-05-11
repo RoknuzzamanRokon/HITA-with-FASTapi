@@ -53,6 +53,7 @@ def deduct_points_for_general_user(current_user: models.User, db: Session):
 
         db.commit()
 
+
 # Create hotel endpoint with point deduction and response model
 @router.post("/input", response_model=HotelReadDemo, status_code=status.HTTP_201_CREATED)
 async def create_hotel(
@@ -64,7 +65,17 @@ async def create_hotel(
     
     require_role(["super_user", "admin_user"], current_user)
 
-    try: 
+    try:
+        # Check for duplicate entries (e.g., based on `ittid` or `name`)
+        existing_hotel = db.query(models.DemoHotel).filter(
+            (models.DemoHotel.ittid == hotel.ittid) 
+        ).first()
+        if existing_hotel:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A hotel with the same 'ittid' already exists."
+            )
+
         # Create and persist hotel
         db_hotel = models.DemoHotel(**hotel.dict())
         db.add(db_hotel)
@@ -74,8 +85,10 @@ async def create_hotel(
     except Exception as e:
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)  # Include the exception message for debugging
         )
+
 
 # Read hotels list
 @router.get("/getAll", response_model=list[HotelReadDemo])
