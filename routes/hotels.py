@@ -13,11 +13,11 @@ from typing import List
 
 router = APIRouter(
     prefix="/v1.0/hotels",
-    tags=["Hotels Integrations"],
+    tags=["Hotels Integrations & Mapping"],
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("/input_hotel/create_with_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED)
+@router.post("/mapping/input_hotel_all_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED)
 def create_hotel_with_details(
     hotel: HotelCreate,
     db: Session = Depends(get_db),
@@ -62,11 +62,11 @@ def create_hotel_with_details(
     
 
 
-@router.post("/mapping/add_provider", status_code=status.HTTP_201_CREATED)
+@router.post("/mapping/add_provider_all_details_with_ittid", status_code=status.HTTP_201_CREATED)
 def add_provider(
     provider_data: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # Use get_current_user to fetch the user
+    current_user: User = Depends(get_current_user) 
 ):
     """Add a provider mapping for an existing hotel."""
     # Check if the user has the required role
@@ -97,58 +97,3 @@ def add_provider(
             detail=f"Error adding provider mapping: {str(e)}"
         )
     
-
-@router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
-def get_hotel_with_provider(
-    ittid: str,
-    db: Session = Depends(get_db)
-):
-    """Get a hotel along with its provider mappings."""
-    hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
-    if not hotel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Hotel with id '{ittid}' not found."
-        )
-
-    locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
-    provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid).all()
-    chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
-    contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-    return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "chains": chains, "contacts": contacts}
-
-
-
-
-
-class ITTIDRequest(BaseModel):
-    ittid: List[str]  
-
-@router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
-def get_hotels_with_providers(
-    request: ITTIDRequest,
-    db: Session = Depends(get_db)
-):
-    """Get hotels along with their provider mappings based on a list of ittid values."""
-    hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
-    if not hotels:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No hotels found for the provided ittid values."
-        )
-
-    result = []
-    for hotel in hotels:
-        locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
-        provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid).all()
-        chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
-        contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-        result.append({
-            "hotel": hotel,
-            "provider_mappings": provider_mappings,
-            "locations": locations,
-            "contacts": contacts,
-            "chains": chains
-        })
-
-    return result
