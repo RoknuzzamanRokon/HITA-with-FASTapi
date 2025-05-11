@@ -123,7 +123,7 @@ def get_hotel_with_provider(
 
 class ITTIDRequest(BaseModel):
     ittid: List[str]  
-    
+
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
 def get_hotels_with_providers(
     request: ITTIDRequest,
