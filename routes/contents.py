@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 router = APIRouter(
     prefix="/v1.0/content",
@@ -61,8 +61,6 @@ def get_hotel_data_provider_name_and_id(
 import models
 
 
-
-
 @router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
 def get_hotel_with_provider(
     ittid: str,
@@ -83,11 +81,9 @@ def get_hotel_with_provider(
     return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "chains": chains, "contacts": contacts}
 
 
-
-
-
 class ITTIDRequest(BaseModel):
-    ittid: List[str]  
+    ittid: List[str]
+
 
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
 def get_hotels_with_providers(
@@ -104,16 +100,70 @@ def get_hotels_with_providers(
 
     result = []
     for hotel in hotels:
+        # Fetch related data
         locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
         provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid).all()
-        chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
         contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
+
+        # Transform data into the desired format
+        formatted_hotel = {
+            "id": hotel.id,
+            "ittid": hotel.ittid,
+            "latitude": hotel.latitude,
+            "longitude": hotel.longitude,
+            "address_line1": hotel.address_line1,
+            "address_line2": hotel.address_line2,
+            "postal_code": hotel.postal_code,
+            "property_type": hotel.property_type,
+            "name": hotel.name,
+            "rating": hotel.rating,
+            "map_status": hotel.map_status,
+            "content_update_status": hotel.content_update_status,
+            "updated_at": hotel.updated_at,
+            "created_at": hotel.created_at,
+        }
+
+        formatted_provider_mappings = [
+            {
+                "id": mapping.id,
+                "provider_id": mapping.provider_id,
+                "provider_name": mapping.provider_name,
+                "system_type": mapping.system_type,
+                "vervotech_id": mapping.vervotech_id,
+                "giata_code": mapping.giata_code,
+            }
+            for mapping in provider_mappings
+        ]
+
+        formatted_locations = [
+            {
+                "id": location.id,
+                "city_name": location.city_name,
+                "city_location_id": location.city_location_id,
+                "city_code": location.city_code,
+                "master_city_name": location.master_city_name,
+                "state_name": location.state_name,
+                "state_code": location.state_code,
+                "country_name": location.country_name,
+                "country_code": location.country_code,
+            }
+            for location in locations
+        ]
+
+        formatted_contacts = [
+            {
+                "id": contact.id,
+                "contact_type": contact.contact_type,
+                "value": contact.value,
+            }
+            for contact in contacts
+        ]
+
         result.append({
-            "hotel": hotel,
-            "provider_mappings": provider_mappings,
-            "locations": locations,
-            "contacts": contacts,
-            "chains": chains
+            "hotel": formatted_hotel,
+            "provider_mappings": formatted_provider_mappings,
+            "locations": formatted_locations,
+            "contacts": formatted_contacts,
         })
 
     return result
