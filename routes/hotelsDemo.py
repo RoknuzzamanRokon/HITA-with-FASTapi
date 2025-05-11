@@ -8,8 +8,8 @@ from utils import get_current_user
 from datetime import datetime
 
 router = APIRouter(
-    prefix="/v1/hotels/demo",
-    tags=["hotelsDemo"],
+    prefix="/v1.0/hotels/demo",
+    tags=["Hotels Demo"],
     responses={404: {"description": "Not found"}},
 )
 

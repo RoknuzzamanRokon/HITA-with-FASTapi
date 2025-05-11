@@ -15,6 +15,7 @@ python-dotenv = "*"
 fastapi = "*"
 email-validator = "*"
 pydantic = {extras = ["email"], version = "*"}
+pillow = "*"
 
 [dev-packages]
 

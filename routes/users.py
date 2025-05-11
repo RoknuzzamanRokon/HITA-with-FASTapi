@@ -14,8 +14,8 @@ from datetime import datetime, timedelta
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(
-    prefix="/v1/user",
-    tags=["user"],
+    prefix="/v1.0/user",
+    tags=["Users Integrations"],
     responses={404: {"description": "Not found"}},
 )
 

@@ -7,8 +7,8 @@ from models import User  # Import the User model
 from utils import require_role, get_current_user  # Import get_current_user
 
 router = APIRouter(
-    prefix="/v1/hotels",
-    tags=["hotels"],
+    prefix="/v1.0/hotels",
+    tags=["Hotels Integrations"],
     responses={404: {"description": "Not found"}},
 )
 

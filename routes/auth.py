@@ -10,8 +10,8 @@ from typing import Annotated
 import models
 
 router = APIRouter(
-    prefix="/v1/auth",
-    tags=["auth"],
+    prefix="/v1.0/auth",
+    tags=["Authentication System"],
     responses={404: {"description": "Not found"}},
 )
 
