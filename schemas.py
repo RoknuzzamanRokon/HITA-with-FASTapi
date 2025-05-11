@@ -37,24 +37,6 @@ class UserResponse(BaseModel):
         orm_mode = True
 
 # --- Hotel Schemas ---
-class HotelBase(BaseModel):
-    ittid: str = Field(..., max_length=50)
-    name: str = Field(..., max_length=255)
-    latitude: Optional[str] = Field(None, max_length=50)
-    longitude: Optional[str] = Field(None, max_length=50)
-    address_line1: Optional[str] = Field(None, max_length=255)
-    address_line2: Optional[str] = Field(None, max_length=255)
-    city_name: Optional[str] = Field(None, max_length=100)
-    state_name: Optional[str] = Field(None, max_length=100)
-    state_code: Optional[str] = Field(None, max_length=10)
-    country_name: Optional[str] = Field(None, max_length=100)
-    country_code: Optional[str] = Field(None, max_length=10)
-    postal_code: Optional[str] = Field(None, max_length=20)
-    city_code: Optional[str] = Field(None, max_length=50)
-    city_location_id: Optional[str] = Field(None, max_length=50)
-    master_city_name: Optional[str] = Field(None, max_length=100)
-    location_ids: Optional[str] = Field(None, max_length=255)
-
 class LocationCreate(BaseModel):
     city_name: Optional[str] = Field(None, max_length=100)
     state_name: Optional[str] = Field(None, max_length=100)
@@ -80,6 +62,39 @@ class ChainCreate(BaseModel):
     chain_name: Optional[str] = Field(None, max_length=100)
     chain_code: Optional[str] = Field(None, max_length=50)
     brand_name: Optional[str] = Field(None, max_length=100)
+
+
+
+class HotelCreateDemo(BaseModel):
+    ittid: str = Field(..., max_length=50)
+    name: str = Field(..., max_length=255)
+    latitude: Optional[str] = Field(None, max_length=50)
+    longitude: Optional[str] = Field(None, max_length=50)
+    rating: Optional[str] = Field(None, max_length=10)
+    address_line1: Optional[str] = Field(None, max_length=255)
+    address_line2: Optional[str] = Field(None, max_length=255)
+    city_name: Optional[str] = Field(None, max_length=100)
+    state_name: Optional[str] = Field(None, max_length=100)
+    state_code: Optional[str] = Field(None, max_length=10)
+    country_name: Optional[str] = Field(None, max_length=100)
+    country_code: Optional[str] = Field(None, max_length=10)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    city_code: Optional[str] = Field(None, max_length=50)
+    city_location_id: Optional[str] = Field(None, max_length=50)
+    master_city_name: Optional[str] = Field(None, max_length=100)
+    location_ids: Optional[str] = Field(None, max_length=255)
+
+
+
+class HotelReadDemo(HotelCreateDemo):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+
+
 
 class HotelCreate(BaseModel):
     ittid: str = Field(..., max_length=50)
@@ -124,6 +139,7 @@ class HotelUpdate(BaseModel):
 # Rebuild forward references
 UserCreate.model_rebuild()
 HotelCreate.model_rebuild()
+HotelCreateDemo.model_rebuild()
 User.model_rebuild()
 Token.model_rebuild()
 UserResponse.model_rebuild()

@@ -205,7 +205,7 @@ async def read_user_me(
         "id": current_user.id,
         "username": current_user.username,
         "email": current_user.email,
-        "user_status": current_user.role.value,
+        "user_status": current_user.role,
         "created_at": current_user.created_at,
     }
 
@@ -371,7 +371,7 @@ def super_check_all(
             "email": user.email,
             "points": points_info,
             "created_at": user.created_at,
-            "user_status": user.role.value,
+            "user_status": user.role,
             "is_active": user.is_active,
             "using_rq_status": using_rq_status
         }

@@ -57,29 +57,6 @@ def create_hotel_with_details(
     
 
 
-# @router.post("mapping/add_provider", status_code=status.HTTP_201_CREATED)
-# def add_provider(provider_data: dict,
-#                  db: Session = Depends(get_db),
-#                  current_user: User = Depends(get_current_user)):
-#     """Add a new provider mapping."""
-#     require_role(["super_user", "admin_user"], current_user)
-
-#     try:
-#         db_provider = models.Provider(**provider_data)
-#         db.add(db_provider)
-#         db.commit()
-#         db.refresh(db_provider)
-#         return db_provider
-
-#     except Exception as e:
-#         db.rollback()
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail=f"Error adding provider: {str(e)}"
-#         )
-    
-
-
 @router.post("/mapping/add_provider", status_code=status.HTTP_201_CREATED)
 def add_provider(
     provider_data: dict,

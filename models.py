@@ -80,6 +80,7 @@ class DemoHotel(Base):
     name = Column(String(255), nullable=False)
     latitude = Column(String(50), nullable=True)
     longitude = Column(String(50), nullable=True)
+    rating = Column(String(10), nullable=True) 
     address_line1 = Column(String(255), nullable=True)
     address_line2 = Column(String(255), nullable=True)
     city_name = Column(String(100), nullable=True)
