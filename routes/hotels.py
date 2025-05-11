@@ -12,7 +12,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("/create_with_details", response_model=HotelRead)
+@router.post("/input_hotel/create_with_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED)
 def create_hotel_with_details(
     hotel: HotelCreate,
     db: Session = Depends(get_db),
@@ -53,4 +53,64 @@ def create_hotel_with_details(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error creating hotel: {str(e)}"
+        )
+    
+
+
+# @router.post("mapping/add_provider", status_code=status.HTTP_201_CREATED)
+# def add_provider(provider_data: dict,
+#                  db: Session = Depends(get_db),
+#                  current_user: User = Depends(get_current_user)):
+#     """Add a new provider mapping."""
+#     require_role(["super_user", "admin_user"], current_user)
+
+#     try:
+#         db_provider = models.Provider(**provider_data)
+#         db.add(db_provider)
+#         db.commit()
+#         db.refresh(db_provider)
+#         return db_provider
+
+#     except Exception as e:
+#         db.rollback()
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Error adding provider: {str(e)}"
+#         )
+    
+
+
+@router.post("/mapping/add_provider", status_code=status.HTTP_201_CREATED)
+def add_provider(
+    provider_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)  # Use get_current_user to fetch the user
+):
+    """Add a provider mapping for an existing hotel."""
+    # Check if the user has the required role
+    require_role(["super_user", "admin_user"], current_user)
+
+    # Extract the `ittid` from the request body
+    ittid = provider_data.get("ittid")
+
+    # Check if the hotel with the given `ittid` exists
+    hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
+    if not hotel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Hotel with ittid '{ittid}' not found."
+        )
+
+    # Create a new provider mapping
+    try:
+        provider_mapping = models.ProviderMapping(**provider_data)
+        db.add(provider_mapping)
+        db.commit()
+        db.refresh(provider_mapping)
+        return {"message": "Provider mapping added successfully.", "provider_mapping": provider_mapping}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error adding provider mapping: {str(e)}"
         )

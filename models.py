@@ -2,9 +2,9 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Enum as
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import MetaData
-from enum import Enum
 from datetime import datetime
 from database import Base
+from enum import Enum
 
 # User Roles
 class UserRole(str, Enum):
@@ -20,7 +20,7 @@ class User(Base):
     username = Column(String(50), unique=True, index=True)
     email = Column(String(100), unique=True, index=True)
     hashed_password = Column(String(255))
-    role = Column(SQLEnum(UserRole), default=UserRole.GENERAL_USER)
+    role = Column(SQLEnum(*[role.value for role in UserRole], name="user_role_enum", native_enum=False), default=UserRole.GENERAL_USER.value, nullable=False)  # Fixed SQLEnum initialization
     api_key = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -144,7 +144,10 @@ class ProviderMapping(Base):
     ittid = Column(String(100), ForeignKey("hotels.ittid"), nullable=False)
     provider_name = Column(String(50), nullable=False)
     provider_id = Column(String(255), nullable=False)
-    system_type = Column(SQLEnum("a", "b", "c", "d", "e", name="system_type_enum"), default="a")
+    system_type = Column(
+                        SQLEnum('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', name="system_type_enum"),
+                        nullable=False,
+                        default='a')
     vervotech_id = Column(String(50), nullable=True)
     giata_code = Column(String(50), nullable=True)
 

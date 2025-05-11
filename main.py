@@ -23,26 +23,22 @@ logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
 
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(hotels_demo_router)
+app.include_router(hotels_router)
+
+
+
 
 
 
 # Compute absolute path to the directory containing this file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
 # Mount static files using the absolute path
 static_dir = os.path.join(BASE_DIR, "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
-
 # Apply the custom OpenAPI schema
 app.openapi = lambda: custom_openapi(app)
-
-
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(hotels_demo_router)
-app.include_router(hotels_router)
 
 
