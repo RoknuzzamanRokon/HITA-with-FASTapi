@@ -16,6 +16,7 @@ fastapi = "*"
 email-validator = "*"
 pydantic = {extras = ["email"], version = "*"}
 pillow = "*"
+colorama = "*"
 
 [dev-packages]
 
