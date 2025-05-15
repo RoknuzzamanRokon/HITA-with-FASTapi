@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from utils import get_current_user
 from database import get_db
 from schemas import UserResponse, UserCreate, User
 from typing import Annotated
@@ -8,8 +7,12 @@ import models
 from passlib.context import CryptContext
 import secrets
 from datetime import datetime, timedelta
+from utils import get_current_user, deduct_points_for_general_user
 
-    
+
+
+
+
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -19,42 +22,6 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-
-def deduct_points_for_general_user(current_user: models.User, db: Session, points: int = 10):
-    """Deduct points for general_user."""
-    # Get the user's points
-    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-    if not user_points or user_points.current_points < points:
-        raise HTTPException(
-            status_code=400,
-            detail="Insufficient points to access this endpoint."
-        )
-
-    # Deduct points
-    user_points.current_points -= points
-    user_points.total_used_points += points
-
-    # Check if a deduction transaction already exists for the user
-    existing_transaction = db.query(models.PointTransaction).filter(
-        models.PointTransaction.giver_id == current_user.id,
-        models.PointTransaction.transaction_type == "deduction"
-    ).first()
-
-    if existing_transaction:
-        # Update the existing transaction
-        existing_transaction.points += points
-        existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
-    else:
-        # Create a new transaction if none exists
-        transaction = models.PointTransaction(
-            giver_id=current_user.id,
-            points=points,
-            transaction_type="deduction",
-            created_at=datetime.utcnow()
-        )
-        db.add(transaction)
-
-    db.commit()
 
 
 @router.get("/me", response_model=UserResponse)
