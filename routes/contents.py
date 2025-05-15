@@ -3,13 +3,56 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Annotated
+from datetime import datetime
+from utils import get_current_user
+import models
+from models import UserPoint, PointTransaction
 
 router = APIRouter(
     prefix="/v1.0/content",
     tags=["Hotel Content"],
     responses={404: {"description": "Not found"}},
 )
+
+
+def deduct_points_for_general_user(current_user: models.User, db: Session, points: int = 10):
+    """Deduct points for general_user."""
+    # Get the user's points
+    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+    if not user_points or user_points.current_points < points:
+        raise HTTPException(
+            status_code=400,
+            detail="Insufficient points to access this endpoint."
+        )
+
+    # Deduct points
+    user_points.current_points -= points
+    user_points.total_used_points += points
+
+    # Check if a deduction transaction already exists for the user
+    existing_transaction = db.query(models.PointTransaction).filter(
+        models.PointTransaction.giver_id == current_user.id,
+        models.PointTransaction.transaction_type == "deduction"
+    ).first()
+
+    if existing_transaction:
+        # Update the existing transaction
+        existing_transaction.points += points
+        existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
+    else:
+        # Create a new transaction if none exists
+        transaction = models.PointTransaction(
+            giver_id=current_user.id,
+            points=points,
+            transaction_type="deduction",
+            created_at=datetime.utcnow()
+        )
+        db.add(transaction)
+
+    db.commit()
+
+
 
 class ProviderHotelIdentity(BaseModel):
     provider_id: str
@@ -21,8 +64,16 @@ class ProviderHotelRequest(BaseModel):
 @router.post("/get_hotel_data_provider_name_and_id", status_code=status.HTTP_200_OK)
 def get_hotel_data_provider_name_and_id(
     request: ProviderHotelRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
+    
+    """Get details of the current user and deduct 10 points for general_user."""
+    # Deduct points for general_user
+    if current_user.role == models.UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+
+
     """Fetch hotel details based on provider name and supplier ID."""
     result = []
     for identity in request.provider_hotel_identity:
@@ -64,8 +115,14 @@ import models
 @router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
 def get_hotel_with_provider(
     ittid: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
+    
+    """Get details of the current user and deduct 10 points for general_user."""
+    # Deduct points for general_user
+    if current_user.role == models.UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
     """Get a hotel along with its provider mappings."""
     hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
     if not hotel:
@@ -88,8 +145,15 @@ class ITTIDRequest(BaseModel):
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
 def get_hotels_with_providers(
     request: ITTIDRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
+    
+    """Get details of the current user and deduct 10 points for general_user."""
+    # Deduct points for general_user
+    if current_user.role == models.UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+
     """Get hotels along with their provider mappings based on a list of ittid values."""
     hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
     if not hotels:

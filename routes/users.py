@@ -57,6 +57,28 @@ def deduct_points_for_general_user(current_user: models.User, db: Session, point
     db.commit()
 
 
+@router.get("/me", response_model=UserResponse)
+async def read_user_me(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Get details of the current user and deduct 10 points for general_user."""
+    # Deduct points for general_user
+    if current_user.role == models.UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+
+    # Return the user's details
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "user_status": current_user.role,
+        "created_at": current_user.created_at,
+    }
+
+
+
+
 @router.post("/create-super-admin", response_model=User)
 def create_super_admin(
     user_data: dict,  
@@ -125,10 +147,10 @@ def create_admin_user(
         )
 
     # Validate input data
-    if not admin_data.get("name") or not admin_data.get("email") or not admin_data.get("business_id") or not admin_data.get("password"):
+    if not admin_data.get("username") or not admin_data.get("email") or not admin_data.get("business_id") or not admin_data.get("password"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid input. 'name', 'email', 'business_id', and 'password' are required."
+            detail="Invalid input. 'username', 'email', 'business_id', and 'password' are required."
         )
 
     # Check if email already exists
@@ -147,7 +169,7 @@ def create_admin_user(
     # Create the admin user
     admin_user = models.User(
         id=unique_id,
-        username=admin_data["name"],
+        username=admin_data["username"],
         email=admin_data["email"],
         hashed_password=hashed_password,
         role=models.UserRole.ADMIN_USER,
@@ -159,7 +181,54 @@ def create_admin_user(
     db.refresh(admin_user)
     return admin_user
 
+@router.post("/create-general-user", response_model=User)
+def create_general_user(
+    user_data: dict,  
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Create a general user (only accessible by super_user or admin_user)."""
+    # Check if the current user is a super_user or admin_user
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user or admin_user can create general users."
+        )
 
+    # Validate input data
+    if not user_data.get("username") or not user_data.get("email") or not user_data.get("password"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input. 'username', 'email', and 'password' are required."
+        )
+
+    # Check if email already exists
+    existing_user = db.query(models.User).filter(models.User.email == user_data["email"]).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists."
+        )
+
+    # Generate a unique ID for the general user
+    unique_id = secrets.token_hex(5)
+
+    hashed_password = pwd_context.hash(user_data["password"])
+
+    # Create the general user
+    general_user = models.User(
+        id=unique_id,
+        username=user_data["username"],
+        email=user_data["email"],
+        hashed_password=hashed_password,
+        role=models.UserRole.GENERAL_USER,
+        api_key=None,
+        is_active=True
+    )
+    db.add(general_user)
+    db.commit()
+    db.refresh(general_user)
+    return general_user
 
 
 @router.delete("/delete-user/{user_id}")
@@ -190,24 +259,6 @@ def delete_user(
 
     return {"message": f"User with ID {user_id} has been deleted."}
 
-@router.get("/me", response_model=UserResponse)
-async def read_user_me(
-    current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
-):
-    """Get details of the current user and deduct 10 points for general_user."""
-    # Deduct points for general_user
-    if current_user.role == models.UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
-
-    # Return the user's details
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "email": current_user.email,
-        "user_status": current_user.role,
-        "created_at": current_user.created_at,
-    }
 
 
 @router.post("/points/give")
