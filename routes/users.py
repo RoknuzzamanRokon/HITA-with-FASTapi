@@ -29,10 +29,6 @@ async def read_user_me(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Get details of the current user and deduct 10 points for general_user."""
-    # Deduct points for general_user
-    if current_user.role == models.UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
 
     # Return the user's details
     return {
