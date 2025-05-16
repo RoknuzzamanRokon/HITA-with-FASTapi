@@ -7,7 +7,6 @@ from typing import List, Optional, Annotated
 from datetime import datetime
 from utils import get_current_user, deduct_points_for_general_user
 import models
-from models import UserPoint, PointTransaction
 
 
 

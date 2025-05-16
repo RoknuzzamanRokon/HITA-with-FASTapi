@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import UserResponse, UserCreate, User
+from schemas import UserResponse, UserCreate, User, GivePointsRequest
 from typing import Annotated
 import models
 from passlib.context import CryptContext
 import secrets
 from datetime import datetime, timedelta
 from utils import get_current_user, deduct_points_for_general_user
+from models import PointAllocationType
 
 
 
@@ -224,14 +225,24 @@ def delete_user(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 @router.post("/points/give")
 def give_points(
-    receiver_email: str,
-    points: int,
+    request: GivePointsRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Give points to another user and deduct from giver."""
+    """Give points to another user based on allocation type."""
     # Validate giver's role
     if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
         raise HTTPException(
@@ -240,7 +251,7 @@ def give_points(
         )
 
     # Find the receiver by email
-    receiver = db.query(models.User).filter(models.User.email == receiver_email).first()
+    receiver = db.query(models.User).filter(models.User.email == request.receiver_email).first()
     if not receiver:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -259,6 +270,21 @@ def give_points(
     if not receiver_points:
         receiver_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
         db.add(receiver_points)
+
+    # Determine points based on allocation type
+    if request.allocation_type == models.PointAllocationType.ONE_YEAR_PACKAGE:
+        points = 1000000
+    elif request.allocation_type == models.PointAllocationType.ONE_MONTH_PACKAGE:
+        points = 100000
+    elif request.allocation_type == models.PointAllocationType.PER_REQUEST_POINT:
+        points = 10000
+    elif request.allocation_type == models.PointAllocationType.GUEST_POINT:
+        points = 1000
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid allocation type."
+        )
 
     # Super users have unlimited points, skip deduction
     if current_user.role != models.UserRole.SUPER_USER:
@@ -283,7 +309,7 @@ def give_points(
         giver_email=current_user.email,
         receiver_email=receiver.email,
         points=points,
-        transaction_type="give",
+        transaction_type=request.allocation_type.value,  # Use allocation type value for transaction type
         created_at=datetime.utcnow()
     )
     db.add(transaction)
@@ -292,46 +318,76 @@ def give_points(
     return {"message": f"Successfully gave {points} points to {receiver.username}."}
 
 
+
+
 @router.get("/points/check/me")
 def get_point_details(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Get point details for the current user."""
+    """Get point details for the current user, grouped by received and used points."""
     user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
     total = user_points.total_points if user_points else 0
     current = user_points.current_points if user_points else 0
     used = user_points.total_used_points if user_points else 0
+    user_email = getattr(user_points, "user_email", None) if user_points else None
 
-    # Rename total_used_points to total_points_used
-    data = {
-        "total_points": total,
-        "current_points": current,
-        "total_points_used": used,
-        "transactions": []
-    }
-
-    # Get transaction history
+    # Get all transactions for the user
     transactions = db.query(models.PointTransaction).filter(
         (models.PointTransaction.giver_id == current_user.id) |
         (models.PointTransaction.receiver_id == current_user.id)
     ).all()
 
+    # Group transactions
+    get_point_history = []
+    uses_request_history = []
+
+    total_used_point = 0
     for t in transactions:
-        data["transactions"].append({
-            "id": t.id,
-            "giver_id": t.giver_id,
-            "giver_email": t.giver_email,
-            "receiver_id": t.receiver_id,
-            "receiver_email": t.receiver_email,
-            "points": t.points,
-            "transaction_type": t.transaction_type,
-            "created_at": t.created_at,
-        })
+        # Points received (current user is receiver)
+        if t.receiver_id == current_user.id and t.transaction_type != "deduction":
+            get_point_history.append({
+                "id": t.id,
+                "giver_id": t.giver_id,
+                "giver_email": t.giver_email,
+                "receiver_id": t.receiver_id,
+                "receiver_email": t.receiver_email,
+                "points": t.points,
+                "transaction_type": t.transaction_type,
+                "created_at": t.created_at,
+            })
+            total_used_point += t.points
+        # Points used (current user is giver and type is deduction)
+        elif t.giver_id == current_user.id and t.transaction_type == "deduction":
+            uses_request_history.append({
+                "id": t.id,
+                "user_id": t.giver_id,
+                "user_email": t.giver_email,
+                "point_used": t.points,
+                "totla_request": t.points // 10 if t.points else 0,  # Assuming 10 points per request
+                "transaction_type": t.transaction_type,
+                "created_at": t.created_at,
+            })
+
+    data = {
+        "user_mail": user_email,
+        "total_points": total,
+        "current_points": current,
+        "total_points_used": used,
+        "transactions": [
+            {
+                "user_name": current_user.username,
+                "user_id": current_user.id,
+                "total_used_point": total_used_point,
+                "get_poit_hitstory": get_point_history
+            },
+            {
+                "uses_request_history": uses_request_history
+            }
+        ]
+    }
 
     return data
-
-
 
 
 @router.get("/super/check/all")

@@ -105,6 +105,7 @@ def deduct_points_for_general_user(
     user_points.current_points -= points
     user_points.total_used_points += points
 
+
     # Check if a deduction transaction already exists for the user
     existing_transaction = db.query(models.PointTransaction).filter(
         models.PointTransaction.giver_id == current_user.id,
@@ -113,6 +114,7 @@ def deduct_points_for_general_user(
 
     if existing_transaction:
         # Update the existing transaction
+        existing_transaction.giver_email = current_user.email
         existing_transaction.points += points
         existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
     else:

@@ -143,3 +143,9 @@ HotelCreateDemo.model_rebuild()
 User.model_rebuild()
 Token.model_rebuild()
 UserResponse.model_rebuild()
+
+from models import PointAllocationType
+
+class GivePointsRequest(BaseModel):
+    receiver_email: EmailStr
+    allocation_type: PointAllocationType

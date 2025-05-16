@@ -12,6 +12,14 @@ class UserRole(str, Enum):
     ADMIN_USER = "admin_user"
     GENERAL_USER = "general_user"
 
+
+# Point Allocation Type
+class PointAllocationType(str, Enum):
+    ONE_YEAR_PACKAGE = "one_year_package"
+    ONE_MONTH_PACKAGE = "one_month_package"
+    PER_REQUEST_POINT = "per_request_point"
+    GUEST_POINT = "guest_point"
+
 # User Model
 class User(Base):
     __tablename__ = "users"
