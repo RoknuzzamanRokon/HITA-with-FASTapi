@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from database import engine
 import models
 import logging
@@ -11,6 +11,9 @@ from routes.hotels import router as hotels_router
 from routes.contents import router as contents_router
 from fastapi.staticfiles import StaticFiles
 import os
+from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import RequestValidationError
+from fastapi.exceptions import RequestValidationError
 
 
 
@@ -23,6 +26,27 @@ logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
+
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Check if the error is about password length
+    for error in exc.errors():
+        if (
+            error["loc"][-1] == "password"
+            and error["type"] == "string_too_short"
+        ):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Need to input valid password and it must be 8 letter long."}
+            )
+    # Default validation error
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()}
+    )
+
 
 app.include_router(auth_router)
 app.include_router(users_router)
