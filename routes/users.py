@@ -228,14 +228,6 @@ def delete_user(
 
 
 
-
-
-
-
-
-
-
-
 @router.post("/points/give")
 def give_points(
     request: GivePointsRequest,
@@ -252,10 +244,10 @@ def give_points(
 
     # Find the receiver by email
     receiver = db.query(models.User).filter(models.User.email == request.receiver_email).first()
-    if not receiver:
+    if not receiver or not receiver.email:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Receiver not found."
+            detail="Receiver not found or receiver does not have a valid email."
         )
 
     # Ensure admin_user can only give points to general_user
@@ -268,8 +260,16 @@ def give_points(
     # Get or create user points for receiver
     receiver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == receiver.id).first()
     if not receiver_points:
-        receiver_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
+        receiver_points = models.UserPoint(
+            user_id=receiver.id,
+            user_email=receiver.email,  # Set email when creating
+            total_points=0,
+            current_points=0,
+            total_used_points=0
+        )
         db.add(receiver_points)
+    # Always ensure email is set for existing records
+    receiver_points.user_email = receiver.email
 
     # Determine points based on allocation type
     if request.allocation_type == models.PointAllocationType.ONE_YEAR_PACKAGE:
@@ -309,13 +309,14 @@ def give_points(
         giver_email=current_user.email,
         receiver_email=receiver.email,
         points=points,
-        transaction_type=request.allocation_type.value,  # Use allocation type value for transaction type
+        transaction_type=request.allocation_type.value,
         created_at=datetime.utcnow()
     )
     db.add(transaction)
     db.commit()
 
     return {"message": f"Successfully gave {points} points to {receiver.username}."}
+
 
 
 
