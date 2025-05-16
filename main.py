@@ -41,6 +41,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 status_code=400,
                 content={"error": "Need to input valid password and it must be 8 letter long."}
             )
+        
+        # Check for email validation error
+        if (
+            error["loc"][-1] == "email"
+            and error["type"] == "value_error"
+        ):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Must need valid email"}
+            )
+        
     # Default validation error
     return JSONResponse(
         status_code=422,
