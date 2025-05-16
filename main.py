@@ -9,6 +9,7 @@ from routes.users import router as users_router
 from routes.hotelsDemo import router as hotels_demo_router
 from routes.hotels import router as hotels_router
 from routes.contents import router as contents_router
+from routes.permissions import router as permissions_router
 from fastapi.staticfiles import StaticFiles
 import os
 from fastapi.responses import JSONResponse
@@ -64,6 +65,7 @@ app.include_router(users_router)
 app.include_router(hotels_demo_router)
 app.include_router(hotels_router)
 app.include_router(contents_router)
+app.include_router(permissions_router)
 
 
 
@@ -76,5 +78,3 @@ static_dir = os.path.join(BASE_DIR, "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # Apply the custom OpenAPI schema
 app.openapi = lambda: custom_openapi(app)
-
-
