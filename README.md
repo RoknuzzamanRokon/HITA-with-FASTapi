@@ -78,7 +78,6 @@ The application will be available at `http://127.0.0.1:8000`.
 - `DELETE /v1.0/hotels/{hotel_id}`: Delete a hotel.
 - `POST /v1.0/hotels/mapping/add_provider`: Add a provider mapping to a hotel.
 
-
 ### Users
 
 - `GET /v1.0/users`: Retrieve a list of users.
@@ -112,3 +111,150 @@ alembic upgrade head
 
 Use the `--reload` flag with `uvicorn` to enable live reloading during development.
 
+## API Examples
+
+### Create a new hotel with all related details
+
+**Endpoint:** `POST /v1.0/hotels/mapping/input_hotel_all_details`
+
+**Request Body:**
+
+```json
+{
+  "name": "Example Hotel",
+  "address_line1": "123 Main St",
+  "address_line2": "Apt 4",
+  "latitude": 34.0522,
+  "longitude": -118.2437,
+  "postal_code": "90001",
+  "property_type": "Hotel",
+  "rating": 4,
+  "map_status": "Mapped",
+  "content_update_status": "Updated",
+  "locations": [
+    {
+      "city_name": "Los Angeles",
+      "city_location_id": "LA123",
+      "city_code": "LAX",
+      "master_city_name": "Los Angeles",
+      "state_name": "California",
+      "state_code": "CA",
+      "country_name": "United States",
+      "country_code": "US"
+    }
+  ],
+  "provider_mappings": [
+    {
+      "provider_id": "Provider123",
+      "provider_name": "ExampleProvider",
+      "system_type": "SystemType",
+      "vervotech_id": "Vervo123",
+      "giata_code": "Giata123"
+    }
+  ],
+  "contacts": [
+    {
+      "contact_type": "Phone",
+      "value": "555-123-4567"
+    }
+  ],
+  "chains": [
+    {
+      "chain_code": "Chain123",
+      "chain_name": "Example Chain"
+    }
+  ]
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": 1,
+  "ittid": "unique_hotel_id",
+  "name": "Example Hotel",
+  "address_line1": "123 Main St",
+  "address_line2": "Apt 4",
+  "latitude": 34.0522,
+  "longitude": -118.2437,
+  "postal_code": "90001",
+  "property_type": "Hotel",
+  "rating": 4,
+  "map_status": "Mapped",
+  "content_update_status": "Updated",
+  "updated_at": "2024-01-01T00:00:00",
+  "created_at": "2024-01-01T00:00:00"
+}
+```
+
+### Get hotel data by provider name and ID
+
+**Endpoint:** `POST /v1.0/content/get_hotel_data_provider_name_and_id`
+
+**Request Body:**
+
+```json
+{
+  "provider_hotel_identity": [
+    {
+      "provider_id": "Provider123",
+      "provider_name": "ExampleProvider"
+    }
+  ]
+}
+```
+
+**Response:**
+
+```json
+[
+  {
+    "hotel": {
+      "id": 1,
+      "ittid": "unique_hotel_id",
+      "latitude": 34.0522,
+      "longitude": -118.2437,
+      "address_line1": "123 Main St",
+      "address_line2": "Apt 4",
+      "postal_code": "90001",
+      "property_type": "Hotel",
+      "name": "Example Hotel",
+      "rating": 4,
+      "map_status": "Mapped",
+      "content_update_status": "Updated",
+      "updated_at": "2024-01-01T00:00:00",
+      "created_at": "2024-01-01T00:00:00"
+    },
+    "provider_mappings": [
+      {
+        "id": 1,
+        "provider_id": "Provider123",
+        "provider_name": "ExampleProvider",
+        "system_type": "SystemType",
+        "vervotech_id": "Vervo123",
+        "giata_code": "Giata123"
+      }
+    ],
+    "locations": [
+      {
+        "id": 1,
+        "city_name": "Los Angeles",
+        "city_location_id": "LA123",
+        "city_code": "LAX",
+        "master_city_name": "Los Angeles",
+        "state_name": "California",
+        "state_code": "CA",
+        "country_name": "United States",
+        "country_code": "US"
+      }
+    ],
+    "contacts": [
+      {
+        "id": 1,
+        "contact_type": "Phone",
+        "value": "555-123-4567"
+      }
+    ]
+  }
+]
