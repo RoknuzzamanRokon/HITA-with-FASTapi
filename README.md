@@ -112,6 +112,3 @@ alembic upgrade head
 
 Use the `--reload` flag with `uvicorn` to enable live reloading during development.
 
-## License
-
-This project is licensed under the MIT License.

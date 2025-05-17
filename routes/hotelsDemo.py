@@ -9,49 +9,14 @@ from utils import require_role, get_current_user
 from models import User
 
 
+
+
 router = APIRouter(
     prefix="/v1.0/hotels/demo",
     tags=["Hotels Demo"],
     responses={404: {"description": "Not found"}},
 )
 
-
-def deduct_points_for_general_user(current_user: models.User, db: Session):
-    """Deduct 10 points for general_user and update the same row for the user."""
-    if current_user.role == models.UserRole.GENERAL_USER:
-        # Get the user's points
-        user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-        if not user_points or user_points.current_points < 10:
-            raise HTTPException(
-                status_code=400,
-                detail="Insufficient points to access this endpoint."
-            )
-
-        # Deduct points
-        user_points.current_points -= 10
-        user_points.total_used_points += 10
-
-        # Check if a deduction transaction already exists for the user
-        existing_transaction = db.query(models.PointTransaction).filter(
-            models.PointTransaction.giver_id == current_user.id,
-            models.PointTransaction.transaction_type == "deduction"
-        ).first()
-
-        if existing_transaction:
-            # Update the existing transaction
-            existing_transaction.points += 10  # Add the deducted points to the existing row
-            existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
-        else:
-            # Create a new transaction if none exists
-            transaction = models.PointTransaction(
-                giver_id=current_user.id,
-                points=10,
-                transaction_type="deduction",
-                created_at=datetime.utcnow()
-            )
-            db.add(transaction)
-
-        db.commit()
 
 
 # Create hotel endpoint with point deduction and response model

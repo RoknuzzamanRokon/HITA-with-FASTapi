@@ -1,15 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from utils import get_current_user
 from database import get_db
-from schemas import UserResponse, UserCreate, User
+from schemas import UserResponse, UserCreate, User, GivePointsRequest
 from typing import Annotated
 import models
 from passlib.context import CryptContext
 import secrets
 from datetime import datetime, timedelta
+from utils import get_current_user, deduct_points_for_general_user
+from models import PointAllocationType
 
-    
+
+
+
+
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -20,41 +24,23 @@ router = APIRouter(
 )
 
 
-def deduct_points_for_general_user(current_user: models.User, db: Session, points: int = 10):
-    """Deduct points for general_user."""
-    # Get the user's points
-    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-    if not user_points or user_points.current_points < points:
-        raise HTTPException(
-            status_code=400,
-            detail="Insufficient points to access this endpoint."
-        )
 
-    # Deduct points
-    user_points.current_points -= points
-    user_points.total_used_points += points
+@router.get("/me", response_model=UserResponse)
+async def read_user_me(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
 
-    # Check if a deduction transaction already exists for the user
-    existing_transaction = db.query(models.PointTransaction).filter(
-        models.PointTransaction.giver_id == current_user.id,
-        models.PointTransaction.transaction_type == "deduction"
-    ).first()
+    # Return the user's details
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "user_status": current_user.role,
+        "created_at": current_user.created_at,
+    }
 
-    if existing_transaction:
-        # Update the existing transaction
-        existing_transaction.points += points
-        existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
-    else:
-        # Create a new transaction if none exists
-        transaction = models.PointTransaction(
-            giver_id=current_user.id,
-            points=points,
-            transaction_type="deduction",
-            created_at=datetime.utcnow()
-        )
-        db.add(transaction)
 
-    db.commit()
 
 
 @router.post("/create-super-admin", response_model=User)
@@ -125,10 +111,10 @@ def create_admin_user(
         )
 
     # Validate input data
-    if not admin_data.get("name") or not admin_data.get("email") or not admin_data.get("business_id") or not admin_data.get("password"):
+    if not admin_data.get("username") or not admin_data.get("email") or not admin_data.get("business_id") or not admin_data.get("password"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid input. 'name', 'email', 'business_id', and 'password' are required."
+            detail="Invalid input. 'username', 'email', 'business_id', and 'password' are required."
         )
 
     # Check if email already exists
@@ -147,7 +133,7 @@ def create_admin_user(
     # Create the admin user
     admin_user = models.User(
         id=unique_id,
-        username=admin_data["name"],
+        username=admin_data["username"],
         email=admin_data["email"],
         hashed_password=hashed_password,
         role=models.UserRole.ADMIN_USER,
@@ -159,7 +145,54 @@ def create_admin_user(
     db.refresh(admin_user)
     return admin_user
 
+@router.post("/create-general-user", response_model=User)
+def create_general_user(
+    user_data: dict,  
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Create a general user (only accessible by super_user or admin_user)."""
+    # Check if the current user is a super_user or admin_user
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user or admin_user can create general users."
+        )
 
+    # Validate input data
+    if not user_data.get("username") or not user_data.get("email") or not user_data.get("password"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input. 'username', 'email', and 'password' are required."
+        )
+
+    # Check if email already exists
+    existing_user = db.query(models.User).filter(models.User.email == user_data["email"]).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists."
+        )
+
+    # Generate a unique ID for the general user
+    unique_id = secrets.token_hex(5)
+
+    hashed_password = pwd_context.hash(user_data["password"])
+
+    # Create the general user
+    general_user = models.User(
+        id=unique_id,
+        username=user_data["username"],
+        email=user_data["email"],
+        hashed_password=hashed_password,
+        role=models.UserRole.GENERAL_USER,
+        api_key=None,
+        is_active=True
+    )
+    db.add(general_user)
+    db.commit()
+    db.refresh(general_user)
+    return general_user
 
 
 @router.delete("/delete-user/{user_id}")
@@ -190,34 +223,18 @@ def delete_user(
 
     return {"message": f"User with ID {user_id} has been deleted."}
 
-@router.get("/me", response_model=UserResponse)
-async def read_user_me(
-    current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
-):
-    """Get details of the current user and deduct 10 points for general_user."""
-    # Deduct points for general_user
-    if current_user.role == models.UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
 
-    # Return the user's details
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "email": current_user.email,
-        "user_status": current_user.role,
-        "created_at": current_user.created_at,
-    }
+
+
 
 
 @router.post("/points/give")
 def give_points(
-    receiver_email: str,
-    points: int,
+    request: GivePointsRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Give points to another user and deduct from giver."""
+    """Give points to another user based on allocation type."""
     # Validate giver's role
     if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
         raise HTTPException(
@@ -226,11 +243,11 @@ def give_points(
         )
 
     # Find the receiver by email
-    receiver = db.query(models.User).filter(models.User.email == receiver_email).first()
-    if not receiver:
+    receiver = db.query(models.User).filter(models.User.email == request.receiver_email).first()
+    if not receiver or not receiver.email:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Receiver not found."
+            detail="Receiver not found or receiver does not have a valid email."
         )
 
     # Ensure admin_user can only give points to general_user
@@ -243,8 +260,31 @@ def give_points(
     # Get or create user points for receiver
     receiver_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == receiver.id).first()
     if not receiver_points:
-        receiver_points = models.UserPoint(user_id=receiver.id, total_points=0, current_points=0, total_used_points=0)
+        receiver_points = models.UserPoint(
+            user_id=receiver.id,
+            user_email=receiver.email,  # Set email when creating
+            total_points=0,
+            current_points=0,
+            total_used_points=0
+        )
         db.add(receiver_points)
+    # Always ensure email is set for existing records
+    receiver_points.user_email = receiver.email
+
+    # Determine points based on allocation type
+    if request.allocation_type == models.PointAllocationType.ONE_YEAR_PACKAGE:
+        points = 1000000
+    elif request.allocation_type == models.PointAllocationType.ONE_MONTH_PACKAGE:
+        points = 100000
+    elif request.allocation_type == models.PointAllocationType.PER_REQUEST_POINT:
+        points = 10000
+    elif request.allocation_type == models.PointAllocationType.GUEST_POINT:
+        points = 1000
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid allocation type."
+        )
 
     # Super users have unlimited points, skip deduction
     if current_user.role != models.UserRole.SUPER_USER:
@@ -269,7 +309,7 @@ def give_points(
         giver_email=current_user.email,
         receiver_email=receiver.email,
         points=points,
-        transaction_type="give",
+        transaction_type=request.allocation_type.value,
         created_at=datetime.utcnow()
     )
     db.add(transaction)
@@ -278,46 +318,77 @@ def give_points(
     return {"message": f"Successfully gave {points} points to {receiver.username}."}
 
 
+
+
+
 @router.get("/points/check/me")
 def get_point_details(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Get point details for the current user."""
+    """Get point details for the current user, grouped by received and used points."""
     user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
     total = user_points.total_points if user_points else 0
     current = user_points.current_points if user_points else 0
     used = user_points.total_used_points if user_points else 0
+    user_email = getattr(user_points, "user_email", None) if user_points else None
 
-    # Rename total_used_points to total_points_used
-    data = {
-        "total_points": total,
-        "current_points": current,
-        "total_points_used": used,
-        "transactions": []
-    }
-
-    # Get transaction history
+    # Get all transactions for the user
     transactions = db.query(models.PointTransaction).filter(
         (models.PointTransaction.giver_id == current_user.id) |
         (models.PointTransaction.receiver_id == current_user.id)
     ).all()
 
+    # Group transactions
+    get_point_history = []
+    uses_request_history = []
+
+    total_used_point = 0
     for t in transactions:
-        data["transactions"].append({
-            "id": t.id,
-            "giver_id": t.giver_id,
-            "giver_email": t.giver_email,
-            "receiver_id": t.receiver_id,
-            "receiver_email": t.receiver_email,
-            "points": t.points,
-            "transaction_type": t.transaction_type,
-            "created_at": t.created_at,
-        })
+        # Points received (current user is receiver)
+        if t.receiver_id == current_user.id and t.transaction_type != "deduction":
+            get_point_history.append({
+                "id": t.id,
+                "giver_id": t.giver_id,
+                "giver_email": t.giver_email,
+                "receiver_id": t.receiver_id,
+                "receiver_email": t.receiver_email,
+                "points": t.points,
+                "transaction_type": t.transaction_type,
+                "created_at": t.created_at,
+            })
+            total_used_point += t.points
+        # Points used (current user is giver and type is deduction)
+        elif t.giver_id == current_user.id and t.transaction_type == "deduction":
+            uses_request_history.append({
+                "id": t.id,
+                "user_id": t.giver_id,
+                "user_email": t.giver_email,
+                "point_used": t.points,
+                "totla_request": t.points // 10 if t.points else 0,  # Assuming 10 points per request
+                "transaction_type": t.transaction_type,
+                "created_at": t.created_at,
+            })
+
+    data = {
+        "user_mail": user_email,
+        "total_points": total,
+        "current_points": current,
+        "total_points_used": used,
+        "transactions": [
+            {
+                "user_name": current_user.username,
+                "user_id": current_user.id,
+                "total_used_point": total_used_point,
+                "get_poit_hitstory": get_point_history
+            },
+            {
+                "uses_request_history": uses_request_history
+            }
+        ]
+    }
 
     return data
-
-
 
 
 @router.get("/super/check/all")

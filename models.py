@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Enum as SQLEnum, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import sessionmaker, relationship, Mapped
 from sqlalchemy import MetaData
 from datetime import datetime
 from database import Base
@@ -11,6 +11,14 @@ class UserRole(str, Enum):
     SUPER_USER = "super_user"
     ADMIN_USER = "admin_user"
     GENERAL_USER = "general_user"
+
+
+# Point Allocation Type
+class PointAllocationType(str, Enum):
+    ONE_YEAR_PACKAGE = "one_year_package"
+    ONE_MONTH_PACKAGE = "one_month_package"
+    PER_REQUEST_POINT = "per_request_point"
+    GUEST_POINT = "guest_point"
 
 # User Model
 class User(Base):
@@ -30,6 +38,7 @@ class User(Base):
     sent_transactions = relationship("PointTransaction", foreign_keys="[PointTransaction.giver_id]", back_populates="giver")
     received_transactions = relationship("PointTransaction", foreign_keys="[PointTransaction.receiver_id]", back_populates="receiver")
     user_points = relationship("UserPoint", back_populates="user", foreign_keys="[UserPoint.user_id]")  # Explicitly specify foreign_keys
+    provider_permissions = relationship("UserProviderPermission", back_populates="user")
 
 
 # Blacklisted Token Model
@@ -70,6 +79,15 @@ class UserPoint(Base):
 
     # Relationships
     user = relationship("User", back_populates="user_points", foreign_keys=[user_id])  # Explicitly specify foreign_keys
+
+
+class UserProviderPermission(Base):
+    __tablename__ = "user_provider_permissions"
+
+    id: Mapped[int] = Column(Integer, primary_key=True)
+    user_id: Mapped[str] = Column(String(50), ForeignKey("users.id"))
+    provider_name: Mapped[str] = Column(String(50))
+    user: Mapped["User"] = relationship(back_populates="provider_permissions")
 
 
 class DemoHotel(Base):
