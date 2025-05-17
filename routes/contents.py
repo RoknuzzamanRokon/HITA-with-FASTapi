@@ -10,6 +10,7 @@ import models
 
 
 
+
 router = APIRouter(
     prefix="/v1.0/content",
     tags=["Hotel Content"],
@@ -24,65 +25,73 @@ class ProviderHotelIdentity(BaseModel):
 class ProviderHotelRequest(BaseModel):
     provider_hotel_identity: List[ProviderHotelIdentity]
 
+
+
 @router.post("/get_hotel_data_provider_name_and_id", status_code=status.HTTP_200_OK)
 def get_hotel_data_provider_name_and_id(
     request: ProviderHotelRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    
-    """Get details of the current user and deduct 10 points for general_user."""
     # Deduct points for general_user
     if current_user.role == models.UserRole.GENERAL_USER:
         deduct_points_for_general_user(current_user, db)
 
-    """Fetch hotel details based on provider name and supplier ID."""
-    result = []
-
-    # Check user permissions
-    if current_user.role == models.UserRole.GENERAL_USER:
+        # load permissions
         allowed_providers = [
-            permission.provider_name
-            for permission in db.query(UserProviderPermission).filter(UserProviderPermission.user_id == current_user.id).all()
+            p.provider_name
+            for p in db.query(UserProviderPermission)
+                      .filter(UserProviderPermission.user_id == current_user.id)
+                      .all()
         ]
-    else:
-        allowed_providers = None  # Allow all providers for non-general users
-
-    for identity in request.provider_hotel_identity:
-        provider_name = identity.provider_name
-
-        if allowed_providers and provider_name not in allowed_providers:
+        # **early error if truly no permissions**
+        if not allowed_providers:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Do not have permission to get."
+                detail="you have not any permission for this request."
             )
+    else:
+        # if you really want _everyone else_ blocked until you grant, 
+        # you could also force them into the same error here.
+        allowed_providers = None  
 
-        provider_mapping = db.query(ProviderMapping).filter(
-            ProviderMapping.provider_id == identity.provider_id,
-            ProviderMapping.provider_name == provider_name
-        ).first()
+    # now you know GENERAL_USER has at least one allowed_provider
+    # (or everyone else is None → full access)
 
-        if not provider_mapping:
+    result = []
+    for identity in request.provider_hotel_identity:
+        name = identity.provider_name
+        if allowed_providers and name not in allowed_providers:
             continue
 
-        hotel = db.query(Hotel).filter(Hotel.ittid == provider_mapping.ittid).first()
+        mapping = (
+            db.query(ProviderMapping)
+              .filter_by(provider_id=identity.provider_id,
+                         provider_name=name)
+              .first()
+        )
+        if not mapping:
+            continue
+
+        hotel = db.query(Hotel).filter(Hotel.ittid == mapping.ittid).first()
         if not hotel:
             continue
 
         locations = db.query(Location).filter(Location.ittid == hotel.ittid).all()
-        contacts = db.query(Contact).filter(Contact.ittid == hotel.ittid).all()
+        contacts  = db.query(Contact).filter(Contact.ittid == hotel.ittid).all()
 
         result.append({
             "hotel": hotel,
-            "provider_mappings": [provider_mapping],
+            "provider_mappings": [mapping],
             "locations": locations,
             "contacts": contacts
         })
 
     if not result:
+        # either they had permissions but none matched the request
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No matching hotels found for the provided provider identities."
+            detail="Cannot add any supplier."
         )
 
     return result
@@ -90,6 +99,7 @@ def get_hotel_data_provider_name_and_id(
 
 class ITTIDRequest(BaseModel):
     ittid: List[str]
+
 
 
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
