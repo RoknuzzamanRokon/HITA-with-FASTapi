@@ -25,7 +25,6 @@ def grant_provider_permissions(
 ):
     provider_names = request.provider_activision_list 
     
-    """Grant provider permissions to a general user (only accessible by super_user or admin_user)."""
     # Check if the current user is a super_user or admin_user
     if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
         raise HTTPException(
@@ -48,24 +47,20 @@ def grant_provider_permissions(
             detail="Can only grant permissions to general users."
         )
     
-    existing_permissions = db.query(UserProviderPermission).filter(UserProviderPermission.user_id == user_id).all()
-    existing_provider_names = {perm.provider_name for perm in existing_permissions}
-
-    # Remove existing permissions for the user
-    # Add only new permissions
     for provider_name in provider_names:
-        if provider_name not in existing_provider_names:
-            permission = UserProviderPermission(user_id=user_id, provider_name=provider_name)
-            db.add(permission)
+        existing_permission = db.query(UserProviderPermission).filter_by(
+            user_id=user_id, provider_name=provider_name
+        ).first()
+        
+        if not existing_permission:
+            # Create new permission
+            new_permission = UserProviderPermission(user_id=user_id, provider_name=provider_name)
+            db.add(new_permission)
+        else:
+            # Optionally update fields here if needed
+            # For now we do nothing, just skip to avoid duplicate
+            pass
 
     db.commit()
 
-    # Add new permissions
-    for provider_name in provider_names:
-        permission = UserProviderPermission(user_id=user_id, provider_name=provider_name)
-        db.add(permission)
-
-    db.commit()
-
-    return {"message": f"Successfully granted permissions to user {user_id} for providers: {provider_names}"}
-    
+    return {"message": f"Successfully updated permissions for user {user_id} with providers: {provider_names}"}
