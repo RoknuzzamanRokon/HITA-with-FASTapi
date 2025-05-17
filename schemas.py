@@ -20,7 +20,7 @@ class User(BaseModel):
     email: EmailStr
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class Token(BaseModel):
     access_token: str
@@ -34,7 +34,7 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Hotel Schemas ---
 class LocationCreate(BaseModel):
@@ -90,7 +90,7 @@ class HotelReadDemo(HotelCreateDemo):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 
@@ -117,7 +117,7 @@ class HotelRead(HotelCreate):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class HotelUpdate(BaseModel):
     ittid: Optional[str] = Field(None, max_length=50)
