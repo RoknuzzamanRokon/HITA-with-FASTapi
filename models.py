@@ -128,7 +128,7 @@ class Hotel(Base):
     property_type = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    map_status = Column(SQLEnum("pending", "updated", name="map_status_enum"), default="pending")
+    map_status = Column(SQLEnum("new", "pending", "updated", name="map_status_enum"), default="pending")
     content_update_status = Column(String(15), nullable=True)
 
     # Relationships
