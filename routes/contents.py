@@ -296,13 +296,13 @@ def get_hotel_with_provider(
         if not allowed_providers:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Do not have parmision or not active"
+                detail="Do not have permission or not active"
             )
         provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == ittid, models.ProviderMapping.provider_name.in_(allowed_providers)).all()
         if not provider_mappings:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Do not have parmision or not active"
+                detail="Do not have permission or not active"
             )
     else:
         provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == ittid).all()
@@ -311,3 +311,35 @@ def get_hotel_with_provider(
     chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
     contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
     return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "chains": chains, "contacts": contacts}
+
+
+@router.get("/delete_a_hotel/{ittid}", status_code=status.HTTP_200_OK)
+def delete_hotel(
+    ittid: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    # Only SUPER_USER can delete hotels
+    if current_user.role != models.UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super users can delete hotels."
+        )
+
+    hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
+    if not hotel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Hotel with ittid '{ittid}' not found."
+        )
+
+    # Optionally delete related data (ProviderMapping, Location, Contact, etc.)
+    db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == ittid).delete()
+    db.query(models.Location).filter(models.Location.ittid == ittid).delete()
+    db.query(models.Contact).filter(models.Contact.ittid == ittid).delete()
+    db.query(models.Chain).filter(models.Chain.ittid == ittid).delete()
+
+    db.delete(hotel)
+    db.commit()
+
+    return {"message": f"Hotel with ittid '{ittid}' and related data deleted successfully."}
