@@ -364,21 +364,7 @@ def get_all_hotels(
     Deduct points for general users.
     """
     # Deduct points for general_user
-    if current_user.role == UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
-        allowed_providers = [
-            p.provider_name
-            for p in db.query(UserProviderPermission)
-                      .filter(UserProviderPermission.user_id == current_user.id)
-                      .all()
-        ]
-        if not allowed_providers:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have any permission for this request."
-            )
-    else:
-        allowed_providers = None
+    deduct_points_for_general_user(current_user, db)
 
     # Decode resume_key if present (assume it's the last hotel id, encoded)
     last_id = 0
@@ -396,14 +382,6 @@ def get_all_hotels(
     if last_id:
         query = query.filter(Hotel.id > last_id)
 
-    # Filter by allowed providers for general users
-    if allowed_providers is not None:
-        # Only include hotels that have at least one allowed provider mapping
-        hotel_ids = db.query(ProviderMapping.ittid).filter(
-            ProviderMapping.provider_name.in_(allowed_providers)
-        ).distinct().all()
-        hotel_ids = [h[0] for h in hotel_ids]
-        query = query.filter(Hotel.ittid.in_(hotel_ids))
 
     hotels = query.limit(limit).all()
 
@@ -433,11 +411,11 @@ def get_all_hotels(
         for hotel in hotels
     ]
 
+    total_hotel = db.query(Hotel).count()
     return {
         "resume_key": next_resume_key,
         "page": page,
         "limit": limit,
-        "count": len(hotel_list),
+        "total_hotel": total_hotel,
         "hotels": hotel_list
-
     }
