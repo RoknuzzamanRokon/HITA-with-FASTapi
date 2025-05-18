@@ -169,6 +169,8 @@ class ProviderMapping(Base):
                         default='a')
     vervotech_id = Column(String(50), nullable=True)
     giata_code = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     hotel = relationship("Hotel", back_populates="provider_mappings")
