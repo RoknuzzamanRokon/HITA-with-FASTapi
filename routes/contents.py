@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
@@ -7,6 +7,8 @@ from typing import List, Optional, Annotated
 from datetime import datetime
 from utils import get_current_user, deduct_points_for_general_user
 import models
+import secrets
+import string
 
 
 
@@ -343,3 +345,99 @@ def delete_hotel(
     db.commit()
 
     return {"message": f"Hotel with ittid '{ittid}' and related data deleted successfully."}
+
+
+
+
+@router.get("/get_all_hotel_info", status_code=status.HTTP_200_OK)
+def get_all_hotels(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    page: int = Query(1, ge=1, description="Page number, starting from 1"),
+    limit: int = Query(50, ge=1, le=1000, description="Number of hotels per page (max 1000)"),
+    resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a paginated list of hotels. Use 'limit' to set page size (max 1000).
+    Use 'resume_key' to get the next page (opaque random string).
+    Only hotels accessible by the user's provider permissions are returned.
+    Deduct points for general users.
+    """
+    # Deduct points for general_user
+    if current_user.role == UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+        allowed_providers = [
+            p.provider_name
+            for p in db.query(UserProviderPermission)
+                      .filter(UserProviderPermission.user_id == current_user.id)
+                      .all()
+        ]
+        if not allowed_providers:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have any permission for this request."
+            )
+    else:
+        allowed_providers = None
+
+    # Decode resume_key if present (assume it's the last hotel id, encoded)
+    last_id = 0
+    if resume_key:
+        try:
+            # For simplicity, store the last id as a string at the start of the resume_key
+            last_id = int(resume_key.split("_")[0])
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid resume_key."
+            )
+
+    query = db.query(Hotel).order_by(Hotel.id)
+    if last_id:
+        query = query.filter(Hotel.id > last_id)
+
+    # Filter by allowed providers for general users
+    if allowed_providers is not None:
+        # Only include hotels that have at least one allowed provider mapping
+        hotel_ids = db.query(ProviderMapping.ittid).filter(
+            ProviderMapping.provider_name.in_(allowed_providers)
+        ).distinct().all()
+        hotel_ids = [h[0] for h in hotel_ids]
+        query = query.filter(Hotel.ittid.in_(hotel_ids))
+
+    hotels = query.limit(limit).all()
+
+    # Prepare next resume_key (random string + last hotel id)
+    if hotels and len(hotels) == limit:
+        last_hotel_id = hotels[-1].id
+        rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
+        next_resume_key = f"{last_hotel_id}_{rand_str}"
+    else:
+        next_resume_key = None
+
+    hotel_list = [
+        {
+            "ittid": hotel.ittid,
+            "name": hotel.name,
+            "property_type": hotel.property_type,
+            "geocode": {
+                "latitude": hotel.latitude,
+                "longitude": hotel.longitude},
+            "address_line1": hotel.address_line1,
+            "address_line2": hotel.address_line2,
+            "postal_code": hotel.postal_code,
+            "rating": hotel.rating,
+            "updated_at": hotel.updated_at,
+            "created_at": hotel.created_at,
+        }
+        for hotel in hotels
+    ]
+
+    return {
+        "resume_key": next_resume_key,
+        "page": page,
+        "limit": limit,
+        "count": len(hotel_list),
+        "hotels": hotel_list
+
+    }
