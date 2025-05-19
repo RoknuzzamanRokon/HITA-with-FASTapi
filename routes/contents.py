@@ -5,12 +5,10 @@ from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermis
 from pydantic import BaseModel
 from typing import List, Optional, Annotated
 from datetime import datetime
-from utils import get_current_user, deduct_points_for_general_user
+from utils import get_current_user, deduct_points_for_general_user, require_role
 import models
 import secrets
 import string
-
-
 
 
 router = APIRouter(
@@ -348,12 +346,11 @@ def delete_hotel(
 
 
 
-
 @router.get("/get_all_hotel_info", status_code=status.HTTP_200_OK)
 def get_all_hotels(
     current_user: Annotated[models.User, Depends(get_current_user)],
     page: int = Query(1, ge=1, description="Page number, starting from 1"),
-    limit: int = Query(50, ge=1, le=1000, description="Number of hotels per page (max 1000)"),
+    limit: int = Query(50, ge=1, le=100, description="Number of hotels per page (max 100)"),
     resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
     db: Session = Depends(get_db)
 ):
@@ -363,14 +360,28 @@ def get_all_hotels(
     Only hotels accessible by the user's provider permissions are returned.
     Deduct points for general users.
     """
-    # Deduct points for general_user
-    deduct_points_for_general_user(current_user, db)
+
+    # Deduct points and filter for general users
+    if current_user.role == UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+        allowed_providers = [
+            p.provider_name
+            for p in db.query(UserProviderPermission)
+                      .filter(UserProviderPermission.user_id == current_user.id)
+                      .all()
+        ]
+        if not allowed_providers:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have any permission for this request."
+            )
+    else:
+        allowed_providers = None
 
     # Decode resume_key if present (assume it's the last hotel id, encoded)
     last_id = 0
     if resume_key:
         try:
-            # For simplicity, store the last id as a string at the start of the resume_key
             last_id = int(resume_key.split("_")[0])
         except Exception:
             raise HTTPException(
@@ -382,6 +393,13 @@ def get_all_hotels(
     if last_id:
         query = query.filter(Hotel.id > last_id)
 
+    # Filter by allowed providers for general users
+    if allowed_providers is not None:
+        hotel_ids = db.query(ProviderMapping.ittid).filter(
+            ProviderMapping.provider_name.in_(allowed_providers)
+        ).distinct().all()
+        hotel_ids = [h[0] for h in hotel_ids]
+        query = query.filter(Hotel.ittid.in_(hotel_ids))
 
     hotels = query.limit(limit).all()
 
@@ -396,15 +414,18 @@ def get_all_hotels(
     hotel_list = [
         {
             "ittid": hotel.ittid,
-            "name": hotel.name,
-            "property_type": hotel.property_type,
             "geocode": {
                 "latitude": hotel.latitude,
-                "longitude": hotel.longitude},
+                "longitude": hotel.longitude
+            },
             "address_line1": hotel.address_line1,
             "address_line2": hotel.address_line2,
             "postal_code": hotel.postal_code,
+            "property_type": hotel.property_type,
+            "name": hotel.name,
             "rating": hotel.rating,
+            "map_status": hotel.map_status,
+            "content_update_status": hotel.content_update_status,
             "updated_at": hotel.updated_at,
             "created_at": hotel.created_at,
         }
