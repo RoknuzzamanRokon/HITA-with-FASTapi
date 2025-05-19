@@ -439,6 +439,7 @@ def super_check_all(
         # Add user details to the appropriate list
         user_info = {
             "id": user.id,
+            "username": user.username,
             "email": user.email,
             "points": points_info,
             "created_at": user.created_at,
@@ -452,3 +453,26 @@ def super_check_all(
             response["general_users"].append(user_info)
 
     return response
+
+
+@router.get("/active_my_supplier")
+def active_my_supplier(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Return a list of active suppliers (provider names) for the current user.
+    """
+    suppliers = [
+        perm.provider_name
+        for perm in db.query(models.UserProviderPermission)
+                      .filter(models.UserProviderPermission.user_id == current_user.id)
+                      .all()
+    ]
+    unique_suppliers = list(set(suppliers))
+    if not unique_suppliers:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active suppliers found. Please contact your admin."
+        )
+    return {"my_supplier": unique_suppliers}

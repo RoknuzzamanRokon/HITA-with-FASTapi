@@ -96,6 +96,9 @@ def add_provider(
           .first()
     )
     if existing:
+        print(
+            f"⏩ Skipping: provider_name={provider_name}, provider_id={provider_id}, ittid={ittid} (already exists)"
+        )
         # 200 OK but indicate no new row was created
         return {
             "message": "Provider mapping already exists; skipping.",

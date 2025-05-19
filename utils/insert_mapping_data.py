@@ -65,60 +65,43 @@ SUFFIX_MAP = {
 # --- CORE LOGIC --- #
 
 def build_payload(row, provider, suffix):
-    col = provider + suffix
-    pid = getattr(row, col, None)
-    if pid is None:
+    col_name = provider + suffix
+    provider_id = getattr(row, col_name, None)
+    if provider_id is None:
         return None
 
+    vervo = getattr(row, "VervotechId", None)
+    giata = getattr(row, "GiataCode",    None)
+
     return {
-        "ittid":         row.ittid,
-        "provider_name": provider,
-        "provider_id":   pid,
-        "system_type":   SUFFIX_MAP[suffix],
-        "vervotech_id":  getattr(row, "VervotechId", None),
-        "giata_code":    getattr(row, "GiataCode",    None)
+        "ittid":           row.ittid,
+        "provider_name":   provider,
+        "provider_id":     provider_id,
+        "system_type":     SUFFIX_MAP[suffix],
+        "vervotech_id":    vervo,
+        "giata_code":      giata
     }
 
+
 def fetch_all_mappings(engine):
-    meta  = MetaData()  
+    meta  = MetaData()
     table = Table("hotel_test_mapping", meta, autoload_with=engine)
     with Session(engine) as sess:
         return sess.execute(select(table)).all()
 
-def fetch_existing_mappings(engine):
-    """
-    Returns two sets:
-      - existing_triples: (ittid, provider_name, provider_id)
-      - existing_pairs:   (provider_name, provider_id)
-    """
-    meta = MetaData()
-    tgt  = Table("provider_mappings", meta, autoload_with=engine)
-    stmt = select(
-        tgt.c.ittid,
-        tgt.c.provider_name,
-        tgt.c.provider_id
-    )
-    with Session(engine) as sess:
-        triples = set()
-        pairs   = set()
-        for row in sess.execute(stmt):
-            triples.add((row.ittid, row.provider_name, row.provider_id))
-            pairs.add((row.provider_name, row.provider_id))
-        return triples, pairs
 
 def post_mapping(session, headers, payload):
+    """POST and return the payload on success."""
     resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
     resp.raise_for_status()
-    return payload
+    return payload  # return what we just sent
+
 
 def main():
-    engine   = get_database_engine()
-    headers  = get_headers()
-    rows     = fetch_all_mappings(engine)
-    existing = fetch_existing_mappings(engine)
+    engine  = get_database_engine()
+    headers = get_headers()
+    rows    = fetch_all_mappings(engine)
 
-    # Also track in‐run payloads
-    existing_triples, existing_pairs = fetch_existing_mappings(engine)
     seen = set()
 
     with requests.Session() as sess, ThreadPoolExecutor(max_workers=50) as executor:
@@ -131,42 +114,27 @@ def main():
                     if not payload:
                         continue
 
-                    triple = (
-                        payload["ittid"],
-                        payload["provider_name"],
-                        payload["provider_id"]
-                    )
-                    pair   = (
-                        payload["provider_name"],
-                        payload["provider_id"]
-                    )
-
-                    # skip if already in DB by triple OR by pair
-                    if triple in existing_triples or pair in existing_pairs:
-                        print("--------------------------------------------------Triple skipping -----------------------------------------------------")
+                    key = (payload["provider_name"], payload["provider_id"])
+                    if key in seen:
                         continue
+                    seen.add(key)
 
-                    # also skip duplicates within this run
-                    if pair in seen:
-                        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Pair skipping")
-                        continue
-
-                    seen.add(pair)
                     futures.append(
                         executor.submit(post_mapping, sess, headers, payload)
                     )
 
         for fut in as_completed(futures):
             try:
-                p = fut.result()
+                payload = fut.result()
                 print(
-                    f"✅ Inserted: itt id={p['ittid']} | "
-                    f"provider={p['provider_name']} | "
-                    f"id={p['provider_id']} | "
-                    f"type={p['system_type']}"
+                    f"✅ Inserted: itt id={payload['ittid']} | "
+                    f"provider={payload['provider_name']} | "
+                    f"id={payload['provider_id']} | "
+                    f"type={payload['system_type']}"
                 )
             except Exception as e:
                 print("❌ Error:", e)
+
 
 if __name__ == "__main__":
     main()
