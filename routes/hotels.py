@@ -61,21 +61,24 @@ def create_hotel_with_details(
         )
     
 
-
-@router.post("/mapping/add_provider_all_details_with_ittid", status_code=status.HTTP_201_CREATED)
+    
+@router.post(
+    "/mapping/add_provider_all_details_with_ittid",
+    status_code=status.HTTP_201_CREATED
+)
 def add_provider(
     provider_data: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) 
+    current_user: User = Depends(get_current_user)
 ):
     """Add a provider mapping for an existing hotel."""
-    # Check if the user has the required role
     require_role(["super_user", "admin_user"], current_user)
 
-    # Extract the `ittid` from the request body
-    ittid = provider_data.get("ittid")
+    ittid          = provider_data.get("ittid")
+    provider_name  = provider_data.get("provider_name")
+    provider_id    = provider_data.get("provider_id")
 
-    # Check if the hotel with the given `ittid` exists
+    # 1️⃣  Verify hotel exists
     hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
     if not hotel:
         raise HTTPException(
@@ -83,17 +86,37 @@ def add_provider(
             detail=f"Hotel with ittid '{ittid}' not found."
         )
 
-    # Create a new provider mapping
+    # 2️⃣  Skip if provider_name + provider_id already exist
+    existing = (
+        db.query(models.ProviderMapping)
+          .filter(
+              models.ProviderMapping.provider_name == provider_name,
+              models.ProviderMapping.provider_id   == provider_id
+          )
+          .first()
+    )
+    if existing:
+        # 200 OK but indicate no new row was created
+        return {
+            "message": "Provider mapping already exists; skipping.",
+            "provider_mapping": existing
+        }
+
+    # 3️⃣  Otherwise, create a new mapping
     try:
         provider_mapping = models.ProviderMapping(**provider_data)
         db.add(provider_mapping)
         db.commit()
         db.refresh(provider_mapping)
-        return {"message": "Provider mapping added successfully.", "provider_mapping": provider_mapping}
+        return {
+            "message": "Provider mapping added successfully.",
+            "provider_mapping": provider_mapping
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error adding provider mapping: {str(e)}"
         )
+
     

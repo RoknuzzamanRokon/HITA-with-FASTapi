@@ -80,28 +80,31 @@ def build_payload(row, provider, suffix):
     }
 
 def fetch_all_mappings(engine):
-    meta  = MetaData(bind=engine)
+    meta  = MetaData()  
     table = Table("hotel_test_mapping", meta, autoload_with=engine)
     with Session(engine) as sess:
         return sess.execute(select(table)).all()
 
 def fetch_existing_mappings(engine):
     """
-    Load all (ittid, provider_name, provider_id) triples
-    from the target table to avoid duplicates.
+    Returns two sets:
+      - existing_triples: (ittid, provider_name, provider_id)
+      - existing_pairs:   (provider_name, provider_id)
     """
-    meta  = MetaData(bind=engine)
-    tgt   = Table("hotel_provider_mapping", meta, autoload_with=engine)
-    stmt  = select(
+    meta = MetaData()
+    tgt  = Table("provider_mappings", meta, autoload_with=engine)
+    stmt = select(
         tgt.c.ittid,
         tgt.c.provider_name,
         tgt.c.provider_id
     )
     with Session(engine) as sess:
-        return {
-            (row.ittid, row.provider_name, row.provider_id)
-            for row in sess.execute(stmt)
-        }
+        triples = set()
+        pairs   = set()
+        for row in sess.execute(stmt):
+            triples.add((row.ittid, row.provider_name, row.provider_id))
+            pairs.add((row.provider_name, row.provider_id))
+        return triples, pairs
 
 def post_mapping(session, headers, payload):
     resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
@@ -115,9 +118,10 @@ def main():
     existing = fetch_existing_mappings(engine)
 
     # Also track in‐run payloads
+    existing_triples, existing_pairs = fetch_existing_mappings(engine)
     seen = set()
 
-    with requests.Session() as sess, ThreadPoolExecutor(max_workers=10) as executor:
+    with requests.Session() as sess, ThreadPoolExecutor(max_workers=50) as executor:
         futures = []
 
         for row in rows:
@@ -127,17 +131,27 @@ def main():
                     if not payload:
                         continue
 
-                    key = (
+                    triple = (
                         payload["ittid"],
                         payload["provider_name"],
                         payload["provider_id"]
                     )
+                    pair   = (
+                        payload["provider_name"],
+                        payload["provider_id"]
+                    )
 
-                    # skip if already in DB or already sent in this run
-                    if key in existing or key in seen:
+                    # skip if already in DB by triple OR by pair
+                    if triple in existing_triples or pair in existing_pairs:
+                        print("--------------------------------------------------Triple skipping -----------------------------------------------------")
                         continue
 
-                    seen.add(key)
+                    # also skip duplicates within this run
+                    if pair in seen:
+                        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~Pair skipping")
+                        continue
+
+                    seen.add(pair)
                     futures.append(
                         executor.submit(post_mapping, sess, headers, payload)
                     )
