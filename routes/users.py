@@ -476,3 +476,27 @@ def active_my_supplier(
             detail="No active suppliers found. Please contact your admin."
         )
     return {"my_supplier": unique_suppliers}
+
+
+
+@router.get("/get_list_of_suppliers")
+def get_list_of_suppliers(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Return a list of all unique supplier (provider_name) values from provider_mappings.
+    """
+    suppliers = [
+        row.provider_name
+        for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+    ]
+    if not suppliers:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No suppliers found. Please contact your admin."
+        )
+    return {
+        "total_supplier": len(suppliers),
+        "supplier_list": suppliers
+    }
