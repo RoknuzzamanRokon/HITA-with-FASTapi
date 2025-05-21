@@ -195,7 +195,7 @@ def create_general_user(
     return general_user
 
 
-@router.delete("/delete-user/{user_id}")
+@router.delete("/delete_user/{user_id}")
 def delete_user(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],

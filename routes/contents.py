@@ -519,3 +519,38 @@ def delete_hotel_by_ittid(
     db.commit()
 
     return {"message": f"Hotel with ittid '{ittid}' and all related data deleted successfully."}
+
+
+
+@router.delete("/delete_a_hotel_mapping", status_code=status.HTTP_200_OK)
+def delete_a_hotel_mapping(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    provider_name: str = Query(..., description="Provider name"),
+    provider_id: str = Query(..., description="Provider ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a specific provider mapping for a hotel by ittid, provider_name, and provider_id.
+    Only SUPER_USER can access this endpoint.
+    """
+    if current_user.role != UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super users can delete hotel mappings."
+        )
+
+    mapping = db.query(ProviderMapping).filter(
+        ProviderMapping.provider_name == provider_name,
+        ProviderMapping.provider_id == provider_id
+    ).first()
+
+    if not mapping:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Provider mapping not found."
+        )
+
+    db.delete(mapping)
+    db.commit()
+
+    return {"message": f"Mapping for provider '{provider_name}', provider_id '{provider_id}' deleted successfully."}
