@@ -496,7 +496,7 @@ def get_update_provider_info(
 
 
 
-@router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK)
+@router.delete("/delete/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK)
 def delete_hotel_by_ittid(
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -532,7 +532,7 @@ def delete_hotel_by_ittid(
 
 
 
-@router.delete("/delete_a_hotel_mapping", status_code=status.HTTP_200_OK)
+@router.delete("/delete/delete_a_hotel_mapping", status_code=status.HTTP_200_OK)
 def delete_a_hotel_mapping(
     current_user: Annotated[models.User, Depends(get_current_user)],
     provider_name: str = Query(..., description="Provider name"),
