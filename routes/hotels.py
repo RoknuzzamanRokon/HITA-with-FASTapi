@@ -3,11 +3,10 @@ from sqlalchemy.orm import Session
 from database import get_db
 from schemas import HotelCreate, HotelRead
 import models
-from models import User  # Import the User model
-from utils import require_role, get_current_user  # Import get_current_user
-
+from utils import require_role, get_current_user  
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional, Annotated
+from models import User, Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
 
 
 
@@ -122,4 +121,4 @@ def add_provider(
             detail=f"Error adding provider mapping: {str(e)}"
         )
 
-    
+

@@ -314,38 +314,6 @@ def get_hotel_with_provider(
     return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "chains": chains, "contacts": contacts}
 
 
-@router.get("/delete_a_hotel/{ittid}", status_code=status.HTTP_200_OK)
-def delete_hotel(
-    ittid: str,
-    current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Session = Depends(get_db)
-):
-    # Only SUPER_USER can delete hotels
-    if current_user.role != models.UserRole.SUPER_USER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super users can delete hotels."
-        )
-
-    hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
-    if not hotel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Hotel with ittid '{ittid}' not found."
-        )
-
-    # Optionally delete related data (ProviderMapping, Location, Contact, etc.)
-    db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == ittid).delete()
-    db.query(models.Location).filter(models.Location.ittid == ittid).delete()
-    db.query(models.Contact).filter(models.Contact.ittid == ittid).delete()
-    db.query(models.Chain).filter(models.Chain.ittid == ittid).delete()
-
-    db.delete(hotel)
-    db.commit()
-
-    return {"message": f"Hotel with ittid '{ittid}' and related data deleted successfully."}
-
-
 
 @router.get("/get_all_hotel_info", status_code=status.HTTP_200_OK)
 def get_all_hotels(
@@ -513,3 +481,41 @@ def update_provider_info(
         "count": len(result),
         "provider_mappings": result
     }
+
+
+
+
+
+@router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK)
+def delete_hotel_by_ittid(
+    ittid: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a hotel and all related information by ittid.
+    Only SUPER_USER can access this endpoint.
+    """
+    if current_user.role != UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super users can delete hotels."
+        )
+
+    hotel = db.query(Hotel).filter(Hotel.ittid == ittid).first()
+    if not hotel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Hotel with ittid '{ittid}' not found."
+        )
+
+    # Delete related data
+    db.query(ProviderMapping).filter(ProviderMapping.ittid == ittid).delete()
+    db.query(Location).filter(Location.ittid == ittid).delete()
+    db.query(Contact).filter(Contact.ittid == ittid).delete()
+    db.query(models.Chain).filter(models.Chain.ittid == ittid).delete()
+
+    db.delete(hotel)
+    db.commit()
+
+    return {"message": f"Hotel with ittid '{ittid}' and all related data deleted successfully."}
