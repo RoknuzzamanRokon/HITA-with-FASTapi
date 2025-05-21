@@ -30,6 +30,19 @@ async def read_user_me(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
+    """Get the current user's details."""
+    user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
+    print("This Is User Point.", user_points)
+    available_points = user_points.current_points if user_points else 0
+    total_points = user_points.total_points if user_points else 0
+
+    suppliers = [
+        perm.provider_name
+        for perm in db.query(models.UserProviderPermission)
+                       .filter(models.UserProviderPermission.user_id == current_user.id)
+                       .all()
+    ]
+    active_supplier = list(set(suppliers))
 
     # Return the user's details
     return {
@@ -37,7 +50,12 @@ async def read_user_me(
         "username": current_user.username,
         "email": current_user.email,
         "user_status": current_user.role,
+        "available_points": available_points,
+        "total_points": total_points,
+        "active_supplier": active_supplier,
         "created_at": current_user.created_at,
+        "updated_at": current_user.updated_at,
+        "need_to_next_upgrade": "It function is not implemented yet",
     }
 
 

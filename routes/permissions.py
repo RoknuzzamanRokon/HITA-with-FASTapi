@@ -16,7 +16,7 @@ class ProviderPermissionRequest(BaseModel):
     provider_activision_list: List[str]
 
 
-@router.post("/for_supplier", status_code=status.HTTP_200_OK)
+@router.post("/active_supplier", status_code=status.HTTP_200_OK)
 def grant_provider_permissions(
     user_id: str,
     request: ProviderPermissionRequest, 

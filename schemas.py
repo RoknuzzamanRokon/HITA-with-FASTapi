@@ -29,12 +29,17 @@ class Token(BaseModel):
 class UserResponse(BaseModel):
     id: str
     username: str
-    email: EmailStr
+    email: str
     user_status: str
+    available_points: int
+    total_points: int
+    active_supplier: List[str]
     created_at: datetime
+    updated_at: Optional[datetime]
+    need_to_next_upgrade: str
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 # --- Hotel Schemas ---
 class LocationCreate(BaseModel):
@@ -149,3 +154,6 @@ from models import PointAllocationType
 class GivePointsRequest(BaseModel):
     receiver_email: EmailStr
     allocation_type: PointAllocationType
+
+
+
