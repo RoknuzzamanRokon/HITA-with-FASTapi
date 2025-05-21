@@ -380,7 +380,7 @@ def get_point_details(
                 "user_name": current_user.username,
                 "user_id": current_user.id,
                 "total_used_point": total_used_point,
-                "get_poit_hitstory": get_point_history
+                "get_point_history": get_point_history
             },
             {
                 "uses_request_history": uses_request_history
@@ -397,24 +397,23 @@ def super_check_all(
     db: Annotated[Session, Depends(get_db)]
 ):
     """Get details of all users (only accessible by super_user)."""
-    # Ensure the current user is a super_user
     if current_user.role != models.UserRole.SUPER_USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super_user can access this endpoint."
         )
 
-    # Query all users
     users = db.query(models.User).all()
 
-    # Prepare the response
     response = {
+        "total_super_user": 0,
+        "total_admin_users": 0,
+        "total_general_users": 0,
         "admin_users": [],
         "general_users": []
     }
 
     for user in users:
-        # Get user points
         user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
         points_info = {
             "total_points": user_points.total_points if user_points else 0,
@@ -425,7 +424,6 @@ def super_check_all(
             ).count() 
         }
 
-        # Check if the user has transactions in the last 7 days
         last_7_days = datetime.utcnow() - timedelta(days=7)
         recent_transactions = db.query(models.PointTransaction).filter(
             (models.PointTransaction.giver_id == user.id) |
@@ -433,10 +431,8 @@ def super_check_all(
             models.PointTransaction.created_at >= last_7_days
         ).count()
 
-        # Determine using_rq_status
         using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
 
-        # Add user details to the appropriate list
         user_info = {
             "id": user.id,
             "username": user.username,
@@ -447,10 +443,14 @@ def super_check_all(
             "is_active": user.is_active,
             "using_rq_status": using_rq_status
         }
-        if user.role == models.UserRole.ADMIN_USER:
+        if user.role == models.UserRole.SUPER_USER:
+            response["total_super_user"] += 1
+        elif user.role == models.UserRole.ADMIN_USER:
             response["admin_users"].append(user_info)
+            response["total_admin_users"] += 1
         elif user.role == models.UserRole.GENERAL_USER:
             response["general_users"].append(user_info)
+            response["total_general_users"] += 1
 
     return response
 
