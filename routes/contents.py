@@ -393,8 +393,6 @@ def get_all_hotels(
             "property_type": hotel.property_type,
             "name": hotel.name,
             "rating": hotel.rating,
-            "map_status": hotel.map_status,
-            "content_update_status": hotel.content_update_status,
             "updated_at": hotel.updated_at,
             "created_at": hotel.created_at,
         }
@@ -414,8 +412,9 @@ def get_all_hotels(
 
 
 
-@router.get("/update_provider_info")
-def update_provider_info(
+
+@router.get("/get_update_provider_info")
+def get_update_provider_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
     limit_per_page: int = Query(50, ge=1, le=100, description="Number of records per page"),
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
@@ -426,45 +425,53 @@ def update_provider_info(
     """
     Get all new and updated provider mapping data for the user's active suppliers,
     filtered by date range and paginated.
+    Super users see all mappings.
     """
-    # Parse dates
     try:
         from_dt = datetime.strptime(from_date, "%Y-%m-%d")
         to_dt = datetime.strptime(to_date, "%Y-%m-%d")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    # Get user's active suppliers
-    allowed_providers = [
-        perm.provider_name
-        for perm in db.query(UserProviderPermission)
-                      .filter(UserProviderPermission.user_id == current_user.id)
-                      .all()
-    ]
-    if not allowed_providers:
-        return {"message": "Please contact your admin."}
+    # Super users see all, others see only their allowed providers
+    if current_user.role == UserRole.SUPER_USER:
+        allowed_providers = None
+    else:
+        allowed_providers = [
+            perm.provider_name
+            for perm in db.query(UserProviderPermission)
+                          .filter(UserProviderPermission.user_id == current_user.id)
+                          .all()
+        ]
+        if not allowed_providers:
+            return {"message": "Please contact your admin."}
 
-    # Build query
     query = db.query(ProviderMapping).filter(
-        ProviderMapping.provider_name.in_(allowed_providers),
         ProviderMapping.updated_at >= from_dt,
         ProviderMapping.updated_at <= to_dt
     ).order_by(ProviderMapping.id)
 
+    if allowed_providers is not None:
+        query = query.filter(ProviderMapping.provider_name.in_(allowed_providers))
+
     # Pagination with resume_key (id)
+    last_id = 0
     if resume_key:
-        query = query.filter(ProviderMapping.id > resume_key)
+        try:
+            last_id = int(resume_key.split("_")[0])
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid resume_key.")
+        query = query.filter(ProviderMapping.id > last_id)
 
     mappings = query.limit(limit_per_page).all()
 
-    # Prepare next resume_key (random string + last hotel id)
+    # Prepare next resume_key (random string + last id)
     if mappings and len(mappings) == limit_per_page:
         last_hotel_id = mappings[-1].id
         rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
         next_resume_key = f"{last_hotel_id}_{rand_str}"
     else:
         next_resume_key = None
-
 
     result = [
         {
@@ -481,6 +488,9 @@ def update_provider_info(
         "count": len(result),
         "provider_mappings": result
     }
+
+
+
 
 
 
