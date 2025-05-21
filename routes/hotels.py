@@ -122,3 +122,25 @@ def add_provider(
         )
 
 
+@router.get("/get_supplier_info")
+def get_supplier_info(
+    supplier: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get total hotel count for a supplier. Only super_user and admin_user can use this endpoint.
+    """
+    require_role(["super_user", "admin_user"], current_user)
+
+    if not supplier:
+        raise HTTPException(status_code=400, detail="Supplier name is required.")
+
+    total_hotel = db.query(models.ProviderMapping).filter(
+        models.ProviderMapping.provider_name == supplier
+    ).count()
+
+    return {
+        "supplier_name": supplier,
+        "total_hotel": total_hotel
+    }
