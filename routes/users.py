@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import UserResponse, UserCreate, User, GivePointsRequest
+from schemas import UserResponse, UserCreate, User, GivePointsRequest, SuperUserResponse, AdminUserResponse
 from typing import Annotated
 import models
 from passlib.context import CryptContext
@@ -61,7 +61,7 @@ async def read_user_me(
 
 
 
-@router.post("/create-super-admin", response_model=User)
+@router.post("/create_super_user", response_model=SuperUserResponse)
 def create_super_admin(
     user_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -95,26 +95,38 @@ def create_super_admin(
 
     # Hash the password
     hashed_password = pwd_context.hash(user_data["password"])
+    created_by = f'super_user: {current_user.email}' 
 
-    # Create the super_user
+
     super_user = models.User(
         id=unique_id,
         username=user_data["username"],
         email=user_data["email"],
         hashed_password=hashed_password,
         role=models.UserRole.SUPER_USER,
-        is_active=True
+        is_active=True,
+        created_by=created_by,
     )
     db.add(super_user)
     db.commit()
     db.refresh(super_user)
 
-    return super_user
+    return {
+        "id": super_user.id,
+        "username": super_user.username,
+        "email": super_user.email,
+        "role": super_user.role,
+        "created_by": [
+            {
+                "title": "super_user",
+                "email": current_user.email
+            }
+        ]
+    }
 
 
 
-
-@router.post("/create-admin-user", response_model=User)
+@router.post("/create_admin_user", response_model=AdminUserResponse)
 def create_admin_user(
     admin_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -156,14 +168,27 @@ def create_admin_user(
         hashed_password=hashed_password,
         role=models.UserRole.ADMIN_USER,
         api_key=None,  
-        is_active=True
+        is_active=True,
+        created_by=f'super_user: {current_user.email}',  # Set created_by to super_user
     )
     db.add(admin_user)
     db.commit()
     db.refresh(admin_user)
-    return admin_user
 
-@router.post("/create-general-user", response_model=User)
+    return {
+        "id": admin_user.id,
+        "username": admin_user.username,
+        "email": admin_user.email,
+        "role": admin_user.role,
+        "created_by": [
+            {
+                "title": "super_user",
+                "email": current_user.email
+            }
+        ]
+    }
+
+@router.post("/create_general_user", response_model=User)
 def create_general_user(
     user_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -194,8 +219,15 @@ def create_general_user(
 
     # Generate a unique ID for the general user
     unique_id = secrets.token_hex(5)
-
     hashed_password = pwd_context.hash(user_data["password"])
+
+    # Set created_by based on creator's role
+    if current_user.role == models.UserRole.SUPER_USER:
+        created_by = f"super_user: {current_user.email}"
+    elif current_user.role == models.UserRole.ADMIN_USER:
+        created_by = f"admin_user: {current_user.email}"
+    else:
+        created_by = "self"
 
     # Create the general user
     general_user = models.User(
@@ -205,12 +237,27 @@ def create_general_user(
         hashed_password=hashed_password,
         role=models.UserRole.GENERAL_USER,
         api_key=None,
-        is_active=True
+        is_active=True,
+        created_by=created_by
     )
     db.add(general_user)
     db.commit()
     db.refresh(general_user)
-    return general_user
+    return {
+        "id": general_user.id,
+        "username": general_user.username,
+        "email": general_user.email,
+        "role": general_user.role,
+        "created_by": [
+            {
+                "title": current_user.role,
+                "email": current_user.email
+            }
+        ]
+    }
+
+
+
 
 
 @router.delete("/delete/delete_user/{user_id}")
@@ -240,6 +287,39 @@ def delete_user(
     db.commit()
 
     return {"message": f"User with ID {user_id} has been deleted."}
+
+
+
+
+@router.delete("/delete/delete_super_user/{user_id}")
+def delete_supper_user(
+    user_id: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """Delete a user by ID (only accessible by super_user)."""
+    # Check if the current user is a super_user
+    if current_user.role != models.UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user can delete users."
+        )
+
+    # Find the user by ID
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
+        )
+
+    # Delete the user
+    db.delete(user)
+    db.commit()
+
+    return {"message": f"User with ID {user_id} has been deleted."}
+
+
 
 
 
@@ -408,40 +488,46 @@ def get_point_details(
 
     return data
 
-
 @router.get("/super/check/all")
 def super_check_all(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Get details of all users (only accessible by super_user)."""
+    """Get details of all users created by the current super_user, including super users."""
     if current_user.role != models.UserRole.SUPER_USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super_user can access this endpoint."
         )
 
-    users = db.query(models.User).all()
+    # Only get users created by this super_user
+    created_by_str = f"super_user: {current_user.email}"
+    users = db.query(models.User).filter(models.User.created_by == created_by_str).all()
 
     response = {
         "total_super_user": 0,
         "total_admin_users": 0,
         "total_general_users": 0,
+        "super_users": [],        # <-- Add this line
         "admin_users": [],
         "general_users": []
     }
 
     for user in users:
         user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
+        if user.role == models.UserRole.SUPER_USER:
+            paid_status = "I am super user, I have unlimited points."
+        else:
+            paid_status = "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
+
         points_info = {
             "total_points": user_points.total_points if user_points else 0,
             "current_points": user_points.current_points if user_points else 0,
-            "paid_status": "Paid" if user_points and user_points.current_points > 0 else "Unpaid",
+            "paid_status": paid_status,
             "total_rq": db.query(models.PointTransaction).filter(
                 models.PointTransaction.giver_id == user.id
             ).count() 
         }
-
         last_7_days = datetime.utcnow() - timedelta(days=7)
         recent_transactions = db.query(models.PointTransaction).filter(
             (models.PointTransaction.giver_id == user.id) |
@@ -462,6 +548,7 @@ def super_check_all(
             "using_rq_status": using_rq_status
         }
         if user.role == models.UserRole.SUPER_USER:
+            response["super_users"].append(user_info)   # <-- Add to super_users list
             response["total_super_user"] += 1
         elif user.role == models.UserRole.ADMIN_USER:
             response["admin_users"].append(user_info)

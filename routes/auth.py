@@ -48,14 +48,14 @@ def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
             content={"message_from_system": "User Already exist."}
         )
     try:
-        db_user = create_user(db, user)
+        # Set created_by='self' when creating the user
+        db_user = create_user(db, user, created_by='self')
         return jsonable_encoder(db_user)
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"message_from_system": "cannot input valid field."}
         )
-
 
 
 @router.get("/login")

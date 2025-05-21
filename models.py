@@ -31,6 +31,7 @@ class User(Base):
     role = Column(SQLEnum(*[role.value for role in UserRole], name="user_role_enum", native_enum=False), default=UserRole.GENERAL_USER.value, nullable=False)  # Fixed SQLEnum initialization
     api_key = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
+    created_by = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -14,14 +14,36 @@ class UserCreate(BaseModel):
             raise ValueError("Username must be alphanumeric.")
         return value
 
+class CreatedByInfo(BaseModel):
+    title: str
+    email: str
+
+
 class User(BaseModel):
     id: str
     username: str
     email: EmailStr
+    role: str
+    created_by: List[CreatedByInfo]
 
     class Config:
         from_attributes = True
 
+class SuperUserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    role: str
+    created_by: List[CreatedByInfo]
+
+
+class AdminUserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    role: str
+    created_by: List[CreatedByInfo]
+    
 class Token(BaseModel):
     access_token: str
     token_type: str
