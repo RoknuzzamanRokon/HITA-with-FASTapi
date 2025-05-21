@@ -11,6 +11,7 @@ import secrets
 import string
 
 
+
 router = APIRouter(
     prefix="/v1.0/content",
     tags=["Hotel Content"],
@@ -439,4 +440,76 @@ def get_all_hotels(
         "limit": limit,
         "total_hotel": total_hotel,
         "hotels": hotel_list
+    }
+
+
+
+
+
+@router.get("/update_provider_info")
+def update_provider_info(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    limit_per_page: int = Query(50, ge=1, le=100, description="Number of records per page"),
+    from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    to_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all new and updated provider mapping data for the user's active suppliers,
+    filtered by date range and paginated.
+    """
+    # Parse dates
+    try:
+        from_dt = datetime.strptime(from_date, "%Y-%m-%d")
+        to_dt = datetime.strptime(to_date, "%Y-%m-%d")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    # Get user's active suppliers
+    allowed_providers = [
+        perm.provider_name
+        for perm in db.query(UserProviderPermission)
+                      .filter(UserProviderPermission.user_id == current_user.id)
+                      .all()
+    ]
+    if not allowed_providers:
+        return {"message": "Please contact your admin."}
+
+    # Build query
+    query = db.query(ProviderMapping).filter(
+        ProviderMapping.provider_name.in_(allowed_providers),
+        ProviderMapping.updated_at >= from_dt,
+        ProviderMapping.updated_at <= to_dt
+    ).order_by(ProviderMapping.id)
+
+    # Pagination with resume_key (id)
+    if resume_key:
+        query = query.filter(ProviderMapping.id > resume_key)
+
+    mappings = query.limit(limit_per_page).all()
+
+    # Prepare next resume_key (random string + last hotel id)
+    if mappings and len(mappings) == limit_per_page:
+        last_hotel_id = mappings[-1].id
+        rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
+        next_resume_key = f"{last_hotel_id}_{rand_str}"
+    else:
+        next_resume_key = None
+
+
+    result = [
+        {
+            "ittid": m.ittid,
+            "provider_name": m.provider_name,
+            "provider_id": m.provider_id,
+            "system_type": m.system_type,
+        }
+        for m in mappings
+    ]
+
+    return {
+        "resume_key": next_resume_key,
+        "count": len(result),
+        "provider_mappings": result
     }

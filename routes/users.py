@@ -479,8 +479,8 @@ def active_my_supplier(
 
 
 
-@router.get("/get_list_of_suppliers")
-def get_list_of_suppliers(
+@router.get("/get_list_of_available_suppliers")
+def get_list_of_available_suppliers(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
