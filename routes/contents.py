@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
@@ -54,7 +54,10 @@ def get_hotel_data_provider_name_and_id(
     else:
         # if you really want _everyone else_ blocked until you grant, 
         # you could also force them into the same error here.
-        allowed_providers = None  
+        allowed_providers = None
+        print("Allowed providers for user:", allowed_providers)
+        print("Requested identities:", [vars(i) for i in request.provider_hotel_identity])
+  
 
     # now you know GENERAL_USER has at least one allowed_provider
     # (or everyone else is None → full access)
@@ -62,20 +65,23 @@ def get_hotel_data_provider_name_and_id(
     result = []
     for identity in request.provider_hotel_identity:
         name = identity.provider_name
+        pid = identity.provider_id
         if allowed_providers and name not in allowed_providers:
+            print(f"User not allowed for provider: {name}")
             continue
 
         mapping = (
             db.query(ProviderMapping)
-              .filter_by(provider_id=identity.provider_id,
-                         provider_name=name)
-              .first()
+            .filter_by(provider_id=pid, provider_name=name)
+            .first()
         )
         if not mapping:
+            print(f"No mapping found for provider_id={pid}, provider_name={name}")
             continue
 
         hotel = db.query(Hotel).filter(Hotel.ittid == mapping.ittid).first()
         if not hotel:
+            print(f"No hotel found for ittid={mapping.ittid}")
             continue
 
         locations = db.query(Location).filter(Location.ittid == hotel.ittid).all()
@@ -92,7 +98,7 @@ def get_hotel_data_provider_name_and_id(
         # either they had permissions but none matched the request
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Cannot add any supplier."
+            detail="Cannot find supplier."
         )
 
     return result
@@ -410,6 +416,157 @@ def get_all_hotels(
 
 
 
+
+
+from fastapi import Body
+
+class ProviderProperty(BaseModel):
+    provider_name: str
+
+class ProviderPropertyRequest(BaseModel):
+    provider_property: List[ProviderProperty]
+
+@router.post("/get_all_hotel_only_supplier/", status_code=status.HTTP_200_OK)
+def get_all_hotel_only_supplier(
+    request: ProviderProperty,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    limit_per_page: int = Query(50, ge=1, le=100, description="Number of records per page"),
+    resume_key: Optional[str] = Query(None, description="Resume key for pagination")
+):
+    """
+    Get all hotels for a specific supplier with pagination.
+    """
+    # Deduct points and filter for general users
+    if current_user.role == UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+        allowed_providers = [
+            p.provider_name
+            for p in db.query(UserProviderPermission)
+                      .filter(UserProviderPermission.user_id == current_user.id)
+                      .all()
+        ]
+        if not allowed_providers or request.provider_name not in allowed_providers:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission for this supplier."
+            )
+    else:
+        allowed_providers = None
+
+    # Decode resume_key if present
+    last_id = 0
+    if resume_key:
+        try:
+            last_id = int(resume_key.split("_")[0])
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid resume_key."
+            )
+
+    # Query provider mappings for the requested supplier
+    query = db.query(ProviderMapping).filter(
+        ProviderMapping.provider_name == request.provider_name
+    ).order_by(ProviderMapping.id)
+
+    if last_id:
+        query = query.filter(ProviderMapping.id > last_id)
+
+    provider_mappings = query.limit(limit_per_page).all()
+
+    # Get total count of hotels for the supplier
+    total_hotel = db.query(ProviderMapping).filter(
+        ProviderMapping.provider_name == request.provider_name
+    ).count()
+
+    # Group mappings by ittid
+    hotels_by_ittid = {}
+    for mapping in provider_mappings:
+        if mapping.ittid not in hotels_by_ittid:
+            hotels_by_ittid[mapping.ittid] = []
+        hotels_by_ittid[mapping.ittid].append(mapping)
+
+    result = []
+    for ittid, mappings in hotels_by_ittid.items():
+        hotel = db.query(Hotel).filter(Hotel.ittid == ittid).first()
+        if not hotel:
+            continue
+
+        # Providers
+        providers = [
+            {
+                "name": m.provider_name,
+                "provider_id": m.provider_id,
+                "status": "update"  # You can adjust this logic as needed
+            }
+            for m in mappings
+        ]
+
+        # Locations
+        locations = db.query(Location).filter(Location.ittid == hotel.ittid).all()
+        location_list = []
+        for loc in locations:
+            location_list.append({
+                "id": loc.id,
+                "name": loc.city_name,
+                "location_id": loc.city_location_id,
+                "status": "update",  # Adjust as needed
+                "latitude": hotel.latitude,
+                "longitude": hotel.longitude,
+                "address": f"{hotel.address_line1 or ''} {hotel.address_line2 or ''}".strip(),
+                "postal_code": hotel.postal_code,
+                "city_id": loc.id,
+                "city_name": loc.city_name,
+                "city_code": loc.city_code,
+                "state": loc.state_name,
+                "country_name": loc.country_name,
+                "country_code": loc.country_code
+            })
+
+        # Contacts
+        contacts = db.query(Contact).filter(Contact.ittid == hotel.ittid).all()
+        contract = {
+            "id": hotel.id,
+            "phone": [],
+            "email": [],
+            "website": [],
+            "fax": []
+        }
+        for c in contacts:
+            if c.contact_type == "phone":
+                contract["phone"].append(c.value)
+            elif c.contact_type == "email":
+                contract["email"].append(c.value)
+            elif c.contact_type == "website":
+                contract["website"].append(c.value)
+            elif c.contact_type == "fax":
+                contract["fax"].append(c.value)
+
+        result.append({
+            "ittid": hotel.ittid,
+            "name": hotel.name,
+            "country_name": location_list[0]["country_name"] if location_list else "",
+            "country_code": location_list[0]["country_code"] if location_list else "",
+            "type": "hotel",
+            "provider": providers,
+            "location": location_list,
+            "contract": [contract]
+        })
+
+    # Prepare next resume_key
+    if provider_mappings and len(provider_mappings) == limit_per_page:
+        last_mapping_id = provider_mappings[-1].id
+        rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
+        next_resume_key = f"{last_mapping_id}_{rand_str}"
+    else:
+        next_resume_key = None
+
+    return {
+        "resume_key": next_resume_key,
+        "total_hotel": total_hotel,
+        "hotel": result
+    }
 
 
 
