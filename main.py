@@ -3,6 +3,12 @@ from database import engine
 import models
 import logging
 from custom_openapi import custom_openapi
+
+# New imports for caching
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+import redis.asyncio as aioredis 
+
 # Include routers
 from routes.auth import router as auth_router
 from routes.users import router as users_router
@@ -11,16 +17,27 @@ from routes.hotels import router as hotels_router
 from routes.contents import router as contents_router
 from routes.permissions import router as permissions_router
 from routes.delete import router as delete_router
+
 from fastapi.staticfiles import StaticFiles
 import os
 from fastapi.responses import JSONResponse
 from fastapi.exception_handlers import RequestValidationError
 from fastapi.exceptions import RequestValidationError
 
-
-
 app = FastAPI()
 
+
+
+# ——————— Initialize Redis cache on startup ———————
+@app.on_event("startup")
+async def startup():
+    # Create Redis connection (adjust URL if needed)
+    redis = aioredis.from_url(
+        "redis://localhost", encoding="utf8", decode_responses=True
+    )
+    # Initialize FastAPI-Cache with a  prefix
+    FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+# ————————————————————————————————————————————————
 
 
 logging.basicConfig(level=logging.INFO)

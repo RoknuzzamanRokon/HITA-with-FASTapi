@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
 from pydantic import BaseModel
@@ -9,6 +9,12 @@ from utils import get_current_user, deduct_points_for_general_user, require_role
 import models
 import secrets
 import string
+from fastapi_cache.decorator import cache
+
+
+from schemas import ProviderProperty, GetAllHotelResponse
+
+router = APIRouter()
 
 
 
@@ -428,92 +434,89 @@ class ProviderProperty(BaseModel):
 class ProviderPropertyRequest(BaseModel):
     provider_property: List[ProviderProperty]
 
-@router.post("/get_all_hotel_only_supplier/", status_code=status.HTTP_200_OK)
+
+
+
+@router.get(
+    "/get_all_hotel_only_supplier/",
+    response_model=GetAllHotelResponse,
+    status_code=status.HTTP_200_OK
+)
+@cache(expire=60)
 def get_all_hotel_only_supplier(
     request: ProviderProperty,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db),
-    limit_per_page: int = Query(50, ge=1, le=100, description="Number of records per page"),
-    resume_key: Optional[str] = Query(None, description="Resume key for pagination")
+    limit_per_page: int = Query(50, ge=1, le=100),
+    resume_key: Optional[str] = Query(None),
 ):
-    """
-    Get all hotels for a specific supplier with pagination.
-    """
-    # Deduct points and filter for general users
-    if current_user.role == UserRole.GENERAL_USER:
+    # --- Authorization & points deduction ---
+    if current_user.role == models.UserRole.GENERAL_USER:
         deduct_points_for_general_user(current_user, db)
-        allowed_providers = [
+        allowed = [
             p.provider_name
-            for p in db.query(UserProviderPermission)
-                      .filter(UserProviderPermission.user_id == current_user.id)
-                      .all()
+            for p in db.query(models.UserProviderPermission)
+                      .filter_by(user_id=current_user.id)
         ]
-        if not allowed_providers or request.provider_name not in allowed_providers:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission for this supplier."
-            )
-    else:
-        allowed_providers = None
+        if request.provider_name not in allowed:
+            raise HTTPException(status_code=403, detail="No permission for this supplier")
 
-    # Decode resume_key if present
+    # --- Decode resume_key ---
     last_id = 0
     if resume_key:
         try:
-            last_id = int(resume_key.split("_")[0])
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid resume_key."
-            )
+            last_id = int(resume_key.split("_", 1)[0])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid resume_key")
 
-    # Query provider mappings for the requested supplier
-    query = db.query(ProviderMapping).filter(
-        ProviderMapping.provider_name == request.provider_name
-    ).order_by(ProviderMapping.id)
-
+    # --- Single eager‐loaded query ---
+    query = (
+        db.query(models.ProviderMapping)
+          .options(
+              # load mapping → hotel → locations & contacts
+              joinedload(models.ProviderMapping.hotel)
+                .joinedload(models.Hotel.locations),
+              joinedload(models.ProviderMapping.hotel)
+                .joinedload(models.Hotel.contacts),
+          )
+          .filter(models.ProviderMapping.provider_name == request.provider_name)
+          .order_by(models.ProviderMapping.id)
+    )
     if last_id:
-        query = query.filter(ProviderMapping.id > last_id)
+        query = query.filter(models.ProviderMapping.id > last_id)
 
-    provider_mappings = query.limit(limit_per_page).all()
+    mappings = query.limit(limit_per_page).all()
 
-    # Get total count of hotels for the supplier
-    total_hotel = db.query(ProviderMapping).filter(
-        ProviderMapping.provider_name == request.provider_name
-    ).count()
+    # --- Total count for pagination info ---
+    total = (
+        db.query(models.ProviderMapping)
+          .filter(models.ProviderMapping.provider_name == request.provider_name)
+          .count()
+    )
 
-    # Group mappings by ittid
+    # --- Build grouped result by ittid ---
     hotels_by_ittid = {}
-    for mapping in provider_mappings:
-        if mapping.ittid not in hotels_by_ittid:
-            hotels_by_ittid[mapping.ittid] = []
-        hotels_by_ittid[mapping.ittid].append(mapping)
+    for m in mappings:
+        hotels_by_ittid.setdefault(m.ittid, []).append(m)
 
     result = []
-    for ittid, mappings in hotels_by_ittid.items():
-        hotel = db.query(Hotel).filter(Hotel.ittid == ittid).first()
+    for ittid, group in hotels_by_ittid.items():
+        hotel = group[0].hotel  # already loaded
         if not hotel:
             continue
 
-        # Providers
         providers = [
-            {
-                "name": m.provider_name,
-                "provider_id": m.provider_id,
-                "status": "update"  # You can adjust this logic as needed
-            }
-            for m in mappings
+            {"name": m.provider_name, "provider_id": m.provider_id, "status": "update"}
+            for m in group
         ]
 
-        # Locations
-        locations = db.query(Location).filter(Location.ittid == hotel.ittid).all()
-        location_list = []
-        for loc in locations:
-            location_list.append({
+        # locations and contacts are eager-loaded on hotel
+        location_list = [
+            {
                 "id": loc.id,
                 "name": loc.city_name,
                 "location_id": loc.city_location_id,
-                "status": "update",  # Adjust as needed
+                "status": "update",
                 "latitude": hotel.latitude,
                 "longitude": hotel.longitude,
                 "address": f"{hotel.address_line1 or ''} {hotel.address_line2 or ''}".strip(),
@@ -523,27 +526,14 @@ def get_all_hotel_only_supplier(
                 "city_code": loc.city_code,
                 "state": loc.state_name,
                 "country_name": loc.country_name,
-                "country_code": loc.country_code
-            })
+                "country_code": loc.country_code,
+            }
+            for loc in hotel.locations
+        ]
 
-        # Contacts
-        contacts = db.query(Contact).filter(Contact.ittid == hotel.ittid).all()
-        contract = {
-            "id": hotel.id,
-            "phone": [],
-            "email": [],
-            "website": [],
-            "fax": []
-        }
-        for c in contacts:
-            if c.contact_type == "phone":
-                contract["phone"].append(c.value)
-            elif c.contact_type == "email":
-                contract["email"].append(c.value)
-            elif c.contact_type == "website":
-                contract["website"].append(c.value)
-            elif c.contact_type == "fax":
-                contract["fax"].append(c.value)
+        contact = {"id": hotel.id, "phone": [], "email": [], "website": [], "fax": []}
+        for c in hotel.contacts:
+            getattr(contact, c.contact_type, contact["phone"]).append(c.value)  # or the if/elif logic
 
         result.append({
             "ittid": hotel.ittid,
@@ -553,21 +543,21 @@ def get_all_hotel_only_supplier(
             "type": "hotel",
             "provider": providers,
             "location": location_list,
-            "contract": [contract]
+            "contract": [contact],
         })
 
-    # Prepare next resume_key
-    if provider_mappings and len(provider_mappings) == limit_per_page:
-        last_mapping_id = provider_mappings[-1].id
-        rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
-        next_resume_key = f"{last_mapping_id}_{rand_str}"
+    # --- Next resume_key generation ---
+    if len(mappings) == limit_per_page:
+        last_map_id = mappings[-1].id
+        rand = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
+        next_resume = f"{last_map_id}_{rand}"
     else:
-        next_resume_key = None
+        next_resume = None
 
     return {
-        "resume_key": next_resume_key,
-        "total_hotel": total_hotel,
-        "hotel": result
+        "resume_key": next_resume,
+        "total_hotel": total,
+        "hotel": result,
     }
 
 

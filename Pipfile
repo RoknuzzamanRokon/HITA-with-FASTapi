@@ -18,6 +18,9 @@ pydantic = {extras = ["email"], version = "*"}
 pillow = "*"
 colorama = "*"
 requests = "*"
+fastapi-cache2 = "*"
+redis = "*"
+setuptools = "*"
 
 [dev-packages]
 

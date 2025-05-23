@@ -179,3 +179,50 @@ class GivePointsRequest(BaseModel):
 
 
 
+# --- New schemas for `get_all_hotel_only_supplier` ---
+
+class ProviderProperty(BaseModel):
+    provider_name: str = Field(..., description="The supplier/provider name to filter hotels by")
+
+class ProviderItem(BaseModel):
+    name: str = Field(..., description="Provider name")
+    provider_id: str = Field(..., description="Provider-specific hotel ID")
+    status: str = Field(..., description="Status of the mapping (e.g., 'update')")
+
+class LocationItem(BaseModel):
+    id: int = Field(..., description="Location record ID")
+    name: str = Field(..., description="City name")
+    location_id: str = Field(..., description="City location code")
+    status: str = Field(..., description="Status (e.g., 'update')")
+    latitude: Optional[float] = Field(None, description="Hotel latitude")
+    longitude: Optional[float] = Field(None, description="Hotel longitude")
+    address: Optional[str] = Field(None, description="Full address")
+    postal_code: Optional[str] = Field(None, description="Postal code if available")
+    city_id: Optional[int] = Field(None, description="City record ID")
+    city_name: Optional[str] = Field(None, description="City name")
+    city_code: Optional[str] = Field(None, description="City code")
+    state: Optional[str] = Field(None, description="State or region name")
+    country_name: Optional[str] = Field(None, description="Country name")
+    country_code: Optional[str] = Field(None, description="Country code")
+
+class ContactItem(BaseModel):
+    id: int = Field(..., description="Hotel ID for contact grouping")
+    phone: List[str] = Field(default_factory=list, description="List of phone numbers")
+    email: List[str] = Field(default_factory=list, description="List of email addresses")
+    website: List[str] = Field(default_factory=list, description="List of websites")
+    fax: List[str] = Field(default_factory=list, description="List of fax numbers")
+
+class HotelItem(BaseModel):
+    ittid: str = Field(..., description="Internal travel technology ID")
+    name: str = Field(..., description="Hotel name")
+    country_name: str = Field(..., description="Country name")
+    country_code: str = Field(..., description="Country code")
+    type: str = Field(..., description="Record type (should be 'hotel')")
+    provider: List[ProviderItem] = Field(..., description="List of provider mappings")
+    location: List[LocationItem] = Field(..., description="List of location entries")
+    contract: List[ContactItem] = Field(..., description="List containing contact info objects")
+
+class GetAllHotelResponse(BaseModel):
+    resume_key: Optional[str] = Field(None, description="Resume key for next page")
+    total_hotel: int = Field(..., description="Total number of hotels for this supplier")
+    hotel: List[HotelItem] = Field(..., description="Page of hotel records")
