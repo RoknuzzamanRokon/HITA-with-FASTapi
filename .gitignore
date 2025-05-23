@@ -9,6 +9,12 @@ __pycache__/
 
 # Test files
 test.py
+test2.py
+test3.py
+test4.py
+test5.py
+
+
 
 # Logs
 *.log

@@ -10,6 +10,7 @@ from routes.hotelsDemo import router as hotels_demo_router
 from routes.hotels import router as hotels_router
 from routes.contents import router as contents_router
 from routes.permissions import router as permissions_router
+from routes.delete import router as delete_router
 from fastapi.staticfiles import StaticFiles
 import os
 from fastapi.responses import JSONResponse
@@ -66,6 +67,7 @@ app.include_router(hotels_demo_router)
 app.include_router(hotels_router)
 app.include_router(contents_router)
 app.include_router(permissions_router)
+app.include_router(delete_router)
 
 
 

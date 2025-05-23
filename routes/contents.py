@@ -98,7 +98,7 @@ def get_hotel_data_provider_name_and_id(
         # either they had permissions but none matched the request
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Cannot find supplier."
+            detail="Cannot mapping supplier in our system."
         )
 
     return result
@@ -389,16 +389,18 @@ def get_all_hotels(
     hotel_list = [
         {
             "ittid": hotel.ittid,
+            "name": hotel.name,
+            "property_type": hotel.property_type,
+            "rating": hotel.rating,
+            "address_line1": hotel.address_line1,
+            "address_line2": hotel.address_line2,
+            "postal_code": hotel.postal_code,
+            "map_status": hotel.map_status,
             "geocode": {
                 "latitude": hotel.latitude,
                 "longitude": hotel.longitude
             },
-            "address_line1": hotel.address_line1,
-            "address_line2": hotel.address_line2,
-            "postal_code": hotel.postal_code,
-            "property_type": hotel.property_type,
-            "name": hotel.name,
-            "rating": hotel.rating,
+
             "updated_at": hotel.updated_at,
             "created_at": hotel.created_at,
         }
@@ -651,73 +653,3 @@ def get_update_provider_info(
 
 
 
-
-
-@router.delete("/delete/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK)
-def delete_hotel_by_ittid(
-    ittid: str,
-    current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Session = Depends(get_db)
-):
-    """
-    Delete a hotel and all related information by ittid.
-    Only SUPER_USER can access this endpoint.
-    """
-    if current_user.role != UserRole.SUPER_USER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super users can delete hotels."
-        )
-
-    hotel = db.query(Hotel).filter(Hotel.ittid == ittid).first()
-    if not hotel:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Hotel with ittid '{ittid}' not found."
-        )
-
-    # Delete related data
-    db.query(ProviderMapping).filter(ProviderMapping.ittid == ittid).delete()
-    db.query(Location).filter(Location.ittid == ittid).delete()
-    db.query(Contact).filter(Contact.ittid == ittid).delete()
-    db.query(models.Chain).filter(models.Chain.ittid == ittid).delete()
-
-    db.delete(hotel)
-    db.commit()
-
-    return {"message": f"Hotel with ittid '{ittid}' and all related data deleted successfully."}
-
-
-
-@router.delete("/delete/delete_a_hotel_mapping", status_code=status.HTTP_200_OK)
-def delete_a_hotel_mapping(
-    current_user: Annotated[models.User, Depends(get_current_user)],
-    provider_name: str = Query(..., description="Provider name"),
-    provider_id: str = Query(..., description="Provider ID"),
-    db: Session = Depends(get_db)
-):
-    """
-    Delete a specific provider mapping for a hotel by ittid, provider_name, and provider_id.
-    Only SUPER_USER can access this endpoint.
-    """
-    if current_user.role != UserRole.SUPER_USER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super users can delete hotel mappings."
-        )
-
-    mapping = db.query(ProviderMapping).filter(
-        ProviderMapping.provider_name == provider_name,
-        ProviderMapping.provider_id == provider_id
-    ).first()
-
-    if not mapping:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Provider mapping not found."
-        )
-
-    db.delete(mapping)
-    db.commit()
-
-    return {"message": f"Mapping for provider '{provider_name}', provider_id '{provider_id}' deleted successfully."}
