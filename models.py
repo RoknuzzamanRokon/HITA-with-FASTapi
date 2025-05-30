@@ -88,6 +88,8 @@ class UserProviderPermission(Base):
     id: Mapped[int] = Column(Integer, primary_key=True)
     user_id: Mapped[str] = Column(String(50), ForeignKey("users.id"))
     provider_name: Mapped[str] = Column(String(50))
+
+    # Relationships
     user: Mapped["User"] = relationship(back_populates="provider_permissions")
 
 
@@ -127,6 +129,7 @@ class Hotel(Base):
     postal_code = Column(String(20), nullable=True)
     rating = Column(String(10), nullable=True)  # Adjusted to string for simplicity
     property_type = Column(String(100), nullable=True)
+    primary_photo = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     map_status = Column(SQLEnum("new", "pending", "updated", name="map_status_enum"), default="pending")

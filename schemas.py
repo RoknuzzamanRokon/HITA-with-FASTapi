@@ -132,6 +132,7 @@ class HotelCreate(BaseModel):
     address_line2: Optional[str] = Field(None, max_length=255)
     postal_code: Optional[str] = Field(None, max_length=20)
     rating: Optional[str] = Field(None, max_length=10)
+    primary_photo: Optional[str] = Field(None, max_length=500)
     property_type: Optional[str] = Field(None, max_length=100)
     map_status: Optional[str] = Field(None, max_length=20)
     content_update_status: Optional[str] = Field(None, max_length=20)
@@ -156,6 +157,7 @@ class HotelUpdate(BaseModel):
     postal_code: Optional[str]
     rating: Optional[str]
     property_type: Optional[str]
+    primary_photo: Optional[str] 
     map_status: Optional[str]
     content_update_status: Optional[str]
     locations: Optional[List[LocationCreate]] = []

@@ -56,6 +56,7 @@ def build_payload(row):
         "postal_code": str(row.PostalCode) if row.PostalCode else "",
         "rating": str(row.Rating) if row.Rating is not None else "",
         "property_type": str(row.PropertyType) if row.PropertyType else "",
+        "primary_photo": str(row.PrimaryPhoto) if row.PrimaryPhoto else "",
         "map_status": "pending",
         "content_update_status": "Done",
         "locations": [{
