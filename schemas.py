@@ -61,7 +61,7 @@ class UserResponse(BaseModel):
     need_to_next_upgrade: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Hotel Schemas ---
 class LocationCreate(BaseModel):
@@ -143,6 +143,7 @@ class HotelCreate(BaseModel):
 
 class HotelRead(HotelCreate):
     id: int
+    primary_photo: str 
 
     class Config:
         from_attributes = True

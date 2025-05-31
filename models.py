@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Enum as SQLEnum, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Enum as SQLEnum, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Mapped
 from sqlalchemy import MetaData
@@ -114,7 +114,8 @@ class DemoHotel(Base):
     city_location_id = Column(String(50), nullable=True)
     master_city_name = Column(String(100), nullable=True)
     location_ids = Column(String(255), nullable=True)
-
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Hotel(Base):
     __tablename__ = "hotels"
@@ -122,8 +123,8 @@ class Hotel(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     ittid = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)
-    latitude = Column(String(50), nullable=True)  # Adjusted to match the original schema
-    longitude = Column(String(50), nullable=True)  # Adjusted to match the original schema
+    latitude = Column(String(50), nullable=True)
+    longitude = Column(String(50), nullable=True) 
     address_line1 = Column(String(255), nullable=True)
     address_line2 = Column(String(255), nullable=True)
     postal_code = Column(String(20), nullable=True)
@@ -134,6 +135,8 @@ class Hotel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     map_status = Column(SQLEnum("new", "pending", "updated", name="map_status_enum"), default="pending")
     content_update_status = Column(String(15), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     locations = relationship("Location", back_populates="hotel")
@@ -155,6 +158,8 @@ class Location(Base):
     master_city_name = Column(String(100), nullable=True)
     city_code = Column(String(50), nullable=True)
     city_location_id = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     hotel = relationship("Hotel", back_populates="locations")
@@ -178,6 +183,37 @@ class ProviderMapping(Base):
 
     # Relationships
     hotel = relationship("Hotel", back_populates="provider_mappings")
+
+    # Existing columns...
+    rate_types = relationship("RateTypeInfo", back_populates="provider_mapping")
+
+
+class RateTypeInfo(Base):
+    __tablename__ = "rate_type_info"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider_mapping_id = Column(Integer, ForeignKey("provider_mappings.id"), nullable=False)
+    room_title = Column(String(255), nullable=False)
+    rate_name = Column(String(255), nullable=False)
+    sell_per_night = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    provider_mapping = relationship("ProviderMapping", back_populates="rate_types")
+    
+
+class SummaryStatus(Base):
+    __tablename__ = "summary_status"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    total_supplier_information = Column(Integer, nullable=False, default=0)
+    total_hotel_information = Column(Integer, nullable=False, default=0)
+    total_supplier_update = Column(Integer, nullable=False, default=0)
+    total_hotel_update = Column(Integer, nullable=False, default=0)
+    # total_rooms = Column(Integer, nullable=False, default=0)  # New column
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Contact(Base):

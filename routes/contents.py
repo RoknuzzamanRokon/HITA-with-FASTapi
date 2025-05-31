@@ -325,7 +325,12 @@ def get_hotel_with_provider(
     locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
     chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
     contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-    return {"hotel": hotel, "provider_mappings": provider_mappings, "locations": locations, "chains": chains, "contacts": contacts}
+    return {"hotel": hotel,
+            "provider_mappings": provider_mappings, 
+            "locations": locations, 
+            "chains": chains, 
+            "contacts": contacts
+            }
 
 
 
