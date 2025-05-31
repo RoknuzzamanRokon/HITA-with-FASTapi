@@ -143,7 +143,7 @@ class HotelCreate(BaseModel):
 
 class HotelRead(HotelCreate):
     id: int
-    primary_photo: str 
+    primary_photo: Optional[str] 
 
     class Config:
         from_attributes = True
@@ -229,3 +229,24 @@ class GetAllHotelResponse(BaseModel):
     resume_key: Optional[str] = Field(None, description="Resume key for next page")
     total_hotel: int = Field(..., description="Total number of hotels for this supplier")
     hotel: List[HotelItem] = Field(..., description="Page of hotel records")
+
+
+
+
+class AddRateTypeRequest(BaseModel):
+    ittid: int
+    provider_mapping_id: int
+    provider_name: str
+    provider_id: str
+    room_title: str
+    rate_name: str
+    sell_per_night: float
+
+class UpdateRateTypeRequest(BaseModel):
+    ittid: str
+    provider_mapping_id: int
+    provider_name: str 
+    provider_id: str   
+    room_title: str
+    rate_name: str
+    sell_per_night: float

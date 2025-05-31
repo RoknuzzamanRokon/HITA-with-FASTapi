@@ -20,7 +20,7 @@ router = APIRouter(
 def create_hotel_with_details(
     hotel: HotelCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)  # Use get_current_user to fetch the user
+    current_user: User = Depends(get_current_user) 
 ):
     """Create a new hotel with all related details."""
     # Check if the user has the required role

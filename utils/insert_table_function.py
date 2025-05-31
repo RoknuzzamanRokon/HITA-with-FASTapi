@@ -104,25 +104,27 @@ def process_hotel(row, headers, url):
     except Exception as e:
         print(f"[EXCEPTION] {row.ittid} -> {e}")
 
-# --- MAIN PROCESS --- #
-def upload_hotels():
-    engine = get_database_engine()
-    headers = get_headers()
-    url = "http://127.0.0.1:8000/v1.0/hotels/mapping/input_hotel_all_details"
 
-    metadata = MetaData()
-    hotel_table = Table('hotel_itt_test', metadata, autoload_with=engine)
 
-    # Load all rows before starting threads
-    with engine.connect() as conn:
-        rows = list(conn.execute(select(hotel_table)))
+# # --- MAIN PROCESS --- #
+# def upload_hotels():
+#     engine = get_database_engine()
+#     headers = get_headers()
+#     url = "http://127.0.0.1:8000/v1.0/hotels/mapping/input_hotel_all_details"
 
-    # Use ThreadPoolExecutor for concurrency
-    with ThreadPoolExecutor(max_workers=30) as executor:
-        futures = [executor.submit(process_hotel, row, headers, url) for row in rows]
-        for future in as_completed(futures):
-            pass  # Optional: handle future.result() if needed
+#     metadata = MetaData()
+#     hotel_table = Table('hotel_itt_test', metadata, autoload_with=engine)
 
-# --- EXECUTION --- #
-if __name__ == "__main__":
-    upload_hotels()
+#     # Load all rows before starting threads
+#     with engine.connect() as conn:
+#         rows = list(conn.execute(select(hotel_table)))
+
+#     # Use ThreadPoolExecutor for concurrency
+#     with ThreadPoolExecutor(max_workers=30) as executor:
+#         futures = [executor.submit(process_hotel, row, headers, url) for row in rows]
+#         for future in as_completed(futures):
+#             pass  # Optional: handle future.result() if needed
+
+# # --- EXECUTION --- #
+# if __name__ == "__main__":
+#     upload_hotels()
