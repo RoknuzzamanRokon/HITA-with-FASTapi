@@ -234,7 +234,7 @@ class GetAllHotelResponse(BaseModel):
 
 
 class AddRateTypeRequest(BaseModel):
-    ittid: int
+    ittid: str
     provider_mapping_id: int
     provider_name: str
     provider_id: str

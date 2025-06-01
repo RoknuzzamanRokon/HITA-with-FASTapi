@@ -32,7 +32,7 @@ async def read_user_me(
 ):
     """Get the current user's details."""
     user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-    print("This Is User Point.", user_points)
+    # print("This Is User Point.", user_points)
     available_points = user_points.current_points if user_points else 0
     total_points = user_points.total_points if user_points else 0
 

@@ -143,6 +143,7 @@ class Hotel(Base):
     provider_mappings = relationship("ProviderMapping", back_populates="hotel")
     contacts = relationship("Contact", back_populates="hotel")
     chains = relationship("Chain", back_populates="hotel")
+    rate_types = relationship("RateTypeInfo", back_populates="hotel") 
 
 
 class Location(Base):
@@ -192,6 +193,7 @@ class RateTypeInfo(Base):
     __tablename__ = "rate_type_info"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    ittid = Column(String(100), ForeignKey("hotels.ittid"), nullable=False)
     provider_mapping_id = Column(Integer, ForeignKey("provider_mappings.id"), nullable=False)
     room_title = Column(String(255), nullable=False)
     rate_name = Column(String(255), nullable=False)
@@ -201,7 +203,7 @@ class RateTypeInfo(Base):
 
     # Relationships
     provider_mapping = relationship("ProviderMapping", back_populates="rate_types")
-    
+    hotel = relationship("Hotel", back_populates="rate_types")  
 
 class SummaryStatus(Base):
     __tablename__ = "summary_status"

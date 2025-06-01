@@ -45,7 +45,6 @@ def add_rate_type(
 
     # Create new rate type info
     new_rate_type = models.RateTypeInfo(
-        ittid=provider_data.ittid,
         provider_mapping_id=provider_data.provider_mapping_id,
         room_title=provider_data.room_title,
         rate_name=provider_data.rate_name,

@@ -9,7 +9,7 @@ from models import UserRole, Hotel, ProviderMapping, Location, Contact
 
 router = APIRouter(
     prefix="/v1.0/delete",
-    tags=["delete user & hotel"],
+    tags=["Delete user & hotel"],
     responses={404: {"description": "Not found"}},
 )
 
