@@ -43,8 +43,20 @@ def add_rate_type(
             detail="Provider mapping not found."
         )
 
+    # Check if a rate type for this hotel and provider already exists
+    existing_rate_type = db.query(models.RateTypeInfo).filter_by(
+        ittid=provider_data.ittid,
+        provider_mapping_id=provider_data.provider_mapping_id
+    ).first()
+    if existing_rate_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Rate type already exists for the given provider mapping."
+        )
+    
     # Create new rate type info
     new_rate_type = models.RateTypeInfo(
+        ittid=provider_data.ittid,
         provider_mapping_id=provider_data.provider_mapping_id,
         room_title=provider_data.room_title,
         rate_name=provider_data.rate_name,
