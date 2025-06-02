@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field, validator
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field, validator, RootModel
+from typing import Optional, List, Dict, Any, Optional
 from datetime import datetime
+
 
 # --- User Schemas ---
 class UserCreate(BaseModel):
@@ -250,3 +251,22 @@ class UpdateRateTypeRequest(BaseModel):
     room_title: str
     rate_name: str
     sell_per_night: float
+
+
+
+
+class BasicMappingResponse(BaseModel):
+    hotel_name: str
+    lon: Optional[float]
+    lat: Optional[float]
+    room_title: str
+    rate_type: str
+    star_rating: Optional[str]
+    primary_photo: Optional[str]
+    address: Optional[str]
+    sell_per_night: Optional[float]
+    vervotech: Optional[str]
+    giata: Optional[str]
+
+    class Config:
+        extra = "allow"

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 router = APIRouter(
     prefix="/v1.0/permissions",
-    tags=["User Permissions"],
+    tags=["User Supplier Permissions"],
     responses={404: {"description": "Not found"}},
 )
 

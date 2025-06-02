@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import User
+from models import Hotel, ProviderMapping, Location, RateTypeInfo, User
 from datetime import datetime
 from utils import get_current_user, require_role
 import models
 from fastapi_cache.decorator import cache
-from schemas import AddRateTypeRequest, UpdateRateTypeRequest
+from schemas import AddRateTypeRequest, UpdateRateTypeRequest, BasicMappingResponse
+from pydantic import BaseModel
+from typing import List
+from fastapi.responses import JSONResponse
+
+
+
+
 
 router = APIRouter(
     prefix="/v1.0/mapping",
@@ -106,3 +113,65 @@ def update_rate_type(
         "message": "Rate type updated successfully.",
         "updated_rate_type_id": rate_type.id
     }
+
+
+
+@router.get(
+    "/get_basic_mapping_with_info",
+    response_model=List[BasicMappingResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_basic_mapping_with_info(
+    supplier_name: List[str] = Query(..., description="List of provider names to filter by"),
+    country_iso:   List[str] = Query(..., description="List of country codes to filter by"),
+    db:            Session    = Depends(get_db),
+    current_user:  User       = Depends(get_current_user),
+):
+    require_role(["super_user", "admin_user"], current_user)
+
+    mappings: List[ProviderMapping] = (
+        db.query(ProviderMapping)
+          .join(Hotel, ProviderMapping.ittid == Hotel.ittid)
+          .join(Location,  Hotel.ittid == Location.ittid)
+          .options(
+              joinedload(ProviderMapping.hotel)
+                .joinedload(Hotel.locations),
+              joinedload(ProviderMapping.rate_types)
+          )
+          .filter(
+              ProviderMapping.provider_name.in_(supplier_name),
+              Location.country_code.in_(country_iso)
+          )
+          .all()
+    )
+
+    results = []
+    for mapping in mappings:
+        hotel = mapping.hotel
+        loc = next((l for l in hotel.locations if l.country_code in country_iso), None)
+        if not loc:
+            continue
+
+        for rt in mapping.rate_types:
+            results.append({
+                mapping.provider_name: [mapping.provider_id],
+                "hotel_name":    hotel.name,
+                "lon":           float(hotel.longitude) if hotel.longitude else None,
+                "lat":           float(hotel.latitude)  if hotel.latitude  else None,
+                "room_title":    rt.room_title,
+                "rate_type":     rt.rate_name,
+                "star_rating":   hotel.rating,
+                "primary_photo": hotel.primary_photo,
+                "address":       " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
+                "sell_per_night":rt.sell_per_night,
+                "vervotech":     mapping.vervotech_id,
+                "giata":         mapping.giata_code,
+            })
+
+    return JSONResponse(
+        content=results,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": "attachment; filename=basic_mapping.json"
+        },
+    )
