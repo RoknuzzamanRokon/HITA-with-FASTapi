@@ -76,7 +76,27 @@ The application will be available at `http://127.0.0.1:8000`.
 - `POST /v1.0/hotels`: Create a new hotel.
 - `PUT /v1.0/hotels/{hotel_id}`: Update an existing hotel.
 - `DELETE /v1.0/hotels/{hotel_id}`: Delete a hotel.
+
+### Provider Mappings
+
 - `POST /v1.0/hotels/mapping/add_provider`: Add a provider mapping to a hotel.
+- `POST /v1.0/hotels/mapping/add_provider_all_details_with_ittid`: Add a provider mapping for an existing hotel, including all required details.
+    - **Request Body Example:**
+        ```json
+        {
+          "ittid": "HOTEL12345",
+          "provider_name": "hotelbeds",
+          "provider_id": "HB123",
+          "system_type": "g",
+          "vervotech_id": "VERV123",
+          "giata_code": "GIATA456"
+        }
+        ```
+    - **Authorization:** Requires `super_user` or `admin_user` role.
+    - **Behavior:** Will skip creation if the mapping exists and return a message.
+- `DELETE /v1.0/hotels/delete_hotel_by_ittid/{ittid}`: Delete a hotel and all related information by ittid. (Only SUPER_USER)
+- `DELETE /v1.0/hotels/delete_a_hotel_mapping?provider_name={provider}&provider_id={id}`: Delete a specific provider mapping for a hotel. (Only SUPER_USER)
+- `GET /v1.0/hotels/get_supplier_info?supplier={supplier}`: Get total hotel count for a supplier (super_user and admin_user only).
 
 ### Users
 
@@ -85,6 +105,20 @@ The application will be available at `http://127.0.0.1:8000`.
 - `POST /v1.0/users`: Create a new user.
 - `PUT /v1.0/users/{user_id}`: Update an existing user.
 - `DELETE /v1.0/users/{user_id}`: Delete a user.
+- `GET /v1.0/users/super/check/all`: Get details of all users created by the current super_user, including super users.
+
+### Demo
+
+- `POST /v1.0/hotels/demo/input`: Create a new demo hotel.
+- `GET /v1.0/hotels/demo/getAll`: List demo hotels.
+- `GET /v1.0/hotels/demo/getAHotel/{hotel_id}`: Get a specific demo hotel by ID.
+
+---
+
+**Note:** Many endpoints require authentication (JWT Bearer token). Some operations are restricted to users with specific roles (e.g., super_user, admin_user). See code for additional details and authorization logic.
+
+For more details and updates, refer to the [source code](https://github.com/RoknuzzamanRokon/HITA-with-FASTapi) or open an issue if you need further clarification.
+
 
 ## Database Migrations
 
