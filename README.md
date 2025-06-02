@@ -87,7 +87,6 @@ The application will be available at `http://127.0.0.1:8000`.
           "ittid": "HOTEL12345",
           "provider_name": "hotelbeds",
           "provider_id": "HB123",
-          "system_type": "g",
           "vervotech_id": "VERV123",
           "giata_code": "GIATA456"
         }
