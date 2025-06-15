@@ -540,7 +540,14 @@ def get_all_hotel_only_supplier(
 
         contact = {"id": hotel.id, "phone": [], "email": [], "website": [], "fax": []}
         for c in hotel.contacts:
-            getattr(contact, c.contact_type, contact["phone"]).append(c.value)  # or the if/elif logic
+            if c.contact_type == "phone":
+                contact["phone"].append(c.value)
+            elif c.contact_type == "email":
+                contact["email"].append(c.value)
+            elif c.contact_type == "website":
+                contact["website"].append(c.value)
+            elif c.contact_type == "fax":
+                contact["fax"].append(c.value)
 
         result.append({
             "ittid": hotel.ittid,
