@@ -433,7 +433,6 @@ def get_all_hotels(
 
 
 
-from fastapi import Body
 
 class ProviderProperty(BaseModel):
     provider_name: str
@@ -450,7 +449,7 @@ class ProviderPropertyRequest(BaseModel):
     status_code=status.HTTP_200_OK
 )
 @cache(expire=60)
-def get_all_hotel_only_supplier(
+async def get_all_hotel_only_supplier(
     request: ProviderProperty,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db),

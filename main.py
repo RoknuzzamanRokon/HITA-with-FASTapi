@@ -1,8 +1,14 @@
-from fastapi import FastAPI, Request
 from database import engine
+import os
 import models
 import logging
 from custom_openapi import custom_openapi
+
+# Fastapi Base
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import RequestValidationError
 
 # New imports for caching
 from fastapi_cache import FastAPICache
@@ -19,11 +25,7 @@ from routes.permissions import router as permissions_router
 from routes.delete import router as delete_router
 from routes.mapping import router as mapping_router
 
-from fastapi.staticfiles import StaticFiles
-import os
-from fastapi.responses import JSONResponse
-from fastapi.exception_handlers import RequestValidationError
-from fastapi.exceptions import RequestValidationError
+
 
 app = FastAPI()
 
