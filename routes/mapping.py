@@ -22,7 +22,6 @@ router = APIRouter(
 )
 
 
-
 @router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED)
 def add_rate_type(
     provider_data: AddRateTypeRequest,
@@ -30,7 +29,7 @@ def add_rate_type(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Add a provider mapping and rate type information for an existing hotel.
+    Add or update a provider mapping and rate type information for an existing hotel.
     """
     require_role(["super_user", "admin_user"], current_user)
 
@@ -56,10 +55,17 @@ def add_rate_type(
         provider_mapping_id=provider_data.provider_mapping_id
     ).first()
     if existing_rate_type:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Rate type already exists for the given provider mapping."
-        )
+        # Update the existing rate type
+        existing_rate_type.room_title = provider_data.room_title
+        existing_rate_type.rate_name = provider_data.rate_name
+        existing_rate_type.sell_per_night = provider_data.sell_per_night
+        existing_rate_type.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing_rate_type)
+        return {
+            "message": "Rate type information updated successfully.",
+            "rate_type_id": existing_rate_type.id
+        }
     
     # Create new rate type info
     new_rate_type = models.RateTypeInfo(
@@ -78,7 +84,6 @@ def add_rate_type(
         "message": "Rate type information added successfully.",
         "rate_type_id": new_rate_type.id
     }
-
 
 @router.put("/update_rate_type", status_code=status.HTTP_200_OK)
 def update_rate_type(
