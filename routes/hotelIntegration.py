@@ -16,7 +16,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("/mapping/input_hotel_all_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED)
+@router.post("/mapping/input_hotel_all_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED, include_in_schema = False)
 def create_hotel_with_details(
     hotel: HotelCreate,
     db: Session = Depends(get_db),
@@ -63,7 +63,8 @@ def create_hotel_with_details(
     
 @router.post(
     "/mapping/add_provider_all_details_with_ittid",
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema = False
 )
 def add_provider(
     provider_data: dict,

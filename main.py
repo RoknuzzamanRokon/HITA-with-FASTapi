@@ -17,9 +17,9 @@ import redis.asyncio as aioredis
 
 # Include routers
 from routes.auth import router as auth_router
-from routes.users import router as users_router
+from routes.usersIntegrations import router as users_router
 from routes.hotelsDemo import router as hotels_demo_router
-from routes.hotels import router as hotels_router
+from routes.hotelIntegration import router as hotels_router
 from routes.contents import router as contents_router
 from routes.permissions import router as permissions_router
 from routes.delete import router as delete_router
