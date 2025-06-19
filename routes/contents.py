@@ -116,7 +116,7 @@ class ITTIDRequest(BaseModel):
 
 
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
-def get_hotels_with_providers(
+def get_hotels_using_ittid_list(
     request: ITTIDRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -284,7 +284,7 @@ def get_hotels_with_providers(
 
 
 @router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
-def get_hotel_with_provider(
+def get_hotel_using_ittid(
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -338,7 +338,7 @@ def get_hotel_with_provider(
 def get_all_hotels(
     current_user: Annotated[models.User, Depends(get_current_user)],
     page: int = Query(1, ge=1, description="Page number, starting from 1"),
-    limit: int = Query(50, ge=1, le=100, description="Number of hotels per page (max 100)"),
+    limit: int = Query(50, ge=1, le=1000, description="Number of hotels per page (max 1000)"),
     resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
     db: Session = Depends(get_db)
 ):
@@ -443,12 +443,18 @@ class ProviderPropertyRequest(BaseModel):
 
 
 
+
+
+
+
+
+
 @router.get(
     "/get_all_hotel_only_supplier/",
     response_model=GetAllHotelResponse,
     status_code=status.HTTP_200_OK
 )
-@cache(expire=60)
+@cache(expire=600)
 async def get_all_hotel_only_supplier(
     request: ProviderProperty,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -456,6 +462,7 @@ async def get_all_hotel_only_supplier(
     limit_per_page: int = Query(50, ge=1, le=100),
     resume_key: Optional[str] = Query(None),
 ):
+    print("Hello")
     # --- Authorization & points deduction ---
     if current_user.role == models.UserRole.GENERAL_USER:
         deduct_points_for_general_user(current_user, db)
@@ -578,7 +585,7 @@ async def get_all_hotel_only_supplier(
 @router.get("/get_update_provider_info")
 def get_update_provider_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
-    limit_per_page: int = Query(50, ge=1, le=100, description="Number of records per page"),
+    limit_per_page: int = Query(50, ge=1, le=500, description="Number of records per page"),
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(..., description="End date (YYYY-MM-DD)"),
     resume_key: Optional[str] = Query(None, description="Resume key for pagination"),

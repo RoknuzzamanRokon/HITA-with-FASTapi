@@ -19,14 +19,14 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(
     prefix="/v1.0/user",
-    tags=["Users Integrations"],
+    tags=["Users Activity"],
     responses={404: {"description": "Not found"}},
 )
 
 
 
 @router.get("/me", response_model=UserResponse)
-async def read_user_me(
+async def self_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
@@ -61,7 +61,7 @@ async def read_user_me(
 
 
 
-@router.post("/create_super_user", response_model=SuperUserResponse)
+@router.post("/create_super_user", response_model=SuperUserResponse, include_in_schema=False)
 def create_super_admin(
     user_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -126,7 +126,7 @@ def create_super_admin(
 
 
 
-@router.post("/create_admin_user", response_model=AdminUserResponse)
+@router.post("/create_admin_user", response_model=AdminUserResponse, include_in_schema=False)
 def create_admin_user(
     admin_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -188,7 +188,7 @@ def create_admin_user(
         ]
     }
 
-@router.post("/create_general_user", response_model=User)
+@router.post("/create_general_user", response_model=User, include_in_schema=False)
 def create_general_user(
     user_data: dict,  
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -265,7 +265,7 @@ def create_general_user(
 
 
 
-@router.post("/points/give")
+@router.post("/points/give", include_in_schema=False)
 def give_points(
     request: GivePointsRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -359,7 +359,7 @@ def give_points(
 
 
 @router.get("/points/check/me")
-def get_point_details(
+def check_point_details(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
@@ -427,7 +427,7 @@ def get_point_details(
 
     return data
 
-@router.get("/super/check/all")
+@router.get("/super/check/all", include_in_schema=False)
 def super_check_all(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]

@@ -22,7 +22,12 @@ router = APIRouter(
 )
 
 
+<<<<<<< HEAD
 @router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED)
+=======
+
+@router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED, include_in_schema=False)
+>>>>>>> 0a64b788d6ed98fb9e2a66ea560859c97c5d32e1
 def add_rate_type(
     provider_data: AddRateTypeRequest,
     db: Session = Depends(get_db),
@@ -85,7 +90,12 @@ def add_rate_type(
         "rate_type_id": new_rate_type.id
     }
 
+<<<<<<< HEAD
 @router.put("/update_rate_type", status_code=status.HTTP_200_OK)
+=======
+
+@router.put("/update_rate_type", status_code=status.HTTP_200_OK, include_in_schema=False)
+>>>>>>> 0a64b788d6ed98fb9e2a66ea560859c97c5d32e1
 def update_rate_type(
     update_data: UpdateRateTypeRequest,
     db: Session = Depends(get_db),
@@ -120,6 +130,7 @@ def update_rate_type(
     }
 
 
+from sqlalchemy import select
 
 @router.get(
     "/get_basic_mapping_with_info",
@@ -134,44 +145,82 @@ def get_basic_mapping_with_info(
 ):
     require_role(["super_user", "admin_user"], current_user)
 
+    # Step 1: Find all ittid for hotels with a location in the requested country
+    ittid_subq = (
+        db.query(Location.ittid)
+        .filter(Location.country_code.in_(country_iso))
+        .distinct()
+        .subquery()
+    )
+
+    # Step 2: Query ProviderMapping for those hotels and supplier_name
     mappings: List[ProviderMapping] = (
         db.query(ProviderMapping)
-          .join(Hotel, ProviderMapping.ittid == Hotel.ittid)
-          .join(Location,  Hotel.ittid == Location.ittid)
-          .options(
-              joinedload(ProviderMapping.hotel)
-                .joinedload(Hotel.locations),
-              joinedload(ProviderMapping.rate_types)
-          )
-          .filter(
-              ProviderMapping.provider_name.in_(supplier_name),
-              Location.country_code.in_(country_iso)
-          )
-          .all()
+        .join(Hotel, ProviderMapping.ittid == Hotel.ittid)
+        .options(
+            joinedload(ProviderMapping.hotel).joinedload(Hotel.locations),
+            joinedload(ProviderMapping.rate_types)
+        )
+        .filter(
+            ProviderMapping.provider_name.in_(supplier_name),
+            ProviderMapping.ittid.in_(select(ittid_subq.c.ittid))
+        )
+        .all()
     )
+
+    print("Mappings found:", len(mappings))
 
     results = []
     for mapping in mappings:
         hotel = mapping.hotel
-        loc = next((l for l in hotel.locations if l.country_code in country_iso), None)
-        if not loc:
-            continue
-
-        for rt in mapping.rate_types:
+        locations = [
+            {
+                "id": loc.id,
+                "city_name": loc.city_name,
+                "country_code": loc.country_code,
+                "state_code": loc.state_code,
+                "address": loc.city_location_id,
+            }
+            for loc in hotel.locations if loc.country_code in country_iso
+        ]
+        if mapping.rate_types:
+            for rt in mapping.rate_types:
+                results.append({
+                    mapping.provider_name: [mapping.provider_id],
+                    "hotel_name":    hotel.name,
+                    "lon":           float(hotel.longitude) if hotel.longitude else None,
+                    "lat":           float(hotel.latitude)  if hotel.latitude  else None,
+                    "room_title":    rt.room_title,
+                    "rate_type":     rt.rate_name,
+                    "star_rating":   hotel.rating,
+                    "primary_photo": hotel.primary_photo,
+                    "address":       " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
+                    "sell_per_night":rt.sell_per_night,
+                    "vervotech":     mapping.vervotech_id,
+                    "giata":         mapping.giata_code,
+                    "ittid":        mapping.ittid,
+                    # "locations":     locations,
+                })
+        else:
+            # Add a result even if there are no rate_types
             results.append({
                 mapping.provider_name: [mapping.provider_id],
                 "hotel_name":    hotel.name,
                 "lon":           float(hotel.longitude) if hotel.longitude else None,
                 "lat":           float(hotel.latitude)  if hotel.latitude  else None,
-                "room_title":    rt.room_title,
-                "rate_type":     rt.rate_name,
+                "room_title":    None,
+                "rate_type":     None,
                 "star_rating":   hotel.rating,
                 "primary_photo": hotel.primary_photo,
                 "address":       " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
-                "sell_per_night":rt.sell_per_night,
+                "sell_per_night":None,
                 "vervotech":     mapping.vervotech_id,
                 "giata":         mapping.giata_code,
+                "ittid":        mapping.ittid,
+
+                # "locations":     locations,
             })
+    print("Results sample:", results[:2])  # Print first 2 results for debug
 
     return JSONResponse(
         content=results,
@@ -179,4 +228,5 @@ def get_basic_mapping_with_info(
         headers={
             "Content-Disposition": "attachment; filename=basic_mapping.json"
         },
+    
     )

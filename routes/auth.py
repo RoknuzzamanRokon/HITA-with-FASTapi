@@ -11,12 +11,12 @@ import models
 
 router = APIRouter(
     prefix="/v1.0/auth",
-    tags=["Authentication System"],
+    tags=["Authentication"],
     responses={404: {"description": "Not found"}},
 )
 
 @router.post("/token", response_model=Token)
-async def login_for_access_token(
+async def get_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)]
 ):
@@ -36,7 +36,7 @@ async def login_for_access_token(
 
 
 @router.post("/register", response_model=User)
-def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
+def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     """Register a new user."""
 
     existing_user = db.query(models.User).filter(
@@ -58,14 +58,14 @@ def register_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
         )
 
 
-@router.get("/login")
-async def login():
-    """Placeholder for login URL."""
-    return {"message": "Use the /auth/token endpoint to log in with your username and password."}
+# @router.get("/login")
+# async def login():
+#     """Placeholder for login URL."""
+#     return {"message": "Use the /auth/token endpoint to log in with your username and password."}
 
 
 
-@router.get("/logout")
-async def logout():
-    """Placeholder for logout URL."""
-    return {"message": "Logout URL"}
+# @router.get("/logout")
+# async def logout():
+#     """Placeholder for logout URL."""
+#     return {"message": "Logout URL"}

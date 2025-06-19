@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 router = APIRouter(
     prefix="/v1.0/permissions",
-    tags=["User Supplier Permissions"],
+    tags=["User Permissions"],
     responses={404: {"description": "Not found"}},
 )
 
@@ -16,7 +16,7 @@ class ProviderPermissionRequest(BaseModel):
     provider_activision_list: List[str]
 
 
-@router.post("/active_supplier", status_code=status.HTTP_200_OK)
+@router.post("/active_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)
 def grant_provider_permissions(
     user_id: str,
     request: ProviderPermissionRequest, 

@@ -14,7 +14,7 @@ router = APIRouter(
 )
 
 
-@router.delete("/delete_user/{user_id}")
+@router.delete("/delete_user/{user_id}", include_in_schema = False)
 def delete_user(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -45,7 +45,7 @@ def delete_user(
 
 
 
-@router.delete("/delete_super_user/{user_id}")
+@router.delete("/delete_super_user/{user_id}", include_in_schema = False)
 def delete_supper_user(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -82,7 +82,7 @@ def delete_supper_user(
 
 
 
-@router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK)
+@router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK, include_in_schema = False)
 def delete_hotel_by_ittid(
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -118,7 +118,7 @@ def delete_hotel_by_ittid(
 
 
 
-@router.delete("/delete_a_hotel_mapping", status_code=status.HTTP_200_OK)
+@router.delete("/delete_a_hotel_mapping", status_code=status.HTTP_200_OK, include_in_schema = False)
 def delete_a_hotel_mapping(
     current_user: Annotated[models.User, Depends(get_current_user)],
     provider_name: str = Query(..., description="Provider name"),
