@@ -462,7 +462,7 @@ async def get_all_hotel_only_supplier(
     limit_per_page: int = Query(50, ge=1, le=100),
     resume_key: Optional[str] = Query(None),
 ):
-    print("Hello")
+    # print("Hello")
     # --- Authorization & points deduction ---
     if current_user.role == models.UserRole.GENERAL_USER:
         deduct_points_for_general_user(current_user, db)

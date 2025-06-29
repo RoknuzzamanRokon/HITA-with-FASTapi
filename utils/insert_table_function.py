@@ -1,8 +1,7 @@
 import os
 import json
 import requests
-from sqlalchemy import create_engine, MetaData, Table, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, MetaData, Table, select, text
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -11,8 +10,22 @@ load_dotenv()
 
 # --- CONFIGURATION --- #
 def get_database_engine():
-    db_uri = f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
-    return create_engine(db_uri)
+    db_uri = (
+        f"mysql+pymysql://{os.getenv('DB_USER')}:"
+        f"{os.getenv('DB_PASSWORD')}@"
+        f"{os.getenv('DB_HOST')}/"
+        f"{os.getenv('DB_NAME')}"
+    )
+    return create_engine(db_uri, echo=False)
+
+# --- AUTHENTICATION & API HELPERS --- #
+def get_auth_token():
+    url = "http://127.0.0.1:8000/v1.0/auth/token/"
+    payload = {'username': 'ursamroko', 'password': 'ursamroko123'}
+    r = requests.post(url, data=payload)
+    r.raise_for_status()
+    return r.json().get('access_token')
+
 
 def get_headers():
     token = get_auth_token()
@@ -21,29 +34,21 @@ def get_headers():
         'Authorization': f'Bearer {token}'
     }
 
-# --- AUTHENTICATION --- #
-def get_auth_token():
-    url = "http://127.0.0.1:8000/v1.0/auth/token/"
-    payload = 'username=ursamroko&password=ursamroko123'
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    r = requests.post(url, headers=headers, data=payload)
-    r.raise_for_status()
-    return r.json()['access_token']
-
-# --- CHECK EXISTENCE --- #
+# --- EXISTENCE CHECK --- #
 def check_if_ittid_exists(ittid, headers):
-    check_url = f"http://127.0.0.1:8000/v1.0/content/get_hotel_with_ittid/{ittid}"
-    r = requests.get(check_url, headers=headers)
-    if r.status_code == 200:
-        return r.json().get("hotel", False)
-    return False
+    url = f"http://127.0.0.1:8000/v1.0/content/get_hotel_with_ittid/{ittid}"
+    r = requests.get(url, headers=headers)
+    return (r.status_code == 200) and bool(r.json().get("hotel"))
 
-# --- HELPER FUNCTION --- #
+# --- PAYLOAD BUILDER --- #
 def parse_contacts(data_str, contact_type):
     if not data_str:
         return []
-    return [{"contact_type": contact_type, "value": v.strip()}
-            for v in data_str.split(",") if v.strip()]
+    return [
+        {"contact_type": contact_type, "value": v.strip()}
+        for v in data_str.split(",") if v.strip()
+    ]
+
 
 def build_payload(row):
     return {
@@ -58,14 +63,14 @@ def build_payload(row):
         "property_type": str(row.PropertyType) if row.PropertyType else "",
         "primary_photo": str(row.PrimaryPhoto) if row.PrimaryPhoto else "",
         "map_status": "pending",
-        "content_update_status": "Done",
+        "content_update_status": "NewAdd",
         "locations": [{
             "city_name": str(row.CityName) if row.CityName else "",
             "state_name": str(row.StateName) if row.StateName else "",
             "state_code": str(row.StateCode) if row.StateCode else "",
             "country_name": str(row.CountryName) if row.CountryName else "",
             "country_code": str(row.CountryCode) if row.CountryCode else "",
-            "master_city_name": str(row.MasterCityName if row.MasterCityName else row.CityName) if (row.MasterCityName or row.CityName) else "",
+            "master_city_name": str(row.MasterCityName) if row.MasterCityName else str(row.CityName or ""),
             "city_code": str(row.CityCode) if row.CityCode else "",
             "city_location_id": str(row.CityLocationId) if row.CityLocationId is not None else ""
         }],
@@ -76,7 +81,12 @@ def build_payload(row):
             "vervotech_id": str(row.VervotechId) if row.VervotechId else "",
             "giata_code": str(row.GiataCode) if row.GiataCode else ""
         }],
-        "contacts": parse_contacts(row.Phones, "phone") + parse_contacts(row.Emails, "email"),
+        "contacts": (
+            parse_contacts(row.Phones, "phone") +
+            parse_contacts(row.Emails, "email") +
+            parse_contacts(row.Fax, "fax") +
+            parse_contacts(row.Website, "website")
+        ),
         "chains": [{
             "chain_name": str(row.ChainName) if row.ChainName else "",
             "chain_code": str(row.ChainCode) if row.ChainCode else "",
@@ -84,7 +94,7 @@ def build_payload(row):
         }]
     }
 
-# --- TASK FUNCTION --- #
+# --- WORKER --- #
 def process_hotel(row, headers, url):
     if check_if_ittid_exists(row.ittid, headers):
         print(f"[SKIP] {row.ittid} already exists")
@@ -92,39 +102,50 @@ def process_hotel(row, headers, url):
 
     payload = build_payload(row)
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        if 200 <= response.status_code < 300:
-            print(f"[OK]   {row.ittid} -> {response.status_code}")
+        resp = requests.post(url, headers=headers, json=payload)
+        if 200 <= resp.status_code < 300:
+            print(f"[OK]   {row.ittid} -> {resp.status_code}")
         else:
-            print(f"[ERR]  {row.ittid} -> {response.status_code}")
-            try:
-                print(json.dumps(response.json(), indent=2))
-            except ValueError:
-                print(response.text)
+            print(f"[ERR]  {row.ittid} -> {resp.status_code}")
+            print(resp.text)
     except Exception as e:
         print(f"[EXCEPTION] {row.ittid} -> {e}")
 
+# --- MAIN --- #
+def upload_hotels():
+    engine = get_database_engine()
+    headers = get_headers()
+    api_url = "http://127.0.0.1:8000/v1.0/hotels/mapping/input_hotel_all_details"
+
+    metadata = MetaData()
+    hotel_table = Table('global_hotel_mapping', metadata, autoload_with=engine)
+
+    batch_size = 1000
+    offset = 0
+
+    with engine.connect() as conn:
+        total_rows = conn.execute(
+            text("SELECT COUNT(*) FROM global_hotel_mapping")
+        ).scalar()
+
+        while offset < total_rows:
+            print(f"Processing rows {offset + 1} to {offset + batch_size}")
+
+            result = conn.execute(
+                select(hotel_table).offset(offset).limit(batch_size)
+            )
+            rows = result.fetchall()
+
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [
+                    executor.submit(process_hotel, row, headers, api_url)
+                    for row in rows
+                ]
+                for _ in as_completed(futures):
+                    pass
+
+            offset += batch_size
 
 
-# # --- MAIN PROCESS --- #
-# def upload_hotels():
-#     engine = get_database_engine()
-#     headers = get_headers()
-#     url = "http://127.0.0.1:8000/v1.0/hotels/mapping/input_hotel_all_details"
-
-#     metadata = MetaData()
-#     hotel_table = Table('hotel_itt_test', metadata, autoload_with=engine)
-
-#     # Load all rows before starting threads
-#     with engine.connect() as conn:
-#         rows = list(conn.execute(select(hotel_table)))
-
-#     # Use ThreadPoolExecutor for concurrency
-#     with ThreadPoolExecutor(max_workers=30) as executor:
-#         futures = [executor.submit(process_hotel, row, headers, url) for row in rows]
-#         for future in as_completed(futures):
-#             pass  # Optional: handle future.result() if needed
-
-# # --- EXECUTION --- #
-# if __name__ == "__main__":
-#     upload_hotels()
+if __name__ == "__main__":
+    upload_hotels()
