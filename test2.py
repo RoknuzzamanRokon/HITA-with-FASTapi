@@ -1,86 +1,64 @@
-{
-    "body": {
+[
+    {
         "hotel": {
-            "address": {
-                "city": {
-                    "name": "istanbul",
-                    "provider": 0,
-                    "isTopRegion": false,
-                    "ownLocation": false
-                },
-                "addressLines": [
-                    "ist"
-                ],
-                "street": "ist",
-                "zipCode": "",
-                "geolocation": {
-                    "longitude": "0",
-                    "latitude": "0"
-                }
-            },
-            "faxNumber": "",
-            "phoneNumber": "+90216 413 9300",
-            "homePage": "http://",
-            "stopSaleGuaranteed": 0,
-            "stopSaleStandart": 0,
-            "handicaps": [],
-            "geolocation": {
-                "longitude": "0",
-                "latitude": "0"
-            },
-            "stars": 0,
-            "rating": 0,
-            "themes": [],
-            "location": {
-                "name": "Istanbul",
-                "latitude": "41.01463",
-                "longitude": "28.97956",
-                "provider": 2,
-                "isTopRegion": false,
-                "ownLocation": false,
-                "id": "23472"
-            },
-            "country": {
-                "name": "Turkey",
-                "provider": 0,
-                "isTopRegion": false,
-                "ownLocation": false,
-                "id": "TR"
-            },
-            "city": {
-                "name": "Istanbul",
-                "latitude": "41.01463",
-                "longitude": "28.97956",
-                "provider": 2,
-                "isTopRegion": false,
-                "ownLocation": false,
-                "id": "23472"
-            },
-            "hotelCategory": {
-                "name": "0",
-                "id": "0",
-                "code": "0"
-            },
-            "hasChannelManagerOffer": false,
-            "provider": 2,
-            "description": {
-                "text": ""
-            },
-            "id": "458263",
-            "name": "AJIA HOTEL"
-        }
-    },
-    "header": {
-        "requestId": "0bcc3ec5-41b6-4563-a084-99d237e54480",
-        "success": true,
-        "responseTime": "2025-03-20T01:42:58.2108282Z",
-        "messages": [
+            "longitude": "-81.5745",
+            "created_at": "2025-06-30T05:59:01",
+            "address_line1": "2035 Southgate Parkway",
+            "updated_at": "2025-06-30T05:59:01",
+            "address_line2": "",
+            "map_status": "pending",
+            "postal_code": "43725",
+            "content_update_status": "NewAdd",
+            "ittid": "10530836",
+            "rating": "2.5",
+            "id": 535877,
+            "property_type": "Hotel",
+            "name": "Holiday Inn Express Hotel & Suites Cambridge by IHG",
+            "primary_photo": "https://i.travelapi.com/lodging/8000000/7760000/7757600/7757590/752fce5e_z.jpg",
+            "latitude": "40.0043"
+        },
+        "provider_mappings": [
             {
-                "id": 10000000,
-                "code": "OperationCompleted",
-                "messageType": 2,
-                "message": "Operation was completed successfully"
+                "ittid": "10530836",
+                "provider_name": "itt",
+                "system_type": "a",
+                "giata_code": "409010",
+                "updated_at": "2025-06-30T05:59:02",
+                "id": 599781,
+                "provider_id": "10530836",
+                "vervotech_id": "39677034",
+                "created_at": "2025-06-30T05:59:02"
+            }
+        ],
+        "locations": [
+            {
+                "city_name": "Cambridge",
+                "ittid": "10530836",
+                "state_code": "OH",
+                "country_code": "US",
+                "city_code": "PHD",
+                "created_at": "2025-06-30T05:59:02",
+                "state_name": "Ohio",
+                "id": 535844,
+                "country_name": "United States Of America",
+                "master_city_name": "Cambridge",
+                "city_location_id": "",
+                "updated_at": "2025-06-30T05:59:02"
+            }
+        ],
+        "contacts": [
+            {
+                "value": "1-740-421-4988",
+                "id": 598208,
+                "ittid": "10530836",
+                "contact_type": "phone"
+            },
+            {
+                "value": "1-740-421-4971",
+                "id": 598211,
+                "ittid": "10530836",
+                "contact_type": "fax"
             }
         ]
     }
-}
+]
