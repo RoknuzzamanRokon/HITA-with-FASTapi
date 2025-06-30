@@ -245,8 +245,8 @@ def get_hotel_mapping_data_using_provider_name_and_id(
             "provider_id": mapping.provider_id,
             "provider_name": mapping.provider_name,
             "system_type": mapping.system_type,
-            "giata_code": mapping.giata_code,
-            "vervotech_id": mapping.vervotech_id,
+            # "giata_code": mapping.giata_code,
+            # "vervotech_id": mapping.vervotech_id,
             # "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
             "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
         }]
