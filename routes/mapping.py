@@ -130,6 +130,7 @@ from sqlalchemy import select
     response_model=List[BasicMappingResponse],
     status_code=status.HTTP_200_OK,
 )
+@cache(expire=7200)
 def get_basic_mapping_with_info(
     supplier_name: List[str] = Query(..., description="List of provider names to filter by"),
     country_iso:   List[str] = Query(..., description="List of country codes to filter by"),
