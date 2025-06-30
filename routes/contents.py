@@ -93,15 +93,66 @@ def get_hotel_data_provider_name_and_id(
         locations = db.query(Location).filter(Location.ittid == hotel.ittid).all()
         contacts  = db.query(Contact).filter(Contact.ittid == hotel.ittid).all()
 
+        # Build hotel dict with only the required fields and order
+        hotel_dict = {
+            "ittid": hotel.ittid,
+            "id": hotel.id,
+            "name": hotel.name,
+            "property_type": hotel.property_type,
+            "longitude": hotel.longitude,
+            "latitude": hotel.latitude,
+            "address_line1": hotel.address_line1,
+            "address_line2": hotel.address_line2,
+            "postal_code": hotel.postal_code,
+            "rating": hotel.rating,
+            "primary_photo": hotel.primary_photo,
+            "map_status": hotel.map_status,
+            "updated_at": hotel.updated_at.isoformat() if hotel.updated_at else None,
+            "created_at": hotel.created_at.isoformat() if hotel.created_at else None,
+        }
+
+        # Build provider_mappings list with only the required fields and order
+        provider_mappings_list = [{
+            "id": mapping.id,
+            "provider_id": mapping.provider_id,
+            "provider_name": mapping.provider_name,
+            "system_type": mapping.system_type,
+            "giata_code": mapping.giata_code,
+            "vervotech_id": mapping.vervotech_id,
+            "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
+            "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
+        }]
+
+        # Build locations list with only the required fields and order
+        locations_list = [{
+            "id": loc.id,
+            "city_name": loc.city_name,
+            "city_code": loc.city_code,
+            "city_code": loc.city_code,
+            "master_city_name": loc.master_city_name,
+            "state_name": loc.state_name,
+            "state_code": loc.state_code,
+            "country_name": loc.country_name,
+            "country_code": loc.country_code,
+            "created_at": loc.created_at.isoformat() if loc.created_at else None,
+            "updated_at": loc.updated_at.isoformat() if loc.updated_at else None,
+        } for loc in locations]
+
+        # Build contacts list with only the required fields and order
+        contacts_list = [{
+            "id": c.id,
+            "contact_type": c.contact_type,
+            "value": c.value
+        } for c in contacts]
+
         result.append({
-            "hotel": hotel,
-            "provider_mappings": [mapping],
-            "locations": locations,
-            "contacts": contacts
+            "hotel": hotel_dict,
+            "provider_mappings": provider_mappings_list,
+            "locations": locations_list,
+            "contacts": contacts_list
         })
 
     if not result:
-        # either they had permissions but none matched the request
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Cannot mapping supplier in our system."
@@ -577,6 +628,7 @@ async def get_all_hotel_only_supplier(
     return {
         "resume_key": next_resume,
         "total_hotel": total,
+        "show_hotels_this_page": len(result),
         "hotel": result,
     }
 
