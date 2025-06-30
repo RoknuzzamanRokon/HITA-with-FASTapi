@@ -8,10 +8,10 @@ import models
 from fastapi_cache.decorator import cache
 from schemas import AddRateTypeRequest, UpdateRateTypeRequest, BasicMappingResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from fastapi.responses import JSONResponse
-
-
+from sqlalchemy import select
+import secrets, string
 
 
 
@@ -123,23 +123,31 @@ def update_rate_type(
     }
 
 
-from sqlalchemy import select
 
 @router.get(
     "/get_basic_mapping_with_info",
-    response_model=List[BasicMappingResponse],
     status_code=status.HTTP_200_OK,
 )
 @cache(expire=7200)
 def get_basic_mapping_with_info(
     supplier_name: List[str] = Query(..., description="List of provider names to filter by"),
     country_iso:   List[str] = Query(..., description="List of country codes to filter by"),
-    db:            Session    = Depends(get_db),
-    current_user:  User       = Depends(get_current_user),
+    limit_per_page: int = Query(50, ge=1, le=500, description="Number of records per page"),
+    resume_key: Optional[str] = Query(None, description="Pagination key"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     require_role(["super_user", "admin_user"], current_user)
 
-    # Step 1: Find all ittid for hotels with a location in the requested country
+    # Step 1: Decode resume_key
+    last_id = 0
+    if resume_key:
+        try:
+            last_id = int(resume_key.split("_", 1)[0])
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid resume_key.")
+
+    # Step 2: Get ittid for locations in given countries
     ittid_subq = (
         db.query(Location.ittid)
         .filter(Location.country_code.in_(country_iso))
@@ -147,80 +155,89 @@ def get_basic_mapping_with_info(
         .subquery()
     )
 
-    # Step 2: Query ProviderMapping for those hotels and supplier_name
-    mappings: List[ProviderMapping] = (
+    # Step 3: Shared filter
+    base_query = (
         db.query(ProviderMapping)
         .join(Hotel, ProviderMapping.ittid == Hotel.ittid)
-        .options(
-            joinedload(ProviderMapping.hotel).joinedload(Hotel.locations),
-            joinedload(ProviderMapping.rate_types)
-        )
         .filter(
             ProviderMapping.provider_name.in_(supplier_name),
             ProviderMapping.ittid.in_(select(ittid_subq.c.ittid))
         )
-        .all()
     )
 
-    print("Mappings found:", len(mappings))
+    # Count total results (before pagination)
+    total = base_query.count()
 
+    # Apply options and pagination
+    query = (
+        base_query
+        .options(
+            joinedload(ProviderMapping.hotel).joinedload(Hotel.locations),
+            joinedload(ProviderMapping.rate_types)
+        )
+        .order_by(ProviderMapping.id)
+    )
+
+    if last_id:
+        query = query.filter(ProviderMapping.id > last_id)
+
+    mappings: List[ProviderMapping] = query.limit(limit_per_page).all()
+    
+
+    # Step 4: Build result
     results = []
     for mapping in mappings:
         hotel = mapping.hotel
-        locations = [
-            {
-                "id": loc.id,
-                "city_name": loc.city_name,
-                "country_code": loc.country_code,
-                "state_code": loc.state_code,
-                "address": loc.city_location_id,
-            }
-            for loc in hotel.locations if loc.country_code in country_iso
-        ]
         if mapping.rate_types:
             for rt in mapping.rate_types:
                 results.append({
                     mapping.provider_name: [mapping.provider_id],
-                    "hotel_name":    hotel.name,
-                    "lon":           float(hotel.longitude) if hotel.longitude else None,
-                    "lat":           float(hotel.latitude)  if hotel.latitude  else None,
-                    "room_title":    rt.room_title,
-                    "rate_type":     rt.rate_name,
-                    "star_rating":   hotel.rating,
+                    "hotel_name": hotel.name,
+                    "longitude": float(hotel.longitude) if hotel.longitude else None,
+                    "latitude": float(hotel.latitude) if hotel.latitude else None,
+                    "room_title": rt.room_title,
+                    "rate_type": rt.rate_name,
+                    "star_rating": hotel.rating,
                     "primary_photo": hotel.primary_photo,
-                    "address":       " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
-                    "sell_per_night":rt.sell_per_night,
-                    "vervotech":     mapping.vervotech_id,
-                    "giata":         mapping.giata_code,
-                    "ittid":        mapping.ittid,
-                    # "locations":     locations,
+                    "address": " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
+                    "sell_per_night": rt.sell_per_night,
+                    "vervotech_id": mapping.vervotech_id,
+                    "giata_code": mapping.giata_code,
+                    "ittid": mapping.ittid,
                 })
         else:
-            # Add a result even if there are no rate_types
             results.append({
                 mapping.provider_name: [mapping.provider_id],
-                "hotel_name":    hotel.name,
-                "lon":           float(hotel.longitude) if hotel.longitude else None,
-                "lat":           float(hotel.latitude)  if hotel.latitude  else None,
-                "room_title":    None,
-                "rate_type":     None,
-                "star_rating":   hotel.rating,
+                "hotel_name": hotel.name,
+                "longitude": float(hotel.longitude) if hotel.longitude else None,
+                "latitude": float(hotel.latitude) if hotel.latitude else None,
+                "room_title": None,
+                "rate_type": None,
+                "star_rating": hotel.rating,
                 "primary_photo": hotel.primary_photo,
-                "address":       " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
-                "sell_per_night":None,
-                "vervotech":     mapping.vervotech_id,
-                "giata":         mapping.giata_code,
-                "ittid":        mapping.ittid,
-
-                # "locations":     locations,
+                "address": " ".join(filter(None, [hotel.address_line1, hotel.address_line2])),
+                "sell_per_night": None,
+                "vervotech_id": mapping.vervotech_id,
+                "giata_code": mapping.giata_code,
+                "ittid": mapping.ittid,
             })
-    print("Results sample:", results[:2])  # Print first 2 results for debug
 
+    # Step 5: Generate new resume_key
+    if len(mappings) == limit_per_page:
+        last_map_id = mappings[-1].id
+        rand = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(30))
+        next_resume_key = f"{last_map_id}_{rand}"
+    else:
+        next_resume_key = None
+
+    # Step 6: Return result with resume_key
     return JSONResponse(
-        content=results,
-        media_type="application/json",
-        headers={
-            "Content-Disposition": "attachment; filename=basic_mapping.json"
+        content={
+            "resume_key": next_resume_key,
+            "total_hotel": total,
+            "show_hotels_this_page": len(results),
+            "provider_mappings": results
         },
-    
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=basic_mapping.json"},
     )

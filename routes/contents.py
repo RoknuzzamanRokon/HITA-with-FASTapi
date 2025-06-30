@@ -493,13 +493,6 @@ class ProviderPropertyRequest(BaseModel):
 
 
 
-
-
-
-
-
-
-
 @router.get(
     "/get_all_hotel_only_supplier/",
     response_model=GetAllHotelResponse,
@@ -510,7 +503,7 @@ async def get_all_hotel_only_supplier(
     request: ProviderProperty,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db),
-    limit_per_page: int = Query(50, ge=1, le=100),
+    limit_per_page: int = Query(50, ge=1, le=500),
     resume_key: Optional[str] = Query(None),
 ):
     # print("Hello")

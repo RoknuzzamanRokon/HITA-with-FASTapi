@@ -229,6 +229,7 @@ class HotelItem(BaseModel):
 class GetAllHotelResponse(BaseModel):
     resume_key: Optional[str] = Field(None, description="Resume key for next page")
     total_hotel: int = Field(..., description="Total number of hotels for this supplier")
+    show_hotels_this_page: int
     hotel: List[HotelItem] = Field(..., description="Page of hotel records")
 
 
@@ -270,3 +271,5 @@ class BasicMappingResponse(BaseModel):
 
     class Config:
         extra = "allow"
+
+
