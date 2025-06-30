@@ -25,6 +25,9 @@ router = APIRouter(
 )
 
 
+
+
+
 class ProviderHotelIdentity(BaseModel):
     provider_id: str
     provider_name: str
@@ -119,8 +122,8 @@ def get_hotel_data_provider_name_and_id(
             "system_type": mapping.system_type,
             "giata_code": mapping.giata_code,
             "vervotech_id": mapping.vervotech_id,
-            "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
-            "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
+            # "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
+            # "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
         }]
 
         # Build locations list with only the required fields and order
@@ -134,8 +137,8 @@ def get_hotel_data_provider_name_and_id(
             "state_code": loc.state_code,
             "country_name": loc.country_name,
             "country_code": loc.country_code,
-            "created_at": loc.created_at.isoformat() if loc.created_at else None,
-            "updated_at": loc.updated_at.isoformat() if loc.updated_at else None,
+            # "created_at": loc.created_at.isoformat() if loc.created_at else None,
+            # "updated_at": loc.updated_at.isoformat() if loc.updated_at else None,
         } for loc in locations]
 
         # Build contacts list with only the required fields and order
@@ -159,6 +162,117 @@ def get_hotel_data_provider_name_and_id(
         )
 
     return result
+
+
+
+
+
+
+
+
+
+
+class ProviderHotelIdentity(BaseModel):
+    provider_id: str
+    provider_name: str
+
+class ProviderHotelRequest(BaseModel):
+    provider_hotel_identity: List[ProviderHotelIdentity]
+
+
+
+@router.post("/get_hotel_mapping_data_using_provider_name_and_id", status_code=status.HTTP_200_OK)
+def get_hotel_mapping_data_using_provider_name_and_id(
+    request: ProviderHotelRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    # Deduct points for general_user
+    if current_user.role == models.UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+
+        # load permissions
+        allowed_providers = [
+            p.provider_name
+            for p in db.query(UserProviderPermission)
+                      .filter(UserProviderPermission.user_id == current_user.id)
+                      .all()
+        ]
+        # **early error if truly no permissions**
+        if not allowed_providers:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="you have not any permission for this request."
+            )
+    else:
+        # if you really want _everyone else_ blocked until you grant, 
+        # you could also force them into the same error here.
+        allowed_providers = None
+        print("Allowed providers for user:", allowed_providers)
+        print("Requested identities:", [vars(i) for i in request.provider_hotel_identity])
+  
+
+    # now you know GENERAL_USER has at least one allowed_provider
+    # (or everyone else is None → full access)
+
+    result = []
+    for identity in request.provider_hotel_identity:
+        name = identity.provider_name
+        pid = identity.provider_id
+        if allowed_providers and name not in allowed_providers:
+            print(f"User not allowed for provider: {name}")
+            continue
+
+        mapping = (
+            db.query(ProviderMapping)
+            .filter_by(provider_id=pid, provider_name=name)
+            .first()
+        )
+        if not mapping:
+            print(f"No mapping found for provider_id={pid}, provider_name={name}")
+            continue
+
+        hotel = db.query(Hotel).filter(Hotel.ittid == mapping.ittid).first()
+        if not hotel:
+            print(f"No hotel found for ittid={mapping.ittid}")
+            continue
+
+
+        # Build provider_mappings list with only the required fields and order
+        provider_mappings_list = [{
+            "ittid": hotel.ittid,
+            "provider_mapping_id": mapping.id,
+            "provider_id": mapping.provider_id,
+            "provider_name": mapping.provider_name,
+            "system_type": mapping.system_type,
+            "giata_code": mapping.giata_code,
+            "vervotech_id": mapping.vervotech_id,
+            # "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
+            "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
+        }]
+
+
+
+        result.append({
+            "provider_mappings": provider_mappings_list
+        })
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cannot mapping supplier in our system."
+        )
+
+    return result
+
+
+
+
+
+
+
+
+
 
 
 class ITTIDRequest(BaseModel):
@@ -563,7 +677,7 @@ async def get_all_hotel_only_supplier(
             continue
 
         providers = [
-            {"name": m.provider_name, "provider_id": m.provider_id, "status": "update"}
+            {"id": m.id, "name": m.provider_name, "provider_id": m.provider_id, "status": "update"}
             for m in group
         ]
 
@@ -627,6 +741,10 @@ async def get_all_hotel_only_supplier(
 
 
 
+
+
+
+
 @router.get("/get_update_provider_info")
 def get_update_provider_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -636,11 +754,6 @@ def get_update_provider_info(
     resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all new and updated provider mapping data for the user's active suppliers,
-    filtered by date range and paginated.
-    Super users see all mappings.
-    """
     try:
         from_dt = datetime.strptime(from_date, "%Y-%m-%d")
         to_dt = datetime.strptime(to_date, "%Y-%m-%d")
@@ -660,24 +773,31 @@ def get_update_provider_info(
         if not allowed_providers:
             return {"message": "Please contact your admin."}
 
-    query = db.query(ProviderMapping).filter(
+    # Base query for filtering
+    base_query = db.query(ProviderMapping).filter(
         ProviderMapping.updated_at >= from_dt,
         ProviderMapping.updated_at <= to_dt
-    ).order_by(ProviderMapping.id)
+    )
 
     if allowed_providers is not None:
-        query = query.filter(ProviderMapping.provider_name.in_(allowed_providers))
+        base_query = base_query.filter(ProviderMapping.provider_name.in_(allowed_providers))
 
-    # Pagination with resume_key (id)
+    # Count total BEFORE applying resume_key/pagination
+    total = base_query.count()
+
+    # Apply ordering and resume_key filter
     last_id = 0
     if resume_key:
         try:
             last_id = int(resume_key.split("_")[0])
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid resume_key.")
-        query = query.filter(ProviderMapping.id > last_id)
+        base_query = base_query.filter(ProviderMapping.id > last_id)
 
-    mappings = query.limit(limit_per_page).all()
+    base_query = base_query.order_by(ProviderMapping.id)
+
+    # Apply pagination
+    mappings = base_query.limit(limit_per_page).all()
 
     # Prepare next resume_key (random string + last id)
     if mappings and len(mappings) == limit_per_page:
@@ -699,12 +819,7 @@ def get_update_provider_info(
 
     return {
         "resume_key": next_resume_key,
-        "count": len(result),
+        "total_hotel": total, 
+        "show_hotels_this_page": len(result),
         "provider_mappings": result
     }
-
-
-
-
-
-
