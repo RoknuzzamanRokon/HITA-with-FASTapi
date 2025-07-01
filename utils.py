@@ -19,9 +19,9 @@ PER_REQUEST_POINT_DEDUCTION = 10
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT settings
-SECRET_KEY = "your_secret_key"
+SECRET_KEY = "your_secret_key_your_secret_key_your_secret_key_your_secret_key_your_secret_key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 2440
+ACCESS_TOKEN_EXPIRE_MINUTES = 24440
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 

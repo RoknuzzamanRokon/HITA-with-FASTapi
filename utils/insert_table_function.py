@@ -122,17 +122,21 @@ def upload_hotels():
 
     batch_size = 1000
     offset = 0
+    start_id = 1228445  # 👈 Change this value as needed
 
     with engine.connect() as conn:
         total_rows = conn.execute(
-            text("SELECT COUNT(*) FROM global_hotel_mapping")
+            text(f"SELECT COUNT(*) FROM global_hotel_mapping WHERE Id > {start_id}")
         ).scalar()
 
         while offset < total_rows:
-            print(f"Processing rows {offset + 1} to {offset + batch_size}")
+            print(f"Processing rows with Id > {start_id} (Batch {offset + 1} to {offset + batch_size})")
 
             result = conn.execute(
-                select(hotel_table).offset(offset).limit(batch_size)
+                select(hotel_table)
+                .where(hotel_table.c.Id > start_id)
+                .offset(offset)
+                .limit(batch_size)
             )
             rows = result.fetchall()
 
@@ -145,6 +149,7 @@ def upload_hotels():
                     pass
 
             offset += batch_size
+
 
 
 if __name__ == "__main__":
