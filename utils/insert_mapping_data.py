@@ -83,57 +83,66 @@ def build_payload(row, provider, suffix):
     }
 
 
-def fetch_all_mappings(engine):
-    meta  = MetaData()
-    table = Table("hotel_test_mapping", meta, autoload_with=engine)
+def fetch_all_mappings(engine, offset=0, limit=1000):
+    meta = MetaData()
+    table = Table("global_hotel_mapping", meta, autoload_with=engine)
     with Session(engine) as sess:
-        return sess.execute(select(table)).all()
+        stmt = select(table).offset(offset).limit(limit)
+        return sess.execute(stmt).all()
 
 
 def post_mapping(session, headers, payload):
     """POST and return the payload on success."""
     resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
     resp.raise_for_status()
-    return payload  # return what we just sent
+    return payload  
 
 
 def main():
     engine  = get_database_engine()
     headers = get_headers()
-    rows    = fetch_all_mappings(engine)
-
+    batch_size = 1000
+    offset = 0
     seen = set()
 
-    with requests.Session() as sess, ThreadPoolExecutor(max_workers=50) as executor:
-        futures = []
+    with requests.Session() as sess, ThreadPoolExecutor(max_workers=30) as executor:
+        while True:
+            rows = fetch_all_mappings(engine, offset=offset, limit=batch_size)
+            if not rows:
+                break
 
-        for row in rows:
-            for provider in PROVIDERS:
-                for suffix in SUFFIX_MAP:
-                    payload = build_payload(row, provider, suffix)
-                    if not payload:
-                        continue
+            futures = []
 
-                    key = (payload["provider_name"], payload["provider_id"])
-                    if key in seen:
-                        continue
-                    seen.add(key)
+            for row in rows:
+                for provider in PROVIDERS:
+                    for suffix in SUFFIX_MAP:
+                        payload = build_payload(row, provider, suffix)
+                        if not payload:
+                            continue
 
-                    futures.append(
-                        executor.submit(post_mapping, sess, headers, payload)
+                        key = (payload["provider_name"], payload["provider_id"])
+                        if key in seen:
+                            continue
+                        seen.add(key)
+
+                        futures.append(
+                            executor.submit(post_mapping, sess, headers, payload)
+                        )
+
+            for fut in as_completed(futures):
+                try:
+                    payload = fut.result()
+                    print(
+                        f"✅ Inserted: itt id={payload['ittid']} | "
+                        f"provider={payload['provider_name']} | "
+                        f"id={payload['provider_id']} | "
+                        f"type={payload['system_type']}"
                     )
+                except Exception as e:
+                    print("❌ Error:", e)
 
-        for fut in as_completed(futures):
-            try:
-                payload = fut.result()
-                print(
-                    f"✅ Inserted: itt id={payload['ittid']} | "
-                    f"provider={payload['provider_name']} | "
-                    f"id={payload['provider_id']} | "
-                    f"type={payload['system_type']}"
-                )
-            except Exception as e:
-                print("❌ Error:", e)
+            offset += batch_size
+
 
 
 if __name__ == "__main__":

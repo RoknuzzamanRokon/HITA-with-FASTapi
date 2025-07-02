@@ -122,7 +122,7 @@ def upload_hotels():
 
     batch_size = 1000
     offset = 0
-    start_id = 1228445  # 👈 Change this value as needed
+    start_id = 1 
 
     with engine.connect() as conn:
         total_rows = conn.execute(
@@ -140,7 +140,7 @@ def upload_hotels():
             )
             rows = result.fetchall()
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=30) as executor:
                 futures = [
                     executor.submit(process_hotel, row, headers, api_url)
                     for row in rows
