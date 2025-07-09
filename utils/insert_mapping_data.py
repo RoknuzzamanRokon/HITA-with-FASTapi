@@ -83,7 +83,7 @@ def build_payload(row, provider, suffix):
     }
 
 
-def fetch_all_mappings(engine, offset=0, limit=1000):
+def fetch_all_mappings(engine, offset=0, limit=5000):
     meta = MetaData()
     table = Table("global_hotel_mapping", meta, autoload_with=engine)
     with Session(engine) as sess:
