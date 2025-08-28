@@ -25,10 +25,17 @@ from routes.permissions import router as permissions_router
 from routes.delete import router as delete_router
 from routes.mapping import router as mapping_router
 
-
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ——————— Initialize Redis cache on startup ———————
@@ -48,7 +55,6 @@ logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
-
 
 
 @app.exception_handler(RequestValidationError)
@@ -89,9 +95,6 @@ app.include_router(contents_router)
 app.include_router(permissions_router)
 app.include_router(delete_router)
 app.include_router(mapping_router)
-
-
-
 
 
 # Compute absolute path to the directory containing this file
