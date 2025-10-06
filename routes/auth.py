@@ -32,9 +32,6 @@ async def get_access_token(
     return {"access_token": access_token, "token_type": "Bearer"}   
 
 
-
-
-
 @router.post("/register", response_model=User)
 def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     """Register a new user."""
@@ -48,21 +45,20 @@ def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_
             content={"message_from_system": "User Already exist."}
         )
     try:
-        # Set created_by='self' when creating the user
-        db_user = create_user(db, user, created_by='self')
-        return jsonable_encoder(db_user)
+        db_user = create_user(db, user)
+        return JSONResponse(content=jsonable_encoder(db_user))
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"message_from_system": "cannot input valid field."}
+            content={
+                "message_from_system": "Cannot input valid field.",
+                "error_detail": str(e),
+            },
         )
-
-
 # @router.get("/login")
 # async def login():
 #     """Placeholder for login URL."""
 #     return {"message": "Use the /auth/token endpoint to log in with your username and password."}
-
 
 
 # @router.get("/logout")

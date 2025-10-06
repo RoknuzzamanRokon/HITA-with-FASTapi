@@ -21,12 +21,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # JWT settings
 SECRET_KEY = "your_secret_key_your_secret_key_your_secret_key_your_secret_key_your_secret_key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 24440
+ACCESS_TOKEN_EXPIRE_MINUTES = 424440
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def create_user(db: Session, user: UserCreate):
+def create_user(db: Session, user: UserCreate, created_by=None):
     hashed_password = pwd_context.hash(user.password)
     unique_id = secrets.token_hex(5)  
     db_user = User(
@@ -85,9 +85,6 @@ def require_role(required_roles: list, current_user: User):
     return current_user
 
 
-
-
-
 def deduct_points_for_general_user(
         current_user: models.User, db: Session,
         points: int = PER_REQUEST_POINT_DEDUCTION
@@ -128,4 +125,3 @@ def deduct_points_for_general_user(
         db.add(transaction)
 
     db.commit()
-

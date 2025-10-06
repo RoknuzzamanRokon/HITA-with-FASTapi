@@ -22,7 +22,8 @@ redis = "*"
 setuptools = "*"
 cryptography = "*"
 passlib = "*"
-bcrypt = "*"
+pip = "*"
+install = "*"
 
 [dev-packages]
 

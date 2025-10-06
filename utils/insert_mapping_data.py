@@ -83,9 +83,9 @@ def build_payload(row, provider, suffix):
     }
 
 
-def fetch_all_mappings(engine, offset=0, limit=5000):
+def fetch_all_mappings(engine, offset=0, limit=10000):
     meta = MetaData()
-    table = Table("global_hotel_mapping", meta, autoload_with=engine)
+    table = Table("global_hotel_mapping_copy", meta, autoload_with=engine)
     with Session(engine) as sess:
         stmt = select(table).offset(offset).limit(limit)
         return sess.execute(stmt).all()
@@ -142,7 +142,6 @@ def main():
                     print("❌ Error:", e)
 
             offset += batch_size
-
 
 
 if __name__ == "__main__":
