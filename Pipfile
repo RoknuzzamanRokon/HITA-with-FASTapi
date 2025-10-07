@@ -22,8 +22,7 @@ redis = "*"
 setuptools = "*"
 cryptography = "*"
 passlib = "*"
-pip = "*"
-install = "*"
+bcrypt = "==3.2.2"
 
 [dev-packages]
 

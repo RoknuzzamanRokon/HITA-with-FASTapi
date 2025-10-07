@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 
-API_BASE = "http://127.0.0.1:8000/v1.0"
+API_BASE = "http://127.0.0.1:8001/v1.0"
 ENDPOINT = f"{API_BASE}/hotels/mapping/add_provider_all_details_with_ittid/"
 
 def get_database_engine():
