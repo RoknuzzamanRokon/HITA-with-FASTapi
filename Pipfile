@@ -17,12 +17,12 @@ pydantic = {extras = ["email"], version = "*"}
 pillow = "*"
 colorama = "*"
 requests = "*"
-fastapi-cache2 = "*"
 redis = "*"
 setuptools = "*"
 cryptography = "*"
 passlib = "*"
 bcrypt = "==3.2.2"
+fastapi-cache2 = "*"
 
 [dev-packages]
 
