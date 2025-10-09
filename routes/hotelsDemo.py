@@ -5,10 +5,9 @@ from schemas import HotelCreateDemo, HotelReadDemo
 from typing import Annotated
 import models
 from datetime import datetime
-from utils import require_role, get_current_user 
+from utils import require_role
 from models import User
-
-
+from routes.auth import get_current_user
 
 
 router = APIRouter(
@@ -16,7 +15,6 @@ router = APIRouter(
     tags=["Hotels Demo"],
     responses={404: {"description": "Not found"}},
 )
-
 
 
 # Create hotel endpoint with point deduction and response model
@@ -81,5 +79,3 @@ async def read_hotel(
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
     return hotel
-
-

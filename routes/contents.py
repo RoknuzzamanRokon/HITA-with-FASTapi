@@ -5,17 +5,18 @@ from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermis
 from pydantic import BaseModel
 from typing import List, Optional, Annotated
 from datetime import datetime
-from utils import get_current_user, deduct_points_for_general_user, require_role
+from utils import deduct_points_for_general_user, require_role
 import models
 import secrets
 import string
 from fastapi_cache.decorator import cache
-
+import csv
+import redis
+from routes.auth import get_current_user
 
 from schemas import ProviderProperty, GetAllHotelResponse
 
 router = APIRouter()
-
 
 
 router = APIRouter(
@@ -25,16 +26,12 @@ router = APIRouter(
 )
 
 
-
-
-
 class ProviderHotelIdentity(BaseModel):
     provider_id: str
     provider_name: str
 
 class ProviderHotelRequest(BaseModel):
     provider_hotel_identity: List[ProviderHotelIdentity]
-
 
 
 @router.post("/get_hotel_data_provider_name_and_id", status_code=status.HTTP_200_OK)
@@ -164,21 +161,12 @@ def get_hotel_data_provider_name_and_id(
     return result
 
 
-
-
-
-
-
-
-
-
 class ProviderHotelIdentity(BaseModel):
     provider_id: str
     provider_name: str
 
 class ProviderHotelRequest(BaseModel):
     provider_hotel_identity: List[ProviderHotelIdentity]
-
 
 
 @router.post("/get_hotel_mapping_data_using_provider_name_and_id", status_code=status.HTTP_200_OK)
@@ -266,18 +254,8 @@ def get_hotel_mapping_data_using_provider_name_and_id(
     return result
 
 
-
-
-
-
-
-
-
-
-
 class ITTIDRequest(BaseModel):
     ittid: List[str]
-
 
 
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
@@ -498,7 +476,6 @@ def get_hotel_using_ittid(
             }
 
 
-
 @router.get("/get_all_hotel_info", status_code=status.HTTP_200_OK)
 def get_all_hotels(
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -595,16 +572,11 @@ def get_all_hotels(
     }
 
 
-
-
-
-
 class ProviderProperty(BaseModel):
     provider_name: str
 
 class ProviderPropertyRequest(BaseModel):
     provider_property: List[ProviderProperty]
-
 
 
 @router.get(
@@ -740,11 +712,6 @@ async def get_all_hotel_only_supplier(
     }
 
 
-
-
-
-
-
 @router.get("/get_update_provider_info")
 def get_update_provider_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -823,3 +790,62 @@ def get_update_provider_info(
         "show_hotels_this_page": len(result),
         "provider_mappings": result
     }
+
+
+class HotelNameRequest(BaseModel):
+    hotel_name: str
+
+@router.post("/search_with_hotel_name", status_code=status.HTTP_200_OK)
+def search_hotel_with_name(
+    request: HotelNameRequest = Body(...),
+):
+    csv_path = "static/hotelcontent/itt_hotel_basic_info.csv"
+    try:
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                if row["Name"].strip().lower() == request.hotel_name.strip().lower():
+                    return {
+                        "ittid": row.get("ittid"),
+                        "name": row.get("Name"),
+                        "addressline1": row.get("AddressLine1"),
+                        "addressline2": row.get("AddressLine2"),
+                        "city": row.get("CityName"),
+                        "country": row.get("CountryName"),
+                        "latitude": row.get("Latitude"),
+                        "longitude": row.get("Longitude"),
+                        "postalcode": row.get("PostalCode"),
+                        "chainname": row.get("ChainName"),
+                        "propertytype": row.get("PropertyType")
+                    }
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="CSV file not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading CSV file: {str(e)}")
+
+    raise HTTPException(status_code=404, detail="Hotel not found.")
+
+
+@router.get("/autocomplete", status_code=status.HTTP_200_OK)
+def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel name")):
+    csv_path = "static/hotelcontent/itt_hotel_basic_info.csv"
+    suggestions = []
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                hotel_name = row["Name"].strip()
+                if hotel_name.lower().startswith(query.lower()):
+                    suggestions.append(hotel_name)
+                # Optional: limit results for speed
+                if len(suggestions) >= 20:
+                    break
+        if not suggestions:
+            return {"results": []}
+        return {"results": suggestions}
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="CSV file not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading CSV file: {str(e)}")

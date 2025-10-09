@@ -3,9 +3,9 @@ from typing import Annotated
 from sqlalchemy.orm import Session
 import models
 from database import get_db
-from utils import get_current_user, deduct_points_for_general_user, require_role
+from utils import deduct_points_for_general_user, require_role
 from models import UserRole, Hotel, ProviderMapping, Location, Contact
-
+from routes.auth import get_current_user
 
 router = APIRouter(
     prefix="/v1.0/delete",
@@ -43,8 +43,6 @@ def delete_user(
     return {"message": f"User with ID {user_id} has been deleted."}
 
 
-
-
 @router.delete("/delete_super_user/{user_id}", include_in_schema = False)
 def delete_supper_user(
     user_id: str,
@@ -72,14 +70,6 @@ def delete_supper_user(
     db.commit()
 
     return {"message": f"User with ID {user_id} has been deleted."}
-
-
-
-
-
-
-
-
 
 
 @router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK, include_in_schema = False)
@@ -117,7 +107,6 @@ def delete_hotel_by_ittid(
     return {"message": f"Hotel with ittid '{ittid}' and all related data deleted successfully."}
 
 
-
 @router.delete("/delete_a_hotel_mapping", status_code=status.HTTP_200_OK, include_in_schema = False)
 def delete_a_hotel_mapping(
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -150,17 +139,3 @@ def delete_a_hotel_mapping(
     db.commit()
 
     return {"message": f"Mapping for provider '{provider_name}', provider_id '{provider_id}' deleted successfully."}
-
-
-
-
-
-
-
-
-
-
-
-
-
-

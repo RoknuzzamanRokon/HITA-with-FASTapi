@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session
 from database import get_db
 from schemas import HotelCreate, HotelRead
 import models
-from utils import require_role, get_current_user  
+from utils import require_role
 from pydantic import BaseModel
 from typing import List, Optional, Annotated
 from models import User, Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
-
+from routes.auth import get_current_user
 
 
 router = APIRouter(
@@ -58,9 +58,8 @@ def create_hotel_with_details(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error creating hotel: {str(e)}"
         )
-    
 
-    
+
 @router.post(
     "/mapping/add_provider_all_details_with_ittid",
     status_code=status.HTTP_201_CREATED,

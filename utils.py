@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import User
 from schemas import UserCreate
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from typing import Annotated
 from database import get_db
 import secrets
 import models
+import redis
 
+blacklist = redis.Redis(host="localhost", port=6379, db=0)
 
 PER_REQUEST_POINT_DEDUCTION = 10  
 
@@ -58,23 +60,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Annotated[Session, Depends(get_db)]):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = db.query(User).filter(User.username == username).first()
-    if user is None:
-        raise credentials_exception
-    return user
+
 
 def require_role(required_roles: list, current_user: User):
     if current_user.role not in required_roles:

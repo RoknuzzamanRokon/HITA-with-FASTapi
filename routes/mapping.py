@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Hotel, ProviderMapping, Location, RateTypeInfo, User
 from datetime import datetime
-from utils import get_current_user, require_role
+from utils import require_role
 import models
 from fastapi_cache.decorator import cache
 from schemas import AddRateTypeRequest, UpdateRateTypeRequest, BasicMappingResponse
@@ -12,7 +12,7 @@ from typing import List, Optional
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 import secrets, string
-
+from routes.auth import get_current_user
 
 
 router = APIRouter(
@@ -20,7 +20,6 @@ router = APIRouter(
     tags=["Hotel mapping"],
     responses={404: {"description": "Not found"}},
 )
-
 
 
 @router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED, include_in_schema=False)
@@ -87,7 +86,6 @@ def add_rate_type(
     }
 
 
-
 @router.put("/update_rate_type", status_code=status.HTTP_200_OK, include_in_schema=False)
 def update_rate_type(
     update_data: UpdateRateTypeRequest,
@@ -121,7 +119,6 @@ def update_rate_type(
         "message": "Rate type updated successfully.",
         "updated_rate_type_id": rate_type.id
     }
-
 
 
 @router.get(

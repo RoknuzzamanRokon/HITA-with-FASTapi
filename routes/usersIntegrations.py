@@ -14,9 +14,8 @@ import models
 from passlib.context import CryptContext
 import secrets
 from datetime import datetime, timedelta
-from utils import get_current_user, deduct_points_for_general_user
 from models import PointAllocationType
-
+from routes.auth import get_current_user
 
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
