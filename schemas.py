@@ -44,7 +44,7 @@ class AdminUserResponse(BaseModel):
     email: str
     role: str
     created_by: List[CreatedByInfo]
-    
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -92,7 +92,6 @@ class ChainCreate(BaseModel):
     brand_name: Optional[str] = Field(None, max_length=100)
 
 
-
 class HotelCreateDemo(BaseModel):
     ittid: str = Field(..., max_length=50)
     name: str = Field(..., max_length=255)
@@ -113,15 +112,11 @@ class HotelCreateDemo(BaseModel):
     location_ids: Optional[str] = Field(None, max_length=255)
 
 
-
 class HotelReadDemo(HotelCreateDemo):
     id: int
 
     class Config:
         from_attributes = True
-
-
-
 
 
 class HotelCreate(BaseModel):
@@ -179,8 +174,8 @@ from models import PointAllocationType
 
 class GivePointsRequest(BaseModel):
     receiver_email: EmailStr
+    receiver_id: str
     allocation_type: PointAllocationType
-
 
 
 # --- New schemas for `get_all_hotel_only_supplier` ---
@@ -233,8 +228,6 @@ class GetAllHotelResponse(BaseModel):
     hotel: List[HotelItem] = Field(..., description="Page of hotel records")
 
 
-
-
 class AddRateTypeRequest(BaseModel):
     ittid: str
     provider_mapping_id: int
@@ -254,8 +247,6 @@ class UpdateRateTypeRequest(BaseModel):
     sell_per_night: float
 
 
-
-
 class BasicMappingResponse(BaseModel):
     hotel_name: str
     lon: Optional[float]
@@ -271,5 +262,3 @@ class BasicMappingResponse(BaseModel):
 
     class Config:
         extra = "allow"
-
-

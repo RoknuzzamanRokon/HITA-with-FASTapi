@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData, Table, select
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+import threading
 
 # --- CONFIGURATION & AUTH --- #
 
@@ -83,29 +85,75 @@ def build_payload(row, provider, suffix):
     }
 
 
+# def fetch_all_mappings(engine, offset=0, limit=10000):
+#     """
+#     Fetch a batch of rows from the global_hotel_mapping_copy table.
+#     Ensures proper session cleanup and engine disposal to prevent
+#     MySQL connection exhaustion during long-running loops.
+#     """
+#     meta = MetaData()
+#     table = Table("global_hotel_mapping_copy", meta, autoload_with=engine)
+
+#     try:
+#         with Session(engine) as sess:
+#             stmt = select(table).offset(offset).limit(limit)
+#             results = sess.execute(stmt).all()
+#             return results
+#     finally:
+#         # ✅ Ensure connection pool doesn't grow endlessly
+#         engine.dispose()
+
+
+from sqlalchemy import desc
+
+
 def fetch_all_mappings(engine, offset=0, limit=10000):
     meta = MetaData()
     table = Table("global_hotel_mapping_copy", meta, autoload_with=engine)
-    with Session(engine) as sess:
-        stmt = select(table).offset(offset).limit(limit)
-        return sess.execute(stmt).all()
+
+    try:
+        with Session(engine) as sess:
+            stmt = (
+                select(table).order_by(desc(table.c.ittid)).offset(offset).limit(limit)
+            )
+            results = sess.execute(stmt).all()
+            return results
+    finally:
+        engine.dispose()
+
 
 
 def post_mapping(session, headers, payload):
-    """POST and return the payload on success."""
-    resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
-    resp.raise_for_status()
-    return payload  
+    """POST and return the payload on success, refresh token if expired."""
+    try:
+        resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
+        resp.raise_for_status()
+        return payload
+
+    except requests.exceptions.HTTPError as e:
+        # If token expired or invalid, refresh and retry once
+        if e.response is not None and e.response.status_code == 401:
+            print("⚠️ Token expired. Refreshing access token...")
+            new_headers = get_headers()  # refresh token
+            resp = session.post(ENDPOINT, headers=new_headers, data=json.dumps(payload))
+            resp.raise_for_status()
+            return payload
+        else:
+            # Re-raise all other HTTP errors
+            raise e
+
+
+seen_lock = threading.Lock()
+seen = set()
 
 
 def main():
-    engine  = get_database_engine()
+    engine = get_database_engine()
     headers = get_headers()
     batch_size = 1000
     offset = 0
-    seen = set()
 
-    with requests.Session() as sess, ThreadPoolExecutor(max_workers=30) as executor:
+    with requests.Session() as sess, ThreadPoolExecutor(max_workers=10) as executor:
         while True:
             rows = fetch_all_mappings(engine, offset=offset, limit=batch_size)
             if not rows:
@@ -121,14 +169,18 @@ def main():
                             continue
 
                         key = (payload["provider_name"], payload["provider_id"])
-                        if key in seen:
-                            continue
-                        seen.add(key)
+
+                        # ✅ Thread-safe duplicate check
+                        with seen_lock:
+                            if key in seen:
+                                continue
+                            seen.add(key)
 
                         futures.append(
                             executor.submit(post_mapping, sess, headers, payload)
                         )
 
+            # ✅ Wait for all threads to finish before next batch
             for fut in as_completed(futures):
                 try:
                     payload = fut.result()
@@ -142,6 +194,7 @@ def main():
                     print("❌ Error:", e)
 
             offset += batch_size
+            time.sleep(0.2)
 
 
 if __name__ == "__main__":

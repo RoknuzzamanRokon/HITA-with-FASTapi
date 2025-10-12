@@ -293,7 +293,10 @@ def give_points(
     # Find the receiver by email
     receiver = (
         db.query(models.User)
-        .filter(models.User.email == request.receiver_email)
+        .filter(
+            models.User.email == request.receiver_email,
+            models.User.id == request.receiver_id
+        )
         .first()
     )
     if not receiver or not receiver.email:
@@ -462,86 +465,86 @@ def check_point_details(
     return data
 
 
-@router.get("/super/check/all", include_in_schema=False)
-def super_check_all(
-    current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-):
-    """Get details of all users created by the current super_user, including super users."""
-    if current_user.role != models.UserRole.SUPER_USER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user can access this endpoint.",
-        )
+# @router.get("/super/check/all", include_in_schema=False)
+# def super_check_all(
+#     current_user: Annotated[models.User, Depends(get_current_user)],
+#     db: Annotated[Session, Depends(get_db)],
+# ):
+#     """Get details of all users created by the current super_user, including super users."""
+#     if current_user.role != models.UserRole.SUPER_USER:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only super_user can access this endpoint.",
+#         )
 
-    # Only get users created by this super_user
-    created_by_str = f"super_user: {current_user.email}"
-    users = db.query(models.User).filter(models.User.created_by == created_by_str).all()
+#     # Only get users created by this super_user
+#     created_by_str = f"super_user: {current_user.email}"
+#     users = db.query(models.User).filter(models.User.created_by == created_by_str).all()
 
-    response = {
-        "total_super_user": 0,
-        "total_admin_users": 0,
-        "total_general_users": 0,
-        "super_users": [],  # <-- Add this line
-        "admin_users": [],
-        "general_users": [],
-    }
+#     response = {
+#         "total_super_user": 0,
+#         "total_admin_users": 0,
+#         "total_general_users": 0,
+#         "super_users": [],  # <-- Add this line
+#         "admin_users": [],
+#         "general_users": [],
+#     }
 
-    for user in users:
-        user_points = (
-            db.query(models.UserPoint)
-            .filter(models.UserPoint.user_id == user.id)
-            .first()
-        )
-        if user.role == models.UserRole.SUPER_USER:
-            paid_status = "I am super user, I have unlimited points."
-        else:
-            paid_status = (
-                "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
-            )
+#     for user in users:
+#         user_points = (
+#             db.query(models.UserPoint)
+#             .filter(models.UserPoint.user_id == user.id)
+#             .first()
+#         )
+#         if user.role == models.UserRole.SUPER_USER:
+#             paid_status = "I am super user, I have unlimited points."
+#         else:
+#             paid_status = (
+#                 "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
+#             )
 
-        points_info = {
-            "total_points": user_points.total_points if user_points else 0,
-            "current_points": user_points.current_points if user_points else 0,
-            "paid_status": paid_status,
-            "total_rq": db.query(models.PointTransaction)
-            .filter(models.PointTransaction.giver_id == user.id)
-            .count(),
-        }
-        last_7_days = datetime.utcnow() - timedelta(days=7)
-        recent_transactions = (
-            db.query(models.PointTransaction)
-            .filter(
-                (models.PointTransaction.giver_id == user.id)
-                | (models.PointTransaction.receiver_id == user.id),
-                models.PointTransaction.created_at >= last_7_days,
-            )
-            .count()
-        )
+#         points_info = {
+#             "total_points": user_points.total_points if user_points else 0,
+#             "current_points": user_points.current_points if user_points else 0,
+#             "paid_status": paid_status,
+#             "total_rq": db.query(models.PointTransaction)
+#             .filter(models.PointTransaction.giver_id == user.id)
+#             .count(),
+#         }
+#         last_7_days = datetime.utcnow() - timedelta(days=7)
+#         recent_transactions = (
+#             db.query(models.PointTransaction)
+#             .filter(
+#                 (models.PointTransaction.giver_id == user.id)
+#                 | (models.PointTransaction.receiver_id == user.id),
+#                 models.PointTransaction.created_at >= last_7_days,
+#             )
+#             .count()
+#         )
 
-        using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
+#         using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
 
-        user_info = {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "points": points_info,
-            "created_at": user.created_at,
-            "user_status": user.role,
-            "is_active": user.is_active,
-            "using_rq_status": using_rq_status,
-        }
-        if user.role == models.UserRole.SUPER_USER:
-            response["super_users"].append(user_info)  # <-- Add to super_users list
-            response["total_super_user"] += 1
-        elif user.role == models.UserRole.ADMIN_USER:
-            response["admin_users"].append(user_info)
-            response["total_admin_users"] += 1
-        elif user.role == models.UserRole.GENERAL_USER:
-            response["general_users"].append(user_info)
-            response["total_general_users"] += 1
+#         user_info = {
+#             "id": user.id,
+#             "username": user.username,
+#             "email": user.email,
+#             "points": points_info,
+#             "created_at": user.created_at,
+#             "user_status": user.role,
+#             "is_active": user.is_active,
+#             "using_rq_status": using_rq_status,
+#         }
+#         if user.role == models.UserRole.SUPER_USER:
+#             response["super_users"].append(user_info)  # <-- Add to super_users list
+#             response["total_super_user"] += 1
+#         elif user.role == models.UserRole.ADMIN_USER:
+#             response["admin_users"].append(user_info)
+#             response["total_admin_users"] += 1
+#         elif user.role == models.UserRole.GENERAL_USER:
+#             response["general_users"].append(user_info)
+#             response["total_general_users"] += 1
 
-    return response
+#     return response
 
 
 @router.get("/check/all", include_in_schema=False)
