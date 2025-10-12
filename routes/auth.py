@@ -15,7 +15,9 @@ from pydantic import BaseModel, EmailStr
 
 from database import get_db
 import models
-from models import UserRole  
+from models import UserRole
+import json
+
 
 # Router setup
 router = APIRouter(
@@ -147,12 +149,15 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
 def create_user(
     db: Session, user_data: UserCreate, created_by: Optional[str] = None
 ) -> models.User:
-    """Create a new user in the database"""
     user_id = generate_user_id()
     hashed_password = get_password_hash(user_data.password)
-
-    # Generate API key for the user
     api_key = f"ak_{uuid.uuid4().hex}"
+
+    # Serialize created_by if it's a dict
+    if isinstance(created_by, dict):
+        created_by_value = json.dumps(created_by)
+    else:
+        created_by_value = created_by or "system"
 
     db_user = models.User(
         id=user_id,
@@ -162,7 +167,7 @@ def create_user(
         role=user_data.role,
         api_key=api_key,
         is_active=True,
-        created_by=created_by or "system",
+        created_by=created_by_value,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -397,7 +402,9 @@ def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_
             content={"message_from_system": "User Already exist."},
         )
     try:
-        db_user = create_user(db, user)
+        # Save created_by as a string: "own: user.email"
+        created_by_value = f"own: {user.email}"
+        db_user = create_user(db, user, created_by=created_by_value)
         return JSONResponse(content=jsonable_encoder(db_user))
     except Exception as e:
         return JSONResponse(
