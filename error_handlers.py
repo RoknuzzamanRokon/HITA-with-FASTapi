@@ -177,7 +177,7 @@ async def user_not_found_handler(request: Request, exc: UserNotFoundError) -> JS
     
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -195,7 +195,7 @@ async def user_already_exists_handler(request: Request, exc: UserAlreadyExistsEr
     
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -213,7 +213,7 @@ async def insufficient_permissions_handler(request: Request, exc: InsufficientPe
     
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -230,7 +230,7 @@ async def insufficient_points_handler(request: Request, exc: InsufficientPointsE
     
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -247,7 +247,7 @@ async def invalid_operation_handler(request: Request, exc: InvalidOperationError
     
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -267,7 +267,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceededEr
     
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        content=error_response.dict(),
+        content=error_response.model_dump(),
         headers=headers
     )
 
@@ -285,7 +285,7 @@ async def data_validation_handler(request: Request, exc: DataValidationError) ->
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -302,7 +302,7 @@ async def business_rule_violation_handler(request: Request, exc: BusinessRuleVio
     
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -329,7 +329,7 @@ async def pydantic_validation_handler(request: Request, exc: RequestValidationEr
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -377,7 +377,7 @@ async def sqlalchemy_integrity_handler(request: Request, exc: IntegrityError) ->
     
     return JSONResponse(
         status_code=status_code,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -393,7 +393,7 @@ async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError) -> JS
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 
@@ -408,16 +408,18 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             content=exc.detail
         )
     
-    # Otherwise, wrap it in our error format
-    error_response = APIError(
-        message=str(exc.detail),
-        error_code=f"HTTP_{exc.status_code}",
-        details={"status_code": exc.status_code}
-    )
+    # Use a simple error format without datetime objects
+    error_response = {
+        "error": True,
+        "message": str(exc.detail),
+        "error_code": f"HTTP_{exc.status_code}",
+        "details": {"status_code": exc.status_code},
+        "timestamp": datetime.utcnow().isoformat()
+    }
     
     return JSONResponse(
         status_code=exc.status_code,
-        content=error_response.dict()
+        content=error_response
     )
 
 
@@ -425,15 +427,17 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
     """Handle any unhandled exceptions."""
     logger.error(f"Unhandled exception: {type(exc).__name__}: {str(exc)}", exc_info=True)
     
-    error_response = APIError(
-        message="An internal server error occurred",
-        error_code="INTERNAL_SERVER_ERROR",
-        details={"exception_type": type(exc).__name__}
-    )
+    error_response = {
+        "error": True,
+        "message": "An internal server error occurred",
+        "error_code": "INTERNAL_SERVER_ERROR",
+        "details": {"exception_type": type(exc).__name__},
+        "timestamp": datetime.utcnow().isoformat()
+    }
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=error_response.dict()
+        content=error_response
     )
 
 
@@ -502,7 +506,7 @@ def create_error_response(
     
     return JSONResponse(
         status_code=status_code,
-        content=error_response.dict()
+        content=error_response.model_dump()
     )
 
 

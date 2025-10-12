@@ -45,7 +45,17 @@ def create_user(db: Session, user: UserCreate, created_by=None):
 
 def generate_unique_id(length: int = 10) -> str:
     """Generate a unique ID with the specified length."""
-    return secrets.token_hex(length // 2)  
+    return secrets.token_hex(length // 2)
+
+
+def generate_user_id() -> str:
+    """Generate a unique user ID."""
+    return secrets.token_hex(5)
+
+
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    return pwd_context.hash(password)  
 
 
 def authenticate_user(db: Session, username: str, password: str):

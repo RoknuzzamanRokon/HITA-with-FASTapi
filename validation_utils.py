@@ -1,497 +1,561 @@
 """
-Validation and Sanitization Utilities
+Enhanced Validation Utilities for User Management
 
-This module provides additional validation functions and input sanitization
-utilities that complement the Pydantic models for enhanced security and data integrity.
+This module provides comprehensive validation functions with detailed error messages
+and business rule validation for user management operations.
 """
 
 import re
-import html
-import unicodedata
-from typing import Optional, Dict, Any, List, Union
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from email_validator import validate_email, EmailNotValidError
-import secrets
-import string
+
+import models
+from user_schemas import ValidationError
+from error_handlers import (
+    DataValidationError,
+    BusinessRuleViolationError,
+    UserAlreadyExistsError,
+    InsufficientPermissionsError
+)
 
 
-class ValidationError(Exception):
-    """Custom validation error with field-specific details."""
+class UserValidationRules:
+    """Centralized validation rules for user management"""
     
-    def __init__(self, message: str, field: str = None, code: str = None):
-        self.message = message
-        self.field = field
-        self.code = code
-        super().__init__(self.message)
+    # Username validation
+    MIN_USERNAME_LENGTH = 3
+    MAX_USERNAME_LENGTH = 50
+    USERNAME_PATTERN = r'^[a-zA-Z0-9_]+$'
+    
+    # Password validation
+    MIN_PASSWORD_LENGTH = 8
+    MAX_PASSWORD_LENGTH = 128
+    PASSWORD_UPPERCASE_PATTERN = r'[A-Z]'
+    PASSWORD_LOWERCASE_PATTERN = r'[a-z]'
+    PASSWORD_DIGIT_PATTERN = r'\d'
+    PASSWORD_SPECIAL_PATTERN = r'[!@#$%^&*(),.?":{}|<>]'
+    
+    # Email validation
+    MAX_EMAIL_LENGTH = 254
+    
+    # Business rules
+    MAX_USERS_PER_ADMIN = 1000
+    MAX_USERS_PER_SUPER_USER = 10000
+    MIN_POINTS_FOR_TRANSFER = 10
+    MAX_POINTS_PER_TRANSACTION = 10000000
 
 
-class InputSanitizer:
-    """Utility class for input sanitization and validation."""
+class ValidationResult:
+    """Container for validation results"""
     
-    # Common dangerous patterns to remove or escape
-    DANGEROUS_PATTERNS = [
-        r'<script[^>]*>.*?</script>',  # Script tags
-        r'javascript:',               # JavaScript URLs
-        r'on\w+\s*=',                # Event handlers
-        r'<iframe[^>]*>.*?</iframe>', # Iframe tags
-        r'<object[^>]*>.*?</object>', # Object tags
-        r'<embed[^>]*>.*?</embed>',   # Embed tags
-    ]
+    def __init__(self):
+        self.is_valid = True
+        self.field_errors: Dict[str, List[str]] = {}
+        self.business_errors: List[str] = []
+        self.warnings: List[str] = []
     
-    # SQL injection patterns
-    SQL_INJECTION_PATTERNS = [
-        r'(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION)\b)',
-        r'(--|#|/\*|\*/)',
-        r'(\b(OR|AND)\s+\d+\s*=\s*\d+)',
-        r'(\'\s*(OR|AND)\s*\')',
-    ]
+    def add_field_error(self, field: str, error: str):
+        """Add a field-specific validation error"""
+        if field not in self.field_errors:
+            self.field_errors[field] = []
+        self.field_errors[field].append(error)
+        self.is_valid = False
     
-    @classmethod
-    def sanitize_string(cls, value: str, max_length: int = None, allow_html: bool = False) -> str:
-        """
-        Sanitize string input by removing dangerous content and normalizing.
-        
-        Args:
-            value: Input string to sanitize
-            max_length: Maximum allowed length
-            allow_html: Whether to allow HTML content (will be escaped)
-            
-        Returns:
-            Sanitized string
-        """
-        if not isinstance(value, str):
-            return str(value)
-        
-        # Normalize unicode characters
-        value = unicodedata.normalize('NFKC', value)
-        
-        # Remove null bytes and control characters
-        value = ''.join(char for char in value if ord(char) >= 32 or char in '\t\n\r')
-        
-        # Remove dangerous patterns
-        for pattern in cls.DANGEROUS_PATTERNS:
-            value = re.sub(pattern, '', value, flags=re.IGNORECASE | re.DOTALL)
-        
-        # Check for SQL injection patterns
-        for pattern in cls.SQL_INJECTION_PATTERNS:
-            if re.search(pattern, value, re.IGNORECASE):
-                raise ValidationError(
-                    "Input contains potentially dangerous SQL patterns",
-                    code="SQL_INJECTION_DETECTED"
-                )
-        
-        # Escape HTML if not allowing HTML content
-        if not allow_html:
-            value = html.escape(value)
-        
-        # Trim whitespace
-        value = value.strip()
-        
-        # Check length
-        if max_length and len(value) > max_length:
-            value = value[:max_length]
-        
-        return value
+    def add_business_error(self, error: str):
+        """Add a business rule validation error"""
+        self.business_errors.append(error)
+        self.is_valid = False
     
-    @classmethod
-    def sanitize_search_query(cls, query: str) -> str:
-        """
-        Sanitize search query input with special handling for search operators.
-        
-        Args:
-            query: Search query string
-            
-        Returns:
-            Sanitized search query
-        """
-        if not query:
-            return ""
-        
-        # Remove dangerous characters but preserve search operators
-        query = re.sub(r'[<>"\';\\]', '', query.strip())
-        
-        # Remove excessive whitespace
-        query = re.sub(r'\s+', ' ', query)
-        
-        # Limit length
-        if len(query) > 100:
-            query = query[:100]
-        
-        return query
+    def add_warning(self, warning: str):
+        """Add a validation warning (doesn't affect validity)"""
+        self.warnings.append(warning)
     
-    @classmethod
-    def validate_user_id(cls, user_id: str) -> bool:
-        """
-        Validate user ID format.
-        
-        Args:
-            user_id: User ID to validate
-            
-        Returns:
-            True if valid, False otherwise
-        """
-        if not isinstance(user_id, str):
-            return False
-        
-        # User IDs should be 10-character alphanumeric strings
-        return bool(re.match(r'^[a-zA-Z0-9]{10}$', user_id))
-    
-    @classmethod
-    def validate_email_format(cls, email: str) -> tuple[bool, str]:
-        """
-        Validate email format using comprehensive validation.
-        
-        Args:
-            email: Email address to validate
-            
-        Returns:
-            Tuple of (is_valid, normalized_email)
-        """
-        try:
-            # Use email-validator library for comprehensive validation
-            validated_email = validate_email(email)
-            return True, validated_email.email
-        except EmailNotValidError:
-            return False, email
-
-
-class PasswordValidator:
-    """Utility class for password validation and strength checking."""
-    
-    MIN_LENGTH = 8
-    MAX_LENGTH = 128
-    
-    # Common weak passwords to reject
-    WEAK_PASSWORDS = {
-        'password', '12345678', 'qwerty123', 'admin123', 'password123',
-        'letmein', 'welcome', 'monkey', '123456789', 'password1'
-    }
-    
-    @classmethod
-    def validate_password_strength(cls, password: str) -> Dict[str, Any]:
-        """
-        Comprehensive password strength validation.
-        
-        Args:
-            password: Password to validate
-            
-        Returns:
-            Dictionary with validation results and suggestions
-        """
-        result = {
-            'is_valid': True,
-            'errors': [],
-            'warnings': [],
-            'strength_score': 0,
-            'suggestions': []
+    def get_all_errors(self) -> Dict[str, Any]:
+        """Get all errors in a structured format"""
+        return {
+            "field_errors": self.field_errors,
+            "business_errors": self.business_errors,
+            "warnings": self.warnings
         }
+
+
+class UserValidator:
+    """Comprehensive user validation class"""
+    
+    def __init__(self, db: Session):
+        self.db = db
+        self.rules = UserValidationRules()
+    
+    def validate_username(self, username: str, user_id: Optional[str] = None) -> ValidationResult:
+        """Validate username with detailed error messages"""
+        result = ValidationResult()
         
-        if not password:
-            result['is_valid'] = False
-            result['errors'].append('Password is required')
+        if not username:
+            result.add_field_error("username", "Username is required")
             return result
         
-        # Length checks
-        if len(password) < cls.MIN_LENGTH:
-            result['is_valid'] = False
-            result['errors'].append(f'Password must be at least {cls.MIN_LENGTH} characters long')
-        elif len(password) > cls.MAX_LENGTH:
-            result['is_valid'] = False
-            result['errors'].append(f'Password must not exceed {cls.MAX_LENGTH} characters')
+        # Length validation
+        if len(username) < self.rules.MIN_USERNAME_LENGTH:
+            result.add_field_error(
+                "username", 
+                f"Username must be at least {self.rules.MIN_USERNAME_LENGTH} characters long"
+            )
         
-        # Character type checks
-        has_upper = bool(re.search(r'[A-Z]', password))
-        has_lower = bool(re.search(r'[a-z]', password))
-        has_digit = bool(re.search(r'\d', password))
-        has_special = bool(re.search(r'[!@#$%^&*(),.?":{}|<>]', password))
+        if len(username) > self.rules.MAX_USERNAME_LENGTH:
+            result.add_field_error(
+                "username", 
+                f"Username must not exceed {self.rules.MAX_USERNAME_LENGTH} characters"
+            )
         
-        if not has_upper:
-            result['is_valid'] = False
-            result['errors'].append('Password must contain at least one uppercase letter')
-        else:
-            result['strength_score'] += 1
+        # Pattern validation
+        if not re.match(self.rules.USERNAME_PATTERN, username):
+            result.add_field_error(
+                "username", 
+                "Username can only contain letters, numbers, and underscores"
+            )
         
-        if not has_lower:
-            result['is_valid'] = False
-            result['errors'].append('Password must contain at least one lowercase letter')
-        else:
-            result['strength_score'] += 1
+        # Reserved usernames
+        reserved_usernames = ['admin', 'root', 'system', 'api', 'test', 'guest']
+        if username.lower() in reserved_usernames:
+            result.add_field_error(
+                "username", 
+                f"Username '{username}' is reserved and cannot be used"
+            )
         
-        if not has_digit:
-            result['is_valid'] = False
-            result['errors'].append('Password must contain at least one digit')
-        else:
-            result['strength_score'] += 1
+        # Uniqueness validation
+        existing_user = self.db.query(models.User).filter(
+            models.User.username == username
+        )
+        if user_id:
+            existing_user = existing_user.filter(models.User.id != user_id)
         
-        if not has_special:
-            result['is_valid'] = False
-            result['errors'].append('Password must contain at least one special character')
-        else:
-            result['strength_score'] += 1
-        
-        # Additional strength checks
-        if len(password) >= 12:
-            result['strength_score'] += 1
-        
-        # Check for common weak passwords
-        if password.lower() in cls.WEAK_PASSWORDS:
-            result['is_valid'] = False
-            result['errors'].append('Password is too common and easily guessable')
-        
-        # Check for repeated characters
-        if re.search(r'(.)\1{2,}', password):
-            result['warnings'].append('Avoid repeating the same character multiple times')
-        
-        # Check for sequential characters
-        if cls._has_sequential_chars(password):
-            result['warnings'].append('Avoid sequential characters (e.g., 123, abc)')
-        
-        # Provide suggestions based on strength score
-        if result['strength_score'] < 3:
-            result['suggestions'].append('Consider using a longer password with mixed character types')
-        elif result['strength_score'] < 4:
-            result['suggestions'].append('Consider adding special characters for better security')
+        if existing_user.first():
+            result.add_field_error(
+                "username", 
+                f"Username '{username}' is already taken"
+            )
         
         return result
     
-    @classmethod
-    def _has_sequential_chars(cls, password: str) -> bool:
-        """Check if password contains sequential characters."""
-        sequences = [
-            'abcdefghijklmnopqrstuvwxyz',
-            '0123456789',
-            'qwertyuiop',
-            'asdfghjkl',
-            'zxcvbnm'
-        ]
+    def validate_email(self, email: str, user_id: Optional[str] = None) -> ValidationResult:
+        """Validate email with detailed error messages"""
+        result = ValidationResult()
         
-        password_lower = password.lower()
-        for sequence in sequences:
-            for i in range(len(sequence) - 2):
-                if sequence[i:i+3] in password_lower:
-                    return True
+        if not email:
+            result.add_field_error("email", "Email address is required")
+            return result
         
-        return False
-    
-    @classmethod
-    def generate_secure_password(cls, length: int = 12) -> str:
-        """
-        Generate a secure random password.
+        # Length validation
+        if len(email) > self.rules.MAX_EMAIL_LENGTH:
+            result.add_field_error(
+                "email", 
+                f"Email address must not exceed {self.rules.MAX_EMAIL_LENGTH} characters"
+            )
         
-        Args:
-            length: Desired password length
-            
-        Returns:
-            Secure random password
-        """
-        if length < cls.MIN_LENGTH:
-            length = cls.MIN_LENGTH
-        
-        # Ensure we have at least one character from each required type
-        password_chars = [
-            secrets.choice(string.ascii_uppercase),  # At least one uppercase
-            secrets.choice(string.ascii_lowercase),  # At least one lowercase
-            secrets.choice(string.digits),           # At least one digit
-            secrets.choice('!@#$%^&*(),.?":{}|<>')  # At least one special char
-        ]
-        
-        # Fill the rest with random characters from all types
-        all_chars = string.ascii_letters + string.digits + '!@#$%^&*(),.?":{}|<>'
-        for _ in range(length - 4):
-            password_chars.append(secrets.choice(all_chars))
-        
-        # Shuffle the characters
-        secrets.SystemRandom().shuffle(password_chars)
-        
-        return ''.join(password_chars)
-
-
-class RateLimiter:
-    """Simple in-memory rate limiter for validation operations."""
-    
-    def __init__(self):
-        self._attempts = {}
-        self._cleanup_interval = timedelta(minutes=15)
-        self._last_cleanup = datetime.utcnow()
-    
-    def is_rate_limited(self, identifier: str, max_attempts: int = 5, window_minutes: int = 15) -> bool:
-        """
-        Check if an identifier is rate limited.
-        
-        Args:
-            identifier: Unique identifier (e.g., IP address, user ID)
-            max_attempts: Maximum attempts allowed in the window
-            window_minutes: Time window in minutes
-            
-        Returns:
-            True if rate limited, False otherwise
-        """
-        now = datetime.utcnow()
-        
-        # Cleanup old entries periodically
-        if now - self._last_cleanup > self._cleanup_interval:
-            self._cleanup_old_entries(now, timedelta(minutes=window_minutes))
-        
-        # Get attempts for this identifier
-        attempts = self._attempts.get(identifier, [])
-        
-        # Remove attempts outside the window
-        window_start = now - timedelta(minutes=window_minutes)
-        attempts = [attempt for attempt in attempts if attempt > window_start]
-        
-        # Update attempts list
-        self._attempts[identifier] = attempts
-        
-        return len(attempts) >= max_attempts
-    
-    def record_attempt(self, identifier: str):
-        """Record an attempt for the given identifier."""
-        now = datetime.utcnow()
-        if identifier not in self._attempts:
-            self._attempts[identifier] = []
-        self._attempts[identifier].append(now)
-    
-    def _cleanup_old_entries(self, now: datetime, window: timedelta):
-        """Clean up old entries to prevent memory leaks."""
-        cutoff = now - window
-        for identifier in list(self._attempts.keys()):
-            self._attempts[identifier] = [
-                attempt for attempt in self._attempts[identifier] 
-                if attempt > cutoff
-            ]
-            if not self._attempts[identifier]:
-                del self._attempts[identifier]
-        
-        self._last_cleanup = now
-
-
-# Global rate limiter instance
-rate_limiter = RateLimiter()
-
-
-def validate_bulk_operation_data(operations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Validate and sanitize bulk operation data.
-    
-    Args:
-        operations: List of operation dictionaries
-        
-    Returns:
-        List of validated and sanitized operations
-        
-    Raises:
-        ValidationError: If validation fails
-    """
-    if not operations:
-        raise ValidationError("No operations provided")
-    
-    if len(operations) > 100:
-        raise ValidationError("Too many operations (maximum 100 allowed)")
-    
-    validated_operations = []
-    
-    for i, operation in enumerate(operations):
+        # Format validation using email-validator
         try:
-            # Validate operation type
-            op_type = operation.get('operation', '').lower()
-            if op_type not in ['activate', 'deactivate', 'delete', 'update_role']:
-                raise ValidationError(f"Invalid operation type: {op_type}")
-            
-            # Validate user IDs
-            user_ids = operation.get('user_ids', [])
-            if not user_ids:
-                raise ValidationError("No user IDs provided")
-            
-            if len(user_ids) > 50:
-                raise ValidationError("Too many user IDs in single operation (maximum 50)")
-            
-            validated_user_ids = []
-            for user_id in user_ids:
-                if not InputSanitizer.validate_user_id(user_id):
-                    raise ValidationError(f"Invalid user ID format: {user_id}")
-                validated_user_ids.append(user_id)
-            
-            # Sanitize parameters
-            parameters = operation.get('parameters', {})
-            sanitized_params = {}
-            for key, value in parameters.items():
-                if isinstance(value, str):
-                    sanitized_params[key] = InputSanitizer.sanitize_string(value, max_length=500)
-                else:
-                    sanitized_params[key] = value
-            
-            validated_operations.append({
-                'operation': op_type,
-                'user_ids': validated_user_ids,
-                'parameters': sanitized_params
-            })
-            
-        except ValidationError as e:
-            raise ValidationError(f"Operation {i + 1}: {e.message}")
+            validated_email = validate_email(email)
+            email = validated_email.email
+        except EmailNotValidError as e:
+            result.add_field_error("email", f"Invalid email format: {str(e)}")
+            return result
+        
+        # Domain validation (optional business rule)
+        blocked_domains = ['tempmail.com', '10minutemail.com', 'guerrillamail.com']
+        domain = email.split('@')[1].lower()
+        if domain in blocked_domains:
+            result.add_field_error(
+                "email", 
+                f"Email addresses from domain '{domain}' are not allowed"
+            )
+        
+        # Uniqueness validation
+        existing_user = self.db.query(models.User).filter(
+            models.User.email == email
+        )
+        if user_id:
+            existing_user = existing_user.filter(models.User.id != user_id)
+        
+        if existing_user.first():
+            result.add_field_error(
+                "email", 
+                f"Email address '{email}' is already registered"
+            )
+        
+        return result
     
-    return validated_operations
+    def validate_password(self, password: str) -> ValidationResult:
+        """Validate password with detailed strength requirements"""
+        result = ValidationResult()
+        
+        if not password:
+            result.add_field_error("password", "Password is required")
+            return result
+        
+        # Length validation
+        if len(password) < self.rules.MIN_PASSWORD_LENGTH:
+            result.add_field_error(
+                "password", 
+                f"Password must be at least {self.rules.MIN_PASSWORD_LENGTH} characters long"
+            )
+        
+        if len(password) > self.rules.MAX_PASSWORD_LENGTH:
+            result.add_field_error(
+                "password", 
+                f"Password must not exceed {self.rules.MAX_PASSWORD_LENGTH} characters"
+            )
+        
+        # Strength validation
+        strength_errors = []
+        
+        if not re.search(self.rules.PASSWORD_UPPERCASE_PATTERN, password):
+            strength_errors.append("at least one uppercase letter")
+        
+        if not re.search(self.rules.PASSWORD_LOWERCASE_PATTERN, password):
+            strength_errors.append("at least one lowercase letter")
+        
+        if not re.search(self.rules.PASSWORD_DIGIT_PATTERN, password):
+            strength_errors.append("at least one digit")
+        
+        if not re.search(self.rules.PASSWORD_SPECIAL_PATTERN, password):
+            strength_errors.append("at least one special character (!@#$%^&*(),.?\":{}|<>)")
+        
+        if strength_errors:
+            result.add_field_error(
+                "password", 
+                f"Password must contain {', '.join(strength_errors)}"
+            )
+        
+        # Common password validation
+        common_passwords = [
+            'password', '123456', '123456789', 'qwerty', 'abc123', 
+            'password123', 'admin', 'letmein', 'welcome', 'monkey'
+        ]
+        if password.lower() in common_passwords:
+            result.add_field_error(
+                "password", 
+                "Password is too common. Please choose a more secure password"
+            )
+        
+        # Sequential characters check
+        if self._has_sequential_chars(password):
+            result.add_warning(
+                "Password contains sequential characters which may be less secure"
+            )
+        
+        return result
+    
+    def validate_role_assignment(self, role: models.UserRole, current_user: models.User, target_user: Optional[models.User] = None) -> ValidationResult:
+        """Validate role assignment based on business rules"""
+        result = ValidationResult()
+        
+        # Super user can assign any role
+        if current_user.role == models.UserRole.SUPER_USER:
+            return result
+        
+        # Admin user can only assign general user role
+        if current_user.role == models.UserRole.ADMIN_USER:
+            if role != models.UserRole.GENERAL_USER:
+                result.add_business_error(
+                    "Admin users can only assign the 'general_user' role"
+                )
+        
+        # General users cannot assign roles
+        if current_user.role == models.UserRole.GENERAL_USER:
+            result.add_business_error(
+                "General users cannot assign roles to other users"
+            )
+        
+        # Role downgrade validation
+        if target_user and target_user.role.value > role.value:
+            if current_user.role != models.UserRole.SUPER_USER:
+                result.add_business_error(
+                    "Only super users can downgrade user roles"
+                )
+        
+        return result
+    
+    def validate_user_creation_limits(self, current_user: models.User) -> ValidationResult:
+        """Validate user creation limits based on business rules"""
+        result = ValidationResult()
+        
+        # Count users created by current user
+        created_by_str = f"{current_user.role.lower()}: {current_user.email}"
+        user_count = self.db.query(models.User).filter(
+            models.User.created_by == created_by_str
+        ).count()
+        
+        # Check limits based on role
+        if current_user.role == models.UserRole.ADMIN_USER:
+            if user_count >= self.rules.MAX_USERS_PER_ADMIN:
+                result.add_business_error(
+                    f"Admin users can create a maximum of {self.rules.MAX_USERS_PER_ADMIN} users. "
+                    f"You have already created {user_count} users."
+                )
+        elif current_user.role == models.UserRole.SUPER_USER:
+            if user_count >= self.rules.MAX_USERS_PER_SUPER_USER:
+                result.add_business_error(
+                    f"Super users can create a maximum of {self.rules.MAX_USERS_PER_SUPER_USER} users. "
+                    f"You have already created {user_count} users."
+                )
+        
+        return result
+    
+    def validate_point_transaction(self, giver: models.User, receiver: models.User, points: int) -> ValidationResult:
+        """Validate point transaction business rules"""
+        result = ValidationResult()
+        
+        # Minimum points validation
+        if points < self.rules.MIN_POINTS_FOR_TRANSFER:
+            result.add_business_error(
+                f"Minimum points for transfer is {self.rules.MIN_POINTS_FOR_TRANSFER}"
+            )
+        
+        # Maximum points validation
+        if points > self.rules.MAX_POINTS_PER_TRANSACTION:
+            result.add_business_error(
+                f"Maximum points per transaction is {self.rules.MAX_POINTS_PER_TRANSACTION}"
+            )
+        
+        # Self-transfer validation
+        if giver.id == receiver.id:
+            result.add_business_error("Cannot transfer points to yourself")
+        
+        # Role-based transfer validation
+        if giver.role == models.UserRole.ADMIN_USER and receiver.role != models.UserRole.GENERAL_USER:
+            result.add_business_error(
+                "Admin users can only transfer points to general users"
+            )
+        
+        # Insufficient points validation (skip for super users)
+        if giver.role != models.UserRole.SUPER_USER:
+            giver_points = self.db.query(models.UserPoint).filter(
+                models.UserPoint.user_id == giver.id
+            ).first()
+            
+            available_points = giver_points.current_points if giver_points else 0
+            if available_points < points:
+                result.add_business_error(
+                    f"Insufficient points. Available: {available_points}, Required: {points}"
+                )
+        
+        # Receiver account status validation
+        if not receiver.is_active:
+            result.add_business_error(
+                f"Cannot transfer points to inactive user '{receiver.username}'"
+            )
+        
+        return result
+    
+    def validate_user_deletion(self, user_to_delete: models.User, current_user: models.User) -> ValidationResult:
+        """Validate user deletion business rules"""
+        result = ValidationResult()
+        
+        # Self-deletion validation
+        if user_to_delete.id == current_user.id:
+            result.add_business_error("Cannot delete your own account")
+        
+        # Permission validation
+        if current_user.role == models.UserRole.GENERAL_USER:
+            result.add_business_error("General users cannot delete other users")
+        
+        # Admin user restrictions
+        if current_user.role == models.UserRole.ADMIN_USER:
+            if user_to_delete.role != models.UserRole.GENERAL_USER:
+                result.add_business_error(
+                    "Admin users can only delete general users"
+                )
+            
+            # Check if user was created by this admin
+            created_by_str = f"{current_user.role.lower()}: {current_user.email}"
+            if user_to_delete.created_by != created_by_str:
+                result.add_business_error(
+                    "Admin users can only delete users they created"
+                )
+        
+        # Check for active transactions
+        active_transactions = self.db.query(models.PointTransaction).filter(
+            or_(
+                models.PointTransaction.giver_id == user_to_delete.id,
+                models.PointTransaction.receiver_id == user_to_delete.id
+            ),
+            models.PointTransaction.created_at >= datetime.utcnow() - timedelta(days=30)
+        ).count()
+        
+        if active_transactions > 0:
+            result.add_warning(
+                f"User has {active_transactions} transactions in the last 30 days. "
+                "Consider deactivating instead of deleting."
+            )
+        
+        return result
+    
+    def _has_sequential_chars(self, password: str) -> bool:
+        """Check if password contains sequential characters"""
+        sequences = ['123', '234', '345', '456', '567', '678', '789', 'abc', 'bcd', 'cde']
+        password_lower = password.lower()
+        return any(seq in password_lower for seq in sequences)
 
 
-def validate_date_range(start_date: Optional[datetime], end_date: Optional[datetime]) -> tuple[Optional[datetime], Optional[datetime]]:
+class ConflictResolver:
+    """Handle data conflicts and provide resolution suggestions"""
+    
+    def __init__(self, db: Session):
+        self.db = db
+    
+    def resolve_username_conflict(self, desired_username: str) -> Dict[str, Any]:
+        """Provide suggestions for username conflicts"""
+        suggestions = []
+        base_username = desired_username
+        
+        # Try adding numbers
+        for i in range(1, 10):
+            candidate = f"{base_username}{i}"
+            if not self.db.query(models.User).filter(models.User.username == candidate).first():
+                suggestions.append(candidate)
+                if len(suggestions) >= 3:
+                    break
+        
+        # Try adding underscores
+        for suffix in ['_user', '_new', '_2024']:
+            candidate = f"{base_username}{suffix}"
+            if not self.db.query(models.User).filter(models.User.username == candidate).first():
+                suggestions.append(candidate)
+                if len(suggestions) >= 5:
+                    break
+        
+        return {
+            "conflict_type": "username_taken",
+            "original_value": desired_username,
+            "suggestions": suggestions[:5],
+            "resolution_message": f"Username '{desired_username}' is already taken. Here are some available alternatives."
+        }
+    
+    def resolve_email_conflict(self, desired_email: str) -> Dict[str, Any]:
+        """Provide information about email conflicts"""
+        existing_user = self.db.query(models.User).filter(
+            models.User.email == desired_email
+        ).first()
+        
+        return {
+            "conflict_type": "email_taken",
+            "original_value": desired_email,
+            "existing_user_id": existing_user.id if existing_user else None,
+            "resolution_message": f"Email address '{desired_email}' is already registered. Please use a different email address or contact support if this is your email.",
+            "suggestions": [
+                "Use a different email address",
+                "Contact support if you believe this is an error",
+                "Try recovering your existing account"
+            ]
+        }
+
+
+def validate_user_data_comprehensive(
+    db: Session,
+    username: Optional[str] = None,
+    email: Optional[str] = None,
+    password: Optional[str] = None,
+    role: Optional[models.UserRole] = None,
+    current_user: Optional[models.User] = None,
+    target_user_id: Optional[str] = None
+) -> ValidationResult:
     """
-    Validate and normalize date range parameters.
+    Comprehensive validation function for user data
     
     Args:
-        start_date: Start date
-        end_date: End date
-        
+        db: Database session
+        username: Username to validate
+        email: Email to validate
+        password: Password to validate
+        role: Role to validate
+        current_user: User performing the operation
+        target_user_id: ID of user being updated (for uniqueness checks)
+    
     Returns:
-        Tuple of validated (start_date, end_date)
-        
-    Raises:
-        ValidationError: If date range is invalid
+        ValidationResult with all validation errors and warnings
     """
-    if start_date and end_date:
-        if start_date >= end_date:
-            raise ValidationError("Start date must be before end date")
+    validator = UserValidator(db)
+    combined_result = ValidationResult()
+    
+    # Validate individual fields
+    if username is not None:
+        username_result = validator.validate_username(username, target_user_id)
+        combined_result.field_errors.update(username_result.field_errors)
+        combined_result.business_errors.extend(username_result.business_errors)
+        combined_result.warnings.extend(username_result.warnings)
+        if not username_result.is_valid:
+            combined_result.is_valid = False
+    
+    if email is not None:
+        email_result = validator.validate_email(email, target_user_id)
+        combined_result.field_errors.update(email_result.field_errors)
+        combined_result.business_errors.extend(email_result.business_errors)
+        combined_result.warnings.extend(email_result.warnings)
+        if not email_result.is_valid:
+            combined_result.is_valid = False
+    
+    if password is not None:
+        password_result = validator.validate_password(password)
+        combined_result.field_errors.update(password_result.field_errors)
+        combined_result.business_errors.extend(password_result.business_errors)
+        combined_result.warnings.extend(password_result.warnings)
+        if not password_result.is_valid:
+            combined_result.is_valid = False
+    
+    # Validate role assignment if current_user is provided
+    if role is not None and current_user is not None:
+        target_user = None
+        if target_user_id:
+            target_user = db.query(models.User).filter(models.User.id == target_user_id).first()
         
-        # Check if date range is reasonable (not more than 2 years)
-        if (end_date - start_date).days > 730:
-            raise ValidationError("Date range cannot exceed 2 years")
+        role_result = validator.validate_role_assignment(role, current_user, target_user)
+        combined_result.field_errors.update(role_result.field_errors)
+        combined_result.business_errors.extend(role_result.business_errors)
+        combined_result.warnings.extend(role_result.warnings)
+        if not role_result.is_valid:
+            combined_result.is_valid = False
     
-    # Ensure dates are not in the future beyond reasonable limits
-    now = datetime.utcnow()
-    future_limit = now + timedelta(days=1)  # Allow 1 day in future for timezone issues
+    # Validate user creation limits for new users
+    if current_user is not None and target_user_id is None:
+        limits_result = validator.validate_user_creation_limits(current_user)
+        combined_result.field_errors.update(limits_result.field_errors)
+        combined_result.business_errors.extend(limits_result.business_errors)
+        combined_result.warnings.extend(limits_result.warnings)
+        if not limits_result.is_valid:
+            combined_result.is_valid = False
     
-    if start_date and start_date > future_limit:
-        raise ValidationError("Start date cannot be in the future")
-    
-    if end_date and end_date > future_limit:
-        raise ValidationError("End date cannot be in the future")
-    
-    return start_date, end_date
+    return combined_result
 
 
-def sanitize_sort_parameters(sort_by: str, sort_order: str) -> tuple[str, str]:
+def handle_validation_errors(validation_result: ValidationResult) -> None:
     """
-    Sanitize and validate sort parameters.
+    Convert validation result to appropriate exceptions
     
     Args:
-        sort_by: Field to sort by
-        sort_order: Sort order (asc/desc)
-        
-    Returns:
-        Tuple of validated (sort_by, sort_order)
+        validation_result: Result from validation
         
     Raises:
-        ValidationError: If sort parameters are invalid
+        ValidationError: For field validation errors
+        BusinessRuleViolationError: For business rule violations
     """
-    # Allowed sort fields (whitelist approach for security)
-    allowed_sort_fields = {
-        'username', 'email', 'created_at', 'updated_at', 'role', 'points'
-    }
-    
-    sort_by = sort_by.lower().strip()
-    if sort_by not in allowed_sort_fields:
-        raise ValidationError(f"Invalid sort field: {sort_by}")
-    
-    sort_order = sort_order.lower().strip()
-    if sort_order not in ['asc', 'desc']:
-        raise ValidationError(f"Invalid sort order: {sort_order}")
-    
-    return sort_by, sort_order
+    if not validation_result.is_valid:
+        if validation_result.field_errors:
+            # Create detailed field error messages
+            error_details = {}
+            for field, errors in validation_result.field_errors.items():
+                error_details[field] = errors
+            
+            raise DataValidationError(
+                field=list(validation_result.field_errors.keys())[0],
+                value="",
+                reason="; ".join(validation_result.field_errors[list(validation_result.field_errors.keys())[0]])
+            )
+        
+        if validation_result.business_errors:
+            raise BusinessRuleViolationError(
+                rule=validation_result.business_errors[0],
+                details={"all_errors": validation_result.business_errors}
+            )

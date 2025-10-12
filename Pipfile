@@ -23,6 +23,9 @@ passlib = "*"
 bcrypt = "==3.2.2"
 fastapi-cache2 = "*"
 email-validator = "*"
+jsonschema = "*"
+psutil = "*"
+httpx = "*"
 
 [dev-packages]
 pytest = "*"
