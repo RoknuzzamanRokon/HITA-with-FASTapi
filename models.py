@@ -15,6 +15,7 @@ class UserRole(str, Enum):
 
 # Point Allocation Type
 class PointAllocationType(str, Enum):
+    ADMIN_USER_PACKAGE = "admin_user_package"
     ONE_YEAR_PACKAGE = "one_year_package"
     ONE_MONTH_PACKAGE = "one_month_package"
     PER_REQUEST_POINT = "per_request_point"

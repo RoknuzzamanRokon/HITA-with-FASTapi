@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 class ProviderPermissionRequest(BaseModel):
-    provider_activation_list: List[str]
+    provider_activision_list: List[str]
 
 
 @router.post("/activate_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)

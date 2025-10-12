@@ -236,7 +236,8 @@ async def require_admin(
 ) -> models.User:
     if current_user.role != UserRole.SUPER_USER:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super user can manage permissions",
         )
     return current_user
 
