@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 from database import get_db
 from schemas import (
     UserResponse,
@@ -30,6 +31,12 @@ import secrets
 from datetime import datetime, timedelta
 from models import PointAllocationType
 from routes.auth import get_current_user
+from error_handlers import (
+    UserAlreadyExistsError,
+    InsufficientPermissionsError,
+    DataValidationError,
+    BusinessRuleViolationError
+)
 
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -1011,7 +1018,13 @@ def active_my_supplier(
 ):
     """
     Return a list of active suppliers (provider names) for the current user.
+    Admin and super users have access to all suppliers.
     """
+    # Admin and super users have access to all suppliers
+    if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+        return {"my_supplier": "Active all supplier."}
+    
+    # Regular users get their specific supplier permissions
     suppliers = [
         perm.provider_name
         for perm in db.query(models.UserProviderPermission)
@@ -1226,10 +1239,17 @@ async def bulk_user_operations(
                 else:
                     errors.append({"operation": operation.operation, "error": "Invalid operation or missing data"})
                     
+            except (UserAlreadyExistsError, InsufficientPermissionsError, DataValidationError, BusinessRuleViolationError) as e:
+                errors.append({"operation": operation.operation, "error": str(e)})
             except ValueError as e:
                 errors.append({"operation": operation.operation, "error": str(e)})
+            except HTTPException as e:
+                errors.append({"operation": operation.operation, "error": e.detail})
             except Exception as e:
-                errors.append({"operation": operation.operation, "error": "Unexpected error occurred"})
+                print(f"Bulk operation error: {str(e)}")  # For debugging
+                import traceback
+                print(f"Traceback: {traceback.format_exc()}")  # Full traceback for debugging
+                errors.append({"operation": operation.operation, "error": str(e)})
         
         return {
             "total_operations": len(operations.operations),
@@ -1240,9 +1260,10 @@ async def bulk_user_operations(
         }
         
     except Exception as e:
+        print(f"Bulk operations outer error: {str(e)}")  # For debugging
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while performing bulk operations"
+            detail=f"An error occurred while performing bulk operations: {str(e)}"
         )
 
 
@@ -1412,6 +1433,7 @@ async def get_dashboard_analytics(
             created_by_str = f"{current_user.role.lower()}: {current_user.email}"
             base_query = db.query(models.User).filter(models.User.created_by == created_by_str)
         else:
+            created_by_str = None
             base_query = db.query(models.User).filter(models.User.id == current_user.id)
         
         # User creation trend (last 30 days)
@@ -1439,7 +1461,7 @@ async def get_dashboard_analytics(
         ).join(
             models.UserPoint, models.User.id == models.UserPoint.user_id, isouter=True
         ).filter(
-            models.User.created_by == created_by_str if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER] else models.User.id == current_user.id
+            models.User.created_by == created_by_str if created_by_str else models.User.id == current_user.id
         ).group_by(models.User.role).all()
         
         point_dist_data = []
@@ -1476,9 +1498,10 @@ async def get_dashboard_analytics(
         }
         
     except Exception as e:
+        print(f"Dashboard analytics error: {str(e)}")  # For debugging
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching dashboard analytics"
+            detail=f"An error occurred while fetching dashboard analytics: {str(e)}"
         )
 
 

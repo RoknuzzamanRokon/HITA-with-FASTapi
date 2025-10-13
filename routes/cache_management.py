@@ -4,12 +4,13 @@ Cache management endpoints for monitoring and controlling cache
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
-from typing import Dict, Any
+from typing import Dict, Any, Annotated
 import logging
+from datetime import datetime
 
 from middleware.cache_invalidation import CacheManager, CacheWarmupService
 from cache_config import cache, CacheKeys
-from utils import get_current_user
+from routes.auth import get_current_user
 from models import User
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,90 @@ async def cache_health_check() -> Dict[str, Any]:
             detail=f"Cache health check failed: {str(e)}"
         )
 
+@router.get("/health/detailed")
+async def detailed_cache_health_check() -> Dict[str, Any]:
+    """Comprehensive cache health check with detailed metrics"""
+    
+    try:
+        # Get basic cache info
+        cache_info = CacheManager.get_cache_info()
+        
+        # Get detailed cache statistics
+        detailed_stats = {}
+        
+        if cache.is_available:
+            try:
+                # Get Redis info
+                redis_info = cache.redis_client.info()
+                
+                # Get cache key counts by type
+                key_counts = {
+                    'user_stats_keys': len(cache.redis_client.keys(f"{CacheKeys.USER_STATS}*")),
+                    'user_list_keys': len(cache.redis_client.keys(f"{CacheKeys.USER_LIST}*")),
+                    'user_details_keys': len(cache.redis_client.keys(f"{CacheKeys.USER_DETAILS}*")),
+                    'dashboard_stats_keys': len(cache.redis_client.keys(f"{CacheKeys.DASHBOARD_STATS}*")),
+                    'total_keys': len(cache.redis_client.keys("*"))
+                }
+                
+                # Get memory usage
+                memory_info = {
+                    'used_memory': redis_info.get('used_memory_human', 'N/A'),
+                    'used_memory_peak': redis_info.get('used_memory_peak_human', 'N/A'),
+                    'memory_fragmentation_ratio': redis_info.get('mem_fragmentation_ratio', 'N/A')
+                }
+                
+                # Get connection info
+                connection_info = {
+                    'connected_clients': redis_info.get('connected_clients', 'N/A'),
+                    'total_connections_received': redis_info.get('total_connections_received', 'N/A'),
+                    'uptime_in_seconds': redis_info.get('uptime_in_seconds', 'N/A')
+                }
+                
+                # Get performance metrics
+                performance_info = {
+                    'keyspace_hits': redis_info.get('keyspace_hits', 0),
+                    'keyspace_misses': redis_info.get('keyspace_misses', 0),
+                    'hit_rate': 0
+                }
+                
+                # Calculate hit rate
+                total_requests = performance_info['keyspace_hits'] + performance_info['keyspace_misses']
+                if total_requests > 0:
+                    performance_info['hit_rate'] = round(
+                        (performance_info['keyspace_hits'] / total_requests) * 100, 2
+                    )
+                
+                detailed_stats = {
+                    'key_counts': key_counts,
+                    'memory_usage': memory_info,
+                    'connections': connection_info,
+                    'performance': performance_info,
+                    'redis_version': redis_info.get('redis_version', 'N/A'),
+                    'redis_mode': redis_info.get('redis_mode', 'N/A')
+                }
+                
+            except Exception as redis_error:
+                logger.warning(f"Could not get detailed Redis stats: {redis_error}")
+                detailed_stats = {'error': f'Could not retrieve detailed stats: {str(redis_error)}'}
+        else:
+            detailed_stats = {'error': 'Cache is not available'}
+        
+        return {
+            "success": True,
+            "timestamp": datetime.utcnow().isoformat(),
+            "cache_info": cache_info,
+            "detailed_statistics": detailed_stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Detailed cache health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Detailed cache health check failed: {str(e)}"
+        )
+
 @router.post("/clear")
-async def clear_all_caches(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
+async def clear_all_caches(current_user: Annotated[User, Depends(get_current_user)]) -> Dict[str, Any]:
     """Clear all user-related caches (Admin only)"""
     
     # Check if user has admin privileges
@@ -64,7 +147,7 @@ async def clear_all_caches(current_user: User = Depends(get_current_user)) -> Di
 @router.post("/clear/user/{user_id}")
 async def clear_user_cache(
     user_id: str, 
-    current_user: User = Depends(get_current_user)
+    current_user: Annotated[User, Depends(get_current_user)]
 ) -> Dict[str, Any]:
     """Clear cache for specific user (Admin only)"""
     
@@ -93,7 +176,7 @@ async def clear_user_cache(
         )
 
 @router.post("/warm")
-async def warm_caches(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
+async def warm_caches(current_user: Annotated[User, Depends(get_current_user)]) -> Dict[str, Any]:
     """Warm up essential caches (Admin only)"""
     
     # Check if user has admin privileges
@@ -121,7 +204,7 @@ async def warm_caches(current_user: User = Depends(get_current_user)) -> Dict[st
         )
 
 @router.get("/stats")
-async def cache_statistics(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
+async def cache_statistics(current_user: Annotated[User, Depends(get_current_user)]) -> Dict[str, Any]:
     """Get cache statistics and performance metrics (Admin only)"""
     
     # Check if user has admin privileges

@@ -129,10 +129,10 @@ class UserService:
         # Get role counts
         role_stats = base_query.with_entities(
             func.count(models.User.id).label('total_users'),
-            func.sum(case([(models.User.role == models.UserRole.SUPER_USER, 1)], else_=0)).label('super_users'),
-            func.sum(case([(models.User.role == models.UserRole.ADMIN_USER, 1)], else_=0)).label('admin_users'),
-            func.sum(case([(models.User.role == models.UserRole.GENERAL_USER, 1)], else_=0)).label('general_users'),
-            func.sum(case([(models.User.is_active == True, 1)], else_=0)).label('active_users')
+            func.sum(case((models.User.role == models.UserRole.SUPER_USER, 1), else_=0)).label('super_users'),
+            func.sum(case((models.User.role == models.UserRole.ADMIN_USER, 1), else_=0)).label('admin_users'),
+            func.sum(case((models.User.role == models.UserRole.GENERAL_USER, 1), else_=0)).label('general_users'),
+            func.sum(case((models.User.is_active == True, 1), else_=0)).label('active_users')
         ).first()
 
         # Get total points distributed

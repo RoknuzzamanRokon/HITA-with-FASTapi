@@ -9,12 +9,12 @@ import logging
 
 from database import get_db
 from services.cached_user_service import CachedUserService
-from utils import get_current_user
+from routes.auth import get_current_user
 from models import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/users", tags=["Cached User Management"])
+router = APIRouter(prefix="/v1.0/users", tags=["Cached User Management"])
 
 @router.get("/list")
 async def get_users_paginated(
@@ -151,7 +151,7 @@ async def get_dashboard_statistics(
             detail=f"Failed to fetch dashboard statistics: {str(e)}"
         )
 
-@router.post("/{user_id}/invalidate-cache")
+@router.post("/{user_id}/invalidate_cache")
 async def invalidate_user_cache(
     user_id: str,
     db: Session = Depends(get_db),

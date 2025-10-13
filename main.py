@@ -28,6 +28,8 @@ from routes.permissions import router as permissions_router
 from routes.delete import router as delete_router
 from routes.mapping import router as mapping_router
 from routes.health import router as health_router
+from routes.cache_management import router as cache_router
+from routes.cached_user_routes import router as cache_users_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -103,6 +105,8 @@ app.include_router(permissions_router)
 app.include_router(delete_router)
 app.include_router(mapping_router)
 app.include_router(health_router)
+app.include_router(cache_router)
+app.include_router(cache_users_router)
 
 
 # Compute absolute path to the directory containing this file

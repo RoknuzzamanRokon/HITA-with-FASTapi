@@ -29,11 +29,11 @@ class CachedUserService:
         # Get basic user counts by role and status
         user_stats = self.db.query(
             func.count(User.id).label('total_users'),
-            func.sum(case([(User.role == 'super_user', 1)], else_=0)).label('super_users'),
-            func.sum(case([(User.role == 'admin_user', 1)], else_=0)).label('admin_users'),
-            func.sum(case([(User.role == 'general_user', 1)], else_=0)).label('general_users'),
-            func.sum(case([(User.is_active == True, 1)], else_=0)).label('active_users'),
-            func.sum(case([(User.is_active == False, 1)], else_=0)).label('inactive_users')
+            func.sum(case((User.role == 'super_user', 1), else_=0)).label('super_users'),
+            func.sum(case((User.role == 'admin_user', 1), else_=0)).label('admin_users'),
+            func.sum(case((User.role == 'general_user', 1), else_=0)).label('general_users'),
+            func.sum(case((User.is_active == True, 1), else_=0)).label('active_users'),
+            func.sum(case((User.is_active == False, 1), else_=0)).label('inactive_users')
         ).first()
         
         # Get point statistics
