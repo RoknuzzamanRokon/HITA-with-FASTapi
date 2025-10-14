@@ -16,7 +16,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("/mapping/input_hotel_all_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED, include_in_schema = False)
+@router.post("/input_hotel_all_details", response_model=HotelRead, status_code=status.HTTP_201_CREATED, include_in_schema = False)
 def create_hotel_with_details(
     hotel: HotelCreate,
     db: Session = Depends(get_db),
@@ -61,7 +61,7 @@ def create_hotel_with_details(
 
 
 @router.post(
-    "/mapping/add_provider_all_details_with_ittid",
+    "/add_provider_all_details_with_ittid",
     status_code=status.HTTP_201_CREATED,
     include_in_schema=False,
 )
@@ -135,18 +135,99 @@ def get_supplier_info(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get total hotel count for a supplier. Only super_user and admin_user can use this endpoint.
+    Get total hotel count for a supplier. 
+    - super_user and admin_user can access any supplier
+    - general_user can only access suppliers they have permissions for
     """
-    require_role(["super_user", "admin_user"], current_user)
-
     if not supplier:
         raise HTTPException(status_code=400, detail="Supplier name is required.")
 
+    # Check user permissions
+    if current_user.role in ["super_user", "admin_user"]:
+        # Super users and admin users can access any supplier
+        pass
+    elif current_user.role == "general_user":
+        # General users can only access suppliers they have permissions for
+        user_permission = db.query(models.UserProviderPermission).filter(
+            models.UserProviderPermission.user_id == current_user.id,
+            models.UserProviderPermission.provider_name == supplier
+        ).first()
+        
+        if not user_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You don't have permission to access supplier '{supplier}'. Contact your administrator to request access."
+            )
+    else:
+        # Unknown role
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to access supplier information."
+        )
+
+    # Get total hotel count for the supplier
     total_hotel = db.query(models.ProviderMapping).filter(
         models.ProviderMapping.provider_name == supplier
     ).count()
 
     return {
         "supplier_name": supplier,
-        "total_hotel": total_hotel
+        "total_hotel": total_hotel,
+        "user_role": current_user.role,
+        "access_granted": True
+    }
+
+
+@router.get("/get_user_accessible_suppliers")
+def get_user_accessible_suppliers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get list of suppliers that the current user has access to.
+    - super_user and admin_user get all available suppliers
+    - general_user gets only suppliers they have permissions for
+    """
+    if current_user.role in ["super_user", "admin_user"]:
+        # Super users and admin users can access all suppliers
+        # Get all unique supplier names from ProviderMapping
+        suppliers = db.query(models.ProviderMapping.provider_name).distinct().all()
+        accessible_suppliers = [supplier[0] for supplier in suppliers if supplier[0]]
+        
+        # Get hotel counts for each supplier
+        supplier_info = []
+        for supplier_name in accessible_suppliers:
+            hotel_count = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.provider_name == supplier_name
+            ).count()
+            supplier_info.append({
+                "supplier_name": supplier_name,
+                "total_hotels": hotel_count,
+                "access_type": "full_access"
+            })
+            
+    elif current_user.role == "general_user":
+        # General users get only suppliers they have permissions for
+        user_permissions = db.query(models.UserProviderPermission).filter(
+            models.UserProviderPermission.user_id == current_user.id
+        ).all()
+        
+        supplier_info = []
+        for permission in user_permissions:
+            hotel_count = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.provider_name == permission.provider_name
+            ).count()
+            supplier_info.append({
+                "supplier_name": permission.provider_name,
+                "total_hotels": hotel_count,
+                "access_type": "permission_granted"
+            })
+    else:
+        supplier_info = []
+
+    return {
+        "user_id": current_user.id,
+        "user_role": current_user.role,
+        "accessible_suppliers": supplier_info,
+        "total_accessible_suppliers": len(supplier_info)
     }

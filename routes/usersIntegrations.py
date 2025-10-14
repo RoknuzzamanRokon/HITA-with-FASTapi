@@ -86,6 +86,88 @@ async def self_info(
     }
 
 
+@router.post("/", response_model=UserResponse)
+async def create_user(
+    user_data: UserCreateRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Create a new user (general endpoint that routes to appropriate creation method)."""
+    
+    # Validate permissions based on the role being created
+    if user_data.role == models.UserRole.SUPER_USER:
+        if current_user.role != models.UserRole.SUPER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super users can create super users"
+            )
+    elif user_data.role == models.UserRole.ADMIN_USER:
+        if current_user.role not in [models.UserRole.SUPER_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super users can create admin users"
+            )
+    # General users can be created by super users and admin users
+    elif user_data.role == models.UserRole.GENERAL_USER:
+        if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions to create users"
+            )
+    
+    # Check if user already exists
+    existing_user = db.query(models.User).filter(
+        (models.User.email == user_data.email) | 
+        (models.User.username == user_data.username)
+    ).first()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email or username already exists"
+        )
+    
+    # Create the user
+    hashed_password = pwd_context.hash(user_data.password)
+    new_user = models.User(
+        id=secrets.token_hex(5),
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hashed_password,
+        role=user_data.role,
+        is_active=True,
+        created_by=f"{current_user.role.value}: {current_user.email}",
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Create initial user points
+    user_points = models.UserPoint(
+        user_id=new_user.id,
+        current_points=0,
+        total_points=0,
+        paid_status="Unpaid"
+    )
+    db.add(user_points)
+    db.commit()
+    
+    return {
+        "id": new_user.id,
+        "username": new_user.username,
+        "email": new_user.email,
+        "user_status": new_user.role,
+        "available_points": 0,
+        "total_points": 0,
+        "active_supplier": [],
+        "created_at": new_user.created_at,
+        "updated_at": new_user.updated_at,
+        "need_to_next_upgrade": "It function is not implemented yet",
+    }
+
+
 @router.post(
     "/create_super_user", response_model=SuperUserResponse, include_in_schema=False
 )
