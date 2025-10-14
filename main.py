@@ -13,7 +13,10 @@ from fastapi.exception_handlers import RequestValidationError
 # New imports for caching
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
-import redis.asyncio as aioredis 
+import redis.asyncio as aioredis
+
+# Import error handlers
+from error_handlers import register_error_handlers 
 
 # Include routers
 from routes.auth import router as auth_router
@@ -24,6 +27,9 @@ from routes.contents import router as contents_router
 from routes.permissions import router as permissions_router
 from routes.delete import router as delete_router
 from routes.mapping import router as mapping_router
+from routes.health import router as health_router
+from routes.cache_management import router as cache_router
+from routes.cached_user_routes import router as cache_users_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -55,6 +61,9 @@ logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI application...")
 
 models.Base.metadata.create_all(bind=engine)
+
+# Register comprehensive error handlers
+register_error_handlers(app)
 
 
 @app.exception_handler(RequestValidationError)
@@ -95,6 +104,9 @@ app.include_router(contents_router)
 app.include_router(permissions_router)
 app.include_router(delete_router)
 app.include_router(mapping_router)
+app.include_router(health_router)
+app.include_router(cache_router)
+app.include_router(cache_users_router)
 
 
 # Compute absolute path to the directory containing this file

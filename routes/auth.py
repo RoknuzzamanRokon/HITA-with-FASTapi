@@ -570,7 +570,7 @@ async def authenticate_api_key(
     return user
 
 
-@router.get("/api-key/me", response_model=UserProfileResponse)
+@router.get("/apikey/me", response_model=UserProfileResponse)
 async def read_users_me_api_key(
     current_user: Annotated[models.User, Depends(authenticate_api_key)],
 ):

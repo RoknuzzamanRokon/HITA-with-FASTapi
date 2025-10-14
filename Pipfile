@@ -12,7 +12,6 @@ alembic = "*"
 pymysql = "*"
 python-dotenv = "*"
 fastapi = "*"
-email-validator = "*"
 pydantic = {extras = ["email"], version = "*"}
 pillow = "*"
 colorama = "*"
@@ -23,8 +22,15 @@ cryptography = "*"
 passlib = "*"
 bcrypt = "==3.2.2"
 fastapi-cache2 = "*"
+email-validator = "*"
+jsonschema = "*"
+psutil = "*"
+httpx = "*"
 
 [dev-packages]
+pytest = "*"
+pytest-asyncio = "*"
+pytest-cov = "*"
 
 [requires]
 python_version = "3.12"

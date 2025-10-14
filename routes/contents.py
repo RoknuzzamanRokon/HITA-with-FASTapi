@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
 from pydantic import BaseModel
-from typing import List, Optional, Annotated
+from typing import List, Optional, Annotated, Dict, Any
 from datetime import datetime
 from utils import deduct_points_for_general_user, require_role
 import models
@@ -12,6 +12,8 @@ import string
 from fastapi_cache.decorator import cache
 import csv
 import redis
+import json
+import os
 from routes.auth import get_current_user
 
 from schemas import ProviderProperty, GetAllHotelResponse
@@ -32,6 +34,66 @@ class ProviderHotelIdentity(BaseModel):
 
 class ProviderHotelRequest(BaseModel):
     provider_hotel_identity: List[ProviderHotelIdentity]
+
+
+class CountryInfoRequest(BaseModel):
+    supplier: str
+    country_iso: str
+
+
+@router.post("/get_basic_country_info", status_code=status.HTTP_200_OK)
+def get_basic_country_info(
+    request: CountryInfoRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+) -> Dict[str, Any]:
+    try:
+        # Construct the file path
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up to backend directory
+        file_path = os.path.join(
+            base_dir, 
+            "static", 
+            "countryJson", 
+            request.supplier, 
+            f"{request.country_iso}.json"
+        )
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Country data not found for supplier '{request.supplier}' and country '{request.country_iso}'"
+            )
+        
+        # Read and parse JSON file
+        with open(file_path, 'r', encoding='utf-8') as file:
+            country_data = json.load(file)
+        
+        # Calculate total hotel count
+        total_hotel = len(country_data) if isinstance(country_data, list) else 0
+        
+        return {
+            "success": True,
+            "supplier": request.supplier,
+            "country_iso": request.country_iso,
+            "total_hotel": total_hotel,
+            "data": country_data
+        }
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Invalid JSON format in country data file: {str(e)}"
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Country data not found for supplier '{request.supplier}' and country '{request.country_iso}'"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error reading country data: {str(e)}"
+        )
 
 
 @router.post("/get_hotel_data_provider_name_and_id", status_code=status.HTTP_200_OK)

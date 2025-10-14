@@ -1,8 +1,9 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Enum as SQLEnum, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Enum as SQLEnum, Boolean, ForeignKey, JSON, Text, func, case, or_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Mapped
 from sqlalchemy import MetaData
-from datetime import datetime
+from sqlalchemy.ext.hybrid import hybrid_property
+from datetime import datetime, timedelta
 from database import Base
 from enum import Enum
 
@@ -41,6 +42,99 @@ class User(Base):
     received_transactions = relationship("PointTransaction", foreign_keys="[PointTransaction.receiver_id]", back_populates="receiver")
     user_points = relationship("UserPoint", back_populates="user", foreign_keys="[UserPoint.user_id]")  # Explicitly specify foreign_keys
     provider_permissions = relationship("UserProviderPermission", back_populates="user")
+    activity_logs = relationship("UserActivityLog", back_populates="user")
+    sessions = relationship("UserSession", back_populates="user")
+
+    # Computed properties and hybrid properties
+    @hybrid_property
+    def activity_status(self):
+        """Determine if user is active based on recent transactions"""
+        from sqlalchemy.orm import object_session
+        session = object_session(self)
+        if session is None:
+            return "Unknown"
+        
+        recent_activity = session.query(PointTransaction).filter(
+            or_(
+                PointTransaction.giver_id == self.id,
+                PointTransaction.receiver_id == self.id
+            ),
+            PointTransaction.created_at >= datetime.utcnow() - timedelta(days=7)
+        ).first()
+        return "Active" if recent_activity else "Inactive"
+
+    @hybrid_property
+    def current_point_balance(self):
+        """Get current point balance"""
+        user_points = self.user_points[0] if self.user_points else None
+        return user_points.current_points if user_points else 0
+
+    @hybrid_property
+    def total_point_balance(self):
+        """Get total point balance"""
+        user_points = self.user_points[0] if self.user_points else None
+        return user_points.total_points if user_points else 0
+
+    @hybrid_property
+    def active_supplier_list(self):
+        """Get list of active suppliers"""
+        return [perm.provider_name for perm in self.provider_permissions]
+
+    @hybrid_property
+    def total_requests(self):
+        """Get total number of requests (transactions) made by user"""
+        return len(self.sent_transactions) + len(self.received_transactions)
+
+    @hybrid_property
+    def paid_status(self):
+        """Determine paid status based on point balance and transactions"""
+        if self.current_point_balance > 0:
+            return "Paid"
+        elif self.total_point_balance > 0:
+            return "Used"
+        else:
+            return "Unpaid"
+
+    @hybrid_property
+    def last_login(self):
+        """Get last login time from most recent session"""
+        if self.sessions:
+            latest_session = max(self.sessions, key=lambda s: s.last_activity)
+            return latest_session.last_activity
+        return None
+
+
+# User Activity Log Model
+class UserActivityLog(Base):
+    __tablename__ = "user_activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(10), ForeignKey("users.id"), nullable=False)
+    action = Column(String(50), nullable=False)  # login, logout, create_user, update_user, delete_user, etc.
+    details = Column(JSON, nullable=True)  # Additional details about the action
+    ip_address = Column(String(45), nullable=True)  # Support both IPv4 and IPv6
+    user_agent = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="activity_logs")
+
+
+# User Session Model
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id = Column(String(50), primary_key=True)  # Session token/ID
+    user_id = Column(String(10), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_activity = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="sessions")
 
 
 # Blacklisted Token Model
