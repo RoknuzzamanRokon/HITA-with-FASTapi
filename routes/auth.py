@@ -18,6 +18,9 @@ import models
 from models import UserRole
 import json
 
+# Import audit logging
+from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+
 
 # Router setup
 router = APIRouter(
@@ -246,11 +249,24 @@ async def require_admin(
 @router.post("/token", response_model=Token)
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Login and get access/refresh tokens."""
+    audit_logger = AuditLogger(db)
+    
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
+        # Log failed login attempt
+        audit_logger.log_authentication_event(
+            activity_type=ActivityType.LOGIN_FAILED,
+            user_id=None,
+            email=form_data.username,  # Username might be email
+            request=request,
+            success=False,
+            failure_reason="Invalid credentials"
+        )
+        
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -271,6 +287,15 @@ async def login_for_access_token(
 
     # Store refresh token in Redis with expiration
     redis_client.setex(f"refresh_token:{user.id}", refresh_token_expires, refresh_token)
+
+    # Log successful login
+    audit_logger.log_authentication_event(
+        activity_type=ActivityType.LOGIN_SUCCESS,
+        user_id=user.id,
+        email=user.email,
+        request=request,
+        success=True
+    )
 
     return {
         "access_token": access_token,

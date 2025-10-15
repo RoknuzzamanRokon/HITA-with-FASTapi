@@ -666,13 +666,36 @@ async def get_all_hotel_only_supplier(
         if request.provider_name not in allowed:
             raise HTTPException(status_code=403, detail="No permission for this supplier")
 
-    # --- Decode resume_key ---
+    # --- Decode and validate resume_key ---
     last_id = 0
     if resume_key:
         try:
-            last_id = int(resume_key.split("_", 1)[0])
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid resume_key")
+            # Extract the ID from resume_key format: "id_randomstring"
+            parts = resume_key.split("_", 1)
+            if len(parts) != 2:
+                raise ValueError("Invalid format")
+            
+            last_id = int(parts[0])
+            random_part = parts[1]
+            
+            # Validate that the random part has expected length and characters
+            if len(random_part) != 50:
+                raise ValueError("Invalid random part length")
+            
+            # Check if the ID actually exists in the database for this provider
+            id_exists = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.id == last_id,
+                models.ProviderMapping.provider_name == request.provider_name
+            ).first()
+            
+            if not id_exists:
+                raise ValueError("Resume key references non-existent record")
+                
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid resume_key: {str(e)}. Please use a valid resume_key from a previous response or omit it to start from the beginning."
+            )
 
     # --- Single eager‐loaded query ---
     query = (

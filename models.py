@@ -109,7 +109,7 @@ class UserActivityLog(Base):
     __tablename__ = "user_activity_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String(10), ForeignKey("users.id"), nullable=False)
+    user_id = Column(String(10), ForeignKey("users.id"), nullable=True)  # Allow null for unauthenticated requests
     action = Column(String(50), nullable=False)  # login, logout, create_user, update_user, delete_user, etc.
     details = Column(JSON, nullable=True)  # Additional details about the action
     ip_address = Column(String(45), nullable=True)  # Support both IPv4 and IPv6

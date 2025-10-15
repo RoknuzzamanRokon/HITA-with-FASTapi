@@ -1159,7 +1159,16 @@ async def get_users_paginated(
     """
     Get paginated list of users with comprehensive filtering and sorting.
     Supports search, role filtering, active status filtering, and multi-field sorting.
+    🔒 RESTRICTED: Only super users and admin users can access this endpoint.
     """
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user list
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user list."
+        )
+    
     try:
         # Create search parameters
         search_params = UserSearchParams(

@@ -26,6 +26,9 @@ email-validator = "*"
 jsonschema = "*"
 psutil = "*"
 httpx = "*"
+bleach = "*"
+pandas = "*"
+xmltodict = "*"
 
 [dev-packages]
 pytest = "*"

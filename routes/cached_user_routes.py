@@ -10,7 +10,8 @@ import logging
 from database import get_db
 from services.cached_user_service import CachedUserService
 from routes.auth import get_current_user
-from models import User
+from models import User, UserRole
+from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,33 @@ async def get_users_paginated(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Get paginated list of users with caching"""
+    """Get paginated list of users with caching (Super User and Admin User only)"""
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user list
+    if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user list."
+        )
     
     try:
+        # 📝 AUDIT LOG: Record user list access
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ACCESS,
+            user_id=current_user.id,
+            details={
+                "endpoint": "/v1.0/users/list",
+                "action": "view_user_list",
+                "page": page,
+                "limit": limit,
+                "search": search,
+                "role_filter": role
+            },
+            security_level=SecurityLevel.MEDIUM,
+            success=True
+        )
+        
         # Initialize cached user service
         cached_service = CachedUserService(db)
         
@@ -62,9 +87,28 @@ async def get_user_statistics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Get user statistics with caching"""
+    """Get user statistics with caching (Super User and Admin User only)"""
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user statistics
+    if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user statistics."
+        )
     
     try:
+        # 📝 AUDIT LOG: Record statistics access
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ACCESS,
+            user_id=current_user.id,
+            details={
+                "endpoint": "/v1.0/users/statistics",
+                "action": "view_user_statistics"
+            },
+            security_level=SecurityLevel.MEDIUM,
+            success=True
+        )
         # Initialize cached user service
         cached_service = CachedUserService(db)
         
@@ -89,9 +133,29 @@ async def get_user_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Get detailed user information with caching"""
+    """Get detailed user information with caching (Super User and Admin User only)"""
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user details
+    if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user details."
+        )
     
     try:
+        # 📝 AUDIT LOG: Record user details access
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ACCESS,
+            user_id=current_user.id,
+            details={
+                "endpoint": f"/v1.0/users/{user_id}/details",
+                "action": "view_user_details",
+                "target_user_id": user_id
+            },
+            security_level=SecurityLevel.MEDIUM,
+            success=True
+        )
         # Initialize cached user service
         cached_service = CachedUserService(db)
         
