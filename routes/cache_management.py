@@ -15,7 +15,9 @@ from models import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/cache", tags=["Cache Management"])
+router = APIRouter(
+    prefix="/cache",
+    tags=["Cache Management"])
 
 @router.get("/health")
 async def cache_health_check() -> Dict[str, Any]:

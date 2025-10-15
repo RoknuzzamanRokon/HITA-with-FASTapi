@@ -8,14 +8,18 @@ from typing import Optional, Dict, Any
 import logging
 
 from database import get_db
+import models
 from services.cached_user_service import CachedUserService
 from routes.auth import get_current_user
 from models import User, UserRole
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1.0/users", tags=["Cached User Management"])
+router = APIRouter(
+    prefix="/v1.0/users",
+    tags=["Cached User Management"])
 
 @router.get("/list")
 async def get_users_paginated(

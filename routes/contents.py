@@ -570,15 +570,44 @@ def get_all_hotels(
     else:
         allowed_providers = None
 
-    # Decode resume_key if present (assume it's the last hotel id, encoded)
+    # Decode and validate resume_key if present
     last_id = 0
     if resume_key:
         try:
-            last_id = int(resume_key.split("_")[0])
-        except Exception:
+            # Extract the ID from resume_key format: "id_randomstring"
+            parts = resume_key.split("_", 1)
+            if len(parts) != 2:
+                raise ValueError("Invalid format")
+            
+            last_id = int(parts[0])
+            random_part = parts[1]
+            
+            # Validate that the random part has expected length and characters
+            if len(random_part) != 50:
+                raise ValueError("Invalid random part length")
+            
+            # Check if the hotel ID actually exists in the database
+            hotel_exists = db.query(models.Hotel).filter(
+                models.Hotel.id == last_id
+            ).first()
+            
+            if not hotel_exists:
+                raise ValueError("Resume key references non-existent hotel record")
+            
+            # For general users, also check if they have access to this hotel through their providers
+            if allowed_providers is not None:
+                hotel_accessible = db.query(models.ProviderMapping).filter(
+                    models.ProviderMapping.ittid == hotel_exists.ittid,
+                    models.ProviderMapping.provider_name.in_(allowed_providers)
+                ).first()
+                
+                if not hotel_accessible:
+                    raise ValueError("Resume key references hotel not accessible to user")
+                
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid resume_key."
+                detail=f"Invalid resume_key: {str(e)}. Please use a valid resume_key from a previous response or omit it to start from the beginning."
             )
 
     query = db.query(Hotel).order_by(Hotel.id)

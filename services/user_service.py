@@ -41,7 +41,7 @@ class UserService:
 
     def get_users_paginated(self, params: UserSearchParams, current_user: models.User) -> PaginatedUserResponse:
         """Get paginated list of users with filtering and sorting"""
-        
+
         # Build base query with optimized joins
         query = self.db.query(models.User).options(
             selectinload(models.User.user_points),
@@ -117,6 +117,8 @@ class UserService:
 
     def get_user_statistics(self, current_user: models.User) -> UserStatistics:
         """Get user statistics for the current user's scope"""
+
+        created_by_str = None
         
         # Build base query for users in current user's scope
         if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
@@ -157,7 +159,7 @@ class UserService:
 
     def get_user_with_details(self, user_id: str, current_user: models.User) -> Optional[UserDetailResponse]:
         """Get detailed user information"""
-        
+
         # Check permissions
         user = self.db.query(models.User).options(
             selectinload(models.User.user_points),
@@ -201,7 +203,7 @@ class UserService:
 
     def create_user_with_validation(self, user_data: UserCreateRequest, current_user: models.User) -> UserListResponse:
         """Create a new user with comprehensive validation"""
-        
+
         # Check basic permissions first
         if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
             raise InsufficientPermissionsError(
@@ -219,14 +221,14 @@ class UserService:
             role=user_data.role,
             current_user=current_user
         )
-        
+
         # Handle validation errors
         if not validation_result.is_valid:
             handle_validation_errors(validation_result)
 
         # Check for conflicts and provide detailed error messages
         conflict_resolver = ConflictResolver(self.db)
-        
+
         # Check email conflict with detailed resolution
         existing_email_user = self.db.query(models.User).filter(models.User.email == user_data.email).first()
         if existing_email_user:
@@ -263,7 +265,7 @@ class UserService:
             self.db.refresh(new_user)
 
             return self._build_user_list_response(new_user)
-            
+
         except Exception as e:
             self.db.rollback()
             raise BusinessRuleViolationError(
@@ -273,7 +275,7 @@ class UserService:
 
     def update_user_with_validation(self, user_id: str, updates: UserUpdateRequest, current_user: models.User) -> Optional[UserListResponse]:
         """Update user with comprehensive validation"""
-        
+
         # Get user
         user = self.db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
@@ -305,7 +307,7 @@ class UserService:
             current_user=current_user,
             target_user_id=user_id
         )
-        
+
         # Handle validation errors
         if not validation_result.is_valid:
             handle_validation_errors(validation_result)
@@ -313,7 +315,7 @@ class UserService:
         try:
             # Apply updates with conflict resolution
             conflict_resolver = ConflictResolver(self.db)
-            
+
             if updates.username is not None:
                 # Check username conflict with suggestions
                 existing_username = self.db.query(models.User).filter(
@@ -364,7 +366,7 @@ class UserService:
             self.db.refresh(user)
 
             return self._build_user_list_response(user)
-            
+
         except Exception as e:
             self.db.rollback()
             if isinstance(e, (UserAlreadyExistsError, InsufficientPermissionsError, DataValidationError)):
@@ -376,7 +378,7 @@ class UserService:
 
     def delete_user_with_cleanup(self, user_id: str, current_user: models.User) -> bool:
         """Delete user with proper cleanup and validation"""
-        
+
         # Get user
         user = self.db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
@@ -385,7 +387,7 @@ class UserService:
         # Validate deletion with business rules
         validator = UserValidator(self.db)
         deletion_result = validator.validate_user_deletion(user, current_user)
-        
+
         if not deletion_result.is_valid:
             handle_validation_errors(deletion_result)
 
@@ -409,33 +411,33 @@ class UserService:
             # Cleanup related data with proper error handling
             # Delete user points
             deleted_points = self.db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).delete()
-            
+
             # Delete provider permissions
             deleted_permissions = self.db.query(models.UserProviderPermission).filter(models.UserProviderPermission.user_id == user_id).delete()
-            
+
             # Delete activity logs (if the model exists)
             try:
                 deleted_logs = self.db.query(models.UserActivityLog).filter(models.UserActivityLog.user_id == user_id).delete()
             except AttributeError:
                 # UserActivityLog model doesn't exist yet
                 deleted_logs = 0
-            
+
             # Delete sessions (if the model exists)
             try:
                 deleted_sessions = self.db.query(models.UserSession).filter(models.UserSession.user_id == user_id).delete()
             except AttributeError:
                 # UserSession model doesn't exist yet
                 deleted_sessions = 0
-            
+
             # Note: We don't delete point transactions as they are historical records
             # Instead, we could mark them as "deleted_user" or similar
-            
+
             # Delete the user
             self.db.delete(user)
             self.db.commit()
 
             return True
-            
+
         except Exception as e:
             self.db.rollback()
             raise BusinessRuleViolationError(
@@ -449,7 +451,7 @@ class UserService:
 
     def get_user_activity(self, user_id: str, days: int, current_user: models.User) -> Optional[UserActivityResponse]:
         """Get user activity for specified number of days"""
-        
+
         # Get user and check permissions
         user = self.db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
@@ -499,11 +501,11 @@ class UserService:
 
     def validate_point_transaction(self, giver_id: str, receiver_id: str, points: int, current_user: models.User) -> bool:
         """Validate point transaction with comprehensive business rules"""
-        
+
         # Get users
         giver = self.db.query(models.User).filter(models.User.id == giver_id).first()
         receiver = self.db.query(models.User).filter(models.User.id == receiver_id).first()
-        
+
         if not giver:
             raise UserNotFoundError(user_id=giver_id)
         if not receiver:
@@ -512,7 +514,7 @@ class UserService:
         # Validate transaction with business rules
         validator = UserValidator(self.db)
         transaction_result = validator.validate_point_transaction(giver, receiver, points)
-        
+
         if not transaction_result.is_valid:
             handle_validation_errors(transaction_result)
 
@@ -538,7 +540,7 @@ class UserService:
 
     def _build_user_list_response(self, user: models.User) -> UserListResponse:
         """Build UserListResponse from User model"""
-        
+
         # Get point information
         user_points = user.user_points[0] if user.user_points else None
         point_balance = user_points.current_points if user_points else 0
@@ -602,7 +604,7 @@ class UserService:
 
     def _build_user_detail_response(self, user: models.User, recent_transactions: List[Dict[str, Any]]) -> UserDetailResponse:
         """Build UserDetailResponse from User model"""
-        
+
         # Get point information
         user_points = user.user_points[0] if user.user_points else None
         point_balance = user_points.current_points if user_points else 0

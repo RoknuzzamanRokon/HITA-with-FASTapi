@@ -24,11 +24,11 @@ bcrypt = "==3.2.2"
 fastapi-cache2 = "*"
 email-validator = "*"
 jsonschema = "*"
-psutil = "*"
 httpx = "*"
 bleach = "*"
 pandas = "*"
 xmltodict = "*"
+psutil = "*"
 
 [dev-packages]
 pytest = "*"
