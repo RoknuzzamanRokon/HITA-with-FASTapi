@@ -1501,15 +1501,16 @@ async def get_dashboard_analytics(
     Includes user statistics, activity trends, and point distribution.
     """
     try:
+        print("Hi")
         user_service = UserService(db)
-        
+        print("Hi")
         # Get basic statistics
         statistics = user_service.get_user_statistics(current_user)
-        
+        print("Hi")
         # Get additional analytics
         # Recent activity (last 30 days)
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        
+
         # Build base query for users in current user's scope
         if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
             created_by_str = f"{current_user.role.lower()}: {current_user.email}"
@@ -1517,24 +1518,24 @@ async def get_dashboard_analytics(
         else:
             created_by_str = None
             base_query = db.query(models.User).filter(models.User.id == current_user.id)
-        
+
         # User creation trend (last 30 days)
         user_creation_trend = []
         for i in range(30):
             date = datetime.utcnow() - timedelta(days=i)
             start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
             end_of_day = start_of_day + timedelta(days=1)
-            
+
             count = base_query.filter(
                 models.User.created_at >= start_of_day,
                 models.User.created_at < end_of_day
             ).count()
-            
+
             user_creation_trend.append({
                 "date": start_of_day.strftime("%Y-%m-%d"),
                 "count": count
             })
-        
+
         # Point distribution by role
         point_distribution = db.query(
             models.User.role,
@@ -1545,7 +1546,7 @@ async def get_dashboard_analytics(
         ).filter(
             models.User.created_by == created_by_str if created_by_str else models.User.id == current_user.id
         ).group_by(models.User.role).all()
-        
+
         point_dist_data = []
         for role, total_points, user_count in point_distribution:
             point_dist_data.append({
@@ -1554,7 +1555,7 @@ async def get_dashboard_analytics(
                 "user_count": user_count,
                 "average_points": (total_points or 0) / user_count if user_count > 0 else 0
             })
-        
+
         # Activity summary
         active_users_last_7_days = base_query.join(
             models.PointTransaction,
@@ -1565,7 +1566,7 @@ async def get_dashboard_analytics(
         ).filter(
             models.PointTransaction.created_at >= datetime.utcnow() - timedelta(days=7)
         ).distinct().count()
-        
+
         return {
             "statistics": statistics,
             "user_creation_trend": user_creation_trend,
@@ -1578,7 +1579,7 @@ async def get_dashboard_analytics(
             },
             "generated_at": datetime.utcnow()
         }
-        
+
     except Exception as e:
         print(f"Dashboard analytics error: {str(e)}")  # For debugging
         raise HTTPException(

@@ -24,8 +24,8 @@ bcrypt = "==3.2.2"
 fastapi-cache2 = "*"
 email-validator = "*"
 jsonschema = "*"
-psutil = "*"
 httpx = "*"
+psutil = "*"
 
 [dev-packages]
 pytest = "*"

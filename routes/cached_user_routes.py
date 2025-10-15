@@ -8,13 +8,16 @@ from typing import Optional, Dict, Any
 import logging
 
 from database import get_db
+import models
 from services.cached_user_service import CachedUserService
 from routes.auth import get_current_user
-from models import User
+from models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1.0/users", tags=["Cached User Management"])
+router = APIRouter(
+    prefix="/v1.0/users",
+    tags=["Cached User Management"])
 
 @router.get("/list")
 async def get_users_paginated(
@@ -31,25 +34,30 @@ async def get_users_paginated(
     """Get paginated list of users with caching"""
     
     try:
-        # Initialize cached user service
-        cached_service = CachedUserService(db)
-        
-        # Get paginated users with caching
-        result = cached_service.get_users_paginated(
-            page=page,
-            limit=limit,
-            search=search,
-            role=role,
-            is_active=is_active,
-            sort_by=sort_by,
-            sort_order=sort_order
-        )
-        
-        return {
-            "success": True,
-            "data": result
-        }
-        
+        if current_user.role == models.UserRole.GENERAL_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="General users cannot access the user list"
+            )
+        else:
+            # Initialize cached user service
+            cached_service = CachedUserService(db)
+            
+            # Get paginated users with caching
+            result = cached_service.get_users_paginated(
+                page=page,
+                limit=limit,
+                search=search,
+                role=role,
+                is_active=is_active,
+                sort_by=sort_by,
+                sort_order=sort_order
+            )
+            
+            return {
+                "success": True,
+                "data": result
+            }
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
         raise HTTPException(
