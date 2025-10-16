@@ -154,7 +154,14 @@ def create_user(
 ) -> models.User:
     user_id = generate_user_id()
     hashed_password = get_password_hash(user_data.password)
-    api_key = f"ak_{uuid.uuid4().hex}"
+    
+    # 🔒 API KEY POLICY: Only admin/super admin created users get API keys
+    # Self-registered users (created_by starts with "own:") don't get API keys
+    api_key = None
+    if created_by and not created_by.startswith("own:"):
+        # User created by admin/super admin - generate API key
+        api_key = f"ak_{uuid.uuid4().hex}"
+    # Self-registered users get api_key = None
 
     # Serialize created_by if it's a dict
     if isinstance(created_by, dict):
@@ -497,9 +504,126 @@ async def regenerate_api_key(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ):
-    """Regenerate API key for current user."""
+    """Regenerate API key for current user (Admin and Super Admin only)."""
+    
+    # 🔒 SECURITY CHECK: Only admin and super admin can regenerate API keys
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only admin and super admin users can regenerate API keys."
+        )
+    
     new_api_key = generate_api_key(db, current_user.id)
     return {"message": "API key regenerated successfully", "api_key": new_api_key}
+
+
+@router.post("/generate_api_key/{user_id}", response_model=dict)
+async def generate_api_key_for_user(
+    user_id: str,
+    request: Request,
+    current_user: Annotated[models.User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    """Generate API key for a specific user (Admin and Super Admin only)."""
+    
+    # 🔒 SECURITY CHECK: Only admin and super admin can generate API keys for others
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only admin and super admin users can generate API keys for other users."
+        )
+    
+    # Check if target user exists
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found."
+        )
+    
+    # Generate API key for the target user
+    new_api_key = generate_api_key(db, user_id)
+    
+    # 📝 AUDIT LOG: Record API key generation
+    from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+    audit_logger = AuditLogger(db)
+    audit_logger.log_activity(
+        activity_type=ActivityType.USER_UPDATED,
+        user_id=current_user.id,
+        target_user_id=user_id,
+        details={
+            "action": "generate_api_key",
+            "target_username": target_user.username,
+            "admin_role": current_user.role
+        },
+        request=request,
+        security_level=SecurityLevel.HIGH,
+        success=True
+    )
+    
+    return {
+        "message": f"API key generated successfully for user {target_user.username}",
+        "user_id": user_id,
+        "username": target_user.username,
+        "api_key": new_api_key
+    }
+
+
+@router.delete("/revoke_api_key/{user_id}", response_model=dict)
+async def revoke_api_key_for_user(
+    user_id: str,
+    request: Request,
+    current_user: Annotated[models.User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    """Revoke API key for a specific user (Admin and Super Admin only)."""
+    
+    # 🔒 SECURITY CHECK: Only admin and super admin can revoke API keys
+    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only admin and super admin users can revoke API keys."
+        )
+    
+    # Check if target user exists
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found."
+        )
+    
+    # Store old API key for audit
+    old_api_key = target_user.api_key
+    
+    # Revoke API key (set to None)
+    target_user.api_key = None
+    target_user.updated_at = datetime.utcnow()
+    db.commit()
+    
+    # 📝 AUDIT LOG: Record API key revocation
+    from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+    audit_logger = AuditLogger(db)
+    audit_logger.log_activity(
+        activity_type=ActivityType.USER_UPDATED,
+        user_id=current_user.id,
+        target_user_id=user_id,
+        details={
+            "action": "revoke_api_key",
+            "target_username": target_user.username,
+            "had_api_key": old_api_key is not None,
+            "admin_role": current_user.role
+        },
+        request=request,
+        security_level=SecurityLevel.HIGH,
+        success=True
+    )
+    
+    return {
+        "message": f"API key revoked successfully for user {target_user.username}",
+        "user_id": user_id,
+        "username": target_user.username
+    }
 
 
 @router.get("/health")
