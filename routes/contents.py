@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from database import get_db
 from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
 from pydantic import BaseModel
@@ -13,6 +14,20 @@ from fastapi_cache.decorator import cache
 import csv
 import redis
 import json
+
+def serialize_datetime_objects(obj):
+    """Convert datetime objects to ISO format strings for JSON serialization."""
+    if hasattr(obj, '__dict__'):
+        result = {}
+        for key, value in obj.__dict__.items():
+            if key.startswith('_'):
+                continue
+            if isinstance(value, datetime):
+                result[key] = value.isoformat() if value else None
+            else:
+                result[key] = value
+        return result
+    return obj
 import os
 from routes.auth import get_current_user
 
@@ -319,20 +334,22 @@ def get_hotel_mapping_data_using_provider_name_and_id(
 class ITTIDRequest(BaseModel):
     ittid: List[str]
 
-
+# Get provider mapping
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
 def get_hotels_using_ittid_list(
     request: ITTIDRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    
-    """Get details of the current user and deduct 10 points for general_user."""
-    # Deduct points for general_user
+    """Get only provider_mappings by ITTID list."""
+
+    # 🚫 NO POINT DEDUCTION for super_user and admin_user
     if current_user.role == models.UserRole.GENERAL_USER:
         deduct_points_for_general_user(current_user, db)
+    elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
 
-    """Get hotels along with their provider mappings based on a list of ittid values."""
+    # Fetch hotels
     hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
     if not hotels:
         raise HTTPException(
@@ -341,106 +358,20 @@ def get_hotels_using_ittid_list(
         )
 
     result = []
-    # Check user permissions
+
+    # For General Users: only allowed providers
     if current_user.role == models.UserRole.GENERAL_USER:
         allowed_providers = [
             permission.provider_name
-            for permission in db.query(UserProviderPermission).filter(UserProviderPermission.user_id == current_user.id).all()
+            for permission in db.query(UserProviderPermission)
+            .filter(UserProviderPermission.user_id == current_user.id)
+            .all()
         ]
         for hotel in hotels:
-            provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid, models.ProviderMapping.provider_name.in_(allowed_providers)).all()
-            if provider_mappings:
-                # Fetch related data
-                locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
-                contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-
-                # Transform data into the desired format
-                formatted_hotel = {
-                    "id": hotel.id,
-                    "ittid": hotel.ittid,
-                    "name": hotel.name,
-                    "latitude": hotel.latitude,
-                    "longitude": hotel.longitude,
-                    "address_line1": hotel.address_line1,
-                    "address_line2": hotel.address_line2,
-                    "postal_code": hotel.postal_code,
-                    "primary_photo": hotel.primary_photo,
-                    "property_type": hotel.property_type,
-                    "rating": hotel.rating,
-                    "map_status": hotel.map_status,
-                    "content_update_status": hotel.content_update_status,
-                    "updated_at": hotel.updated_at,
-                    "created_at": hotel.created_at,
-                }
-
-                formatted_provider_mappings = [
-                    {
-                        "id": mapping.id,
-                        "provider_id": mapping.provider_id,
-                        "provider_name": mapping.provider_name,
-                        "system_type": mapping.system_type,
-                        "vervotech_id": mapping.vervotech_id,
-                        "giata_code": mapping.giata_code,
-                    }
-                    for mapping in provider_mappings
-                ]
-
-                formatted_locations = [
-                    {
-                        "id": location.id,
-                        "city_name": location.city_name,
-                        "city_location_id": location.city_location_id,
-                        "city_code": location.city_code,
-                        "master_city_name": location.master_city_name,
-                        "state_name": location.state_name,
-                        "state_code": location.state_code,
-                        "country_name": location.country_name,
-                        "country_code": location.country_code,
-                    }
-                    for location in locations
-                ]
-
-                formatted_contacts = [
-                    {
-                        "id": contact.id,
-                        "contact_type": contact.contact_type,
-                        "value": contact.value,
-                    }
-                    for contact in contacts
-                ]
-
-                result.append({
-                    "hotel": formatted_hotel,
-                    "provider_mappings": formatted_provider_mappings,
-                    "locations": formatted_locations,
-                    "contacts": formatted_contacts,
-                })
-    else:
-        hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
-        for hotel in hotels:
-            # Fetch related data
-            locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
-            provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == hotel.ittid).all()
-            contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-
-            # Transform data into the desired format
-            formatted_hotel = {
-                "id": hotel.id,
-                "ittid": hotel.ittid,
-                "name": hotel.name,
-                "latitude": hotel.latitude,
-                "longitude": hotel.longitude,
-                "address_line1": hotel.address_line1,
-                "address_line2": hotel.address_line2,
-                "postal_code": hotel.postal_code,
-                "property_type": hotel.property_type,
-                "primary_photo": hotel.primary_photo,
-                "rating": hotel.rating,
-                "map_status": hotel.map_status,
-                "content_update_status": hotel.content_update_status,
-                "updated_at": hotel.updated_at,
-                "created_at": hotel.created_at,
-            }
+            provider_mappings = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.ittid == hotel.ittid,
+                models.ProviderMapping.provider_name.in_(allowed_providers)
+            ).all()
 
             formatted_provider_mappings = [
                 {
@@ -454,39 +385,35 @@ def get_hotels_using_ittid_list(
                 for mapping in provider_mappings
             ]
 
-            formatted_locations = [
-                {
-                    "id": location.id,
-                    "city_name": location.city_name,
-                    "city_location_id": location.city_location_id,
-                    "city_code": location.city_code,
-                    "master_city_name": location.master_city_name,
-                    "state_name": location.state_name,
-                    "state_code": location.state_code,
-                    "country_name": location.country_name,
-                    "country_code": location.country_code,
-                }
-                for location in locations
-            ]
+            result.append({
+                "ittid": hotel.ittid,
+                "provider_mappings": formatted_provider_mappings
+            })
+    else:
+        # For SUPER/ADMIN users – return all mappings
+        for hotel in hotels:
+            provider_mappings = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.ittid == hotel.ittid
+            ).all()
 
-            formatted_contacts = [
+            formatted_provider_mappings = [
                 {
-                    "id": contact.id,
-                    "contact_type": contact.contact_type,
-                    "value": contact.value,
+                    "id": mapping.id,
+                    "provider_id": mapping.provider_id,
+                    "provider_name": mapping.provider_name,
+                    "system_type": mapping.system_type,
+                    "vervotech_id": mapping.vervotech_id,
+                    "giata_code": mapping.giata_code,
                 }
-                for contact in contacts
+                for mapping in provider_mappings
             ]
 
             result.append({
-                "hotel": formatted_hotel,
-                "provider_mappings": formatted_provider_mappings,
-                "locations": formatted_locations,
-                "contacts": formatted_contacts,
+                "ittid": hotel.ittid,
+                "provider_mappings": formatted_provider_mappings
             })
 
     return result
-
 
 @router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
 def get_hotel_using_ittid(
@@ -494,12 +421,9 @@ def get_hotel_using_ittid(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
+    """Get hotel details by ITTID. Points deducted only for successful requests. Requires active suppliers."""
     
-    """Get details of the current user and deduct 10 points for general_user."""
-    # Deduct points for general_user
-    if current_user.role == models.UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
-    """Get a hotel along with its provider mappings."""
+    # Get hotel first (no point deduction yet)
     hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
     if not hotel:
         raise HTTPException(
@@ -507,35 +431,95 @@ def get_hotel_using_ittid(
             detail=f"Hotel with id '{ittid}' not found."
         )
 
-    # Check user permissions
+    # 🔍 CHECK FOR ACTIVE SUPPLIERS (Provider Mappings)
+    # First check if there are ANY provider mappings for this ITTID
+    all_provider_mappings = db.query(models.ProviderMapping).filter(
+        models.ProviderMapping.ittid == ittid
+    ).all()
+    
+    if not all_provider_mappings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cannot active supplier with this ittid '{ittid}'. No supplier mappings found for this hotel."
+        )
+
+    # Check user-specific permissions for general users
     if current_user.role == models.UserRole.GENERAL_USER:
         allowed_providers = [
             permission.provider_name
-            for permission in db.query(UserProviderPermission).filter(UserProviderPermission.user_id == current_user.id).all()
+            for permission in db.query(UserProviderPermission)
+            .filter(UserProviderPermission.user_id == current_user.id)
+            .all()
         ]
         if not allowed_providers:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Do not have permission or not active"
             )
-        provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == ittid, models.ProviderMapping.provider_name.in_(allowed_providers)).all()
-        if not provider_mappings:
+        
+        # Check if user has access to any of the suppliers for this hotel
+        accessible_provider_mappings = db.query(models.ProviderMapping).filter(
+            models.ProviderMapping.ittid == ittid,
+            models.ProviderMapping.provider_name.in_(allowed_providers)
+        ).all()
+        
+        if not accessible_provider_mappings:
+            # Hotel exists and has suppliers, but user doesn't have access to any of them
+            available_suppliers = [pm.provider_name for pm in all_provider_mappings]
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Do not have permission or not active"
+                detail=f"Cannot access suppliers for this ittid '{ittid}'. Available suppliers: {', '.join(available_suppliers)}. Contact admin for access."
             )
-    else:
-        provider_mappings = db.query(models.ProviderMapping).filter(models.ProviderMapping.ittid == ittid).all()
+    
+    print(f"✅ Active suppliers found for ITTID {ittid}: {len(all_provider_mappings)} suppliers")
 
+    # Get related data
     locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
     chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
     contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
-    return {"hotel": hotel,
-            "provider_mappings": provider_mappings, 
-            "locations": locations, 
-            "chains": chains, 
-            "contacts": contacts
-            }
+
+    # Get provider mappings for response (based on user role)
+    if current_user.role == models.UserRole.GENERAL_USER:
+        # For general users, only show accessible provider mappings
+        allowed_providers = [
+            permission.provider_name
+            for permission in db.query(UserProviderPermission)
+            .filter(UserProviderPermission.user_id == current_user.id)
+            .all()
+        ]
+        provider_mappings = db.query(models.ProviderMapping).filter(
+            models.ProviderMapping.ittid == ittid,
+            models.ProviderMapping.provider_name.in_(allowed_providers)
+        ).all()
+    else:
+        # For super/admin users, show all provider mappings
+        provider_mappings = all_provider_mappings
+
+    # Serialize the response with provider mappings
+    response_data = {
+        "hotel": serialize_datetime_objects(hotel),
+        "provider_mappings": [serialize_datetime_objects(pm) for pm in provider_mappings],
+        "locations": [serialize_datetime_objects(loc) for loc in locations],
+        "chains": [serialize_datetime_objects(chain) for chain in chains],
+        "contacts": [serialize_datetime_objects(contact) for contact in contacts],
+        "supplier_info": {
+            "total_active_suppliers": len(all_provider_mappings),
+            "accessible_suppliers": len(provider_mappings),
+            "supplier_names": [pm.provider_name for pm in provider_mappings]
+        }
+    }
+
+    # 💸 POINT DEDUCTION ONLY ON SUCCESSFUL REQUEST
+    # Points are deducted only when the request is successful and data is returned
+    if current_user.role == models.UserRole.GENERAL_USER:
+        deduct_points_for_general_user(current_user, db)
+        print(f"💸 Points deducted for successful request by general user: {current_user.email}")
+    elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+
+    return response_data
+
+
 
 
 @router.get("/get_all_hotel_info", status_code=status.HTTP_200_OK)
@@ -543,17 +527,25 @@ def get_all_hotels(
     current_user: Annotated[models.User, Depends(get_current_user)],
     page: int = Query(1, ge=1, description="Page number, starting from 1"),
     limit: int = Query(50, ge=1, le=1000, description="Number of hotels per page (max 1000)"),
-    resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
+    resume_key: Optional[str] = Query(None, description="Resume key for pagination - REQUIRED for pages after the first"),
+    first_request: bool = Query(False, description="Set to true for the very first request to start pagination"),
     db: Session = Depends(get_db)
 ):
     """
-    Get a paginated list of hotels. Use 'limit' to set page size (max 1000).
-    Use 'resume_key' to get the next page (opaque random string).
+    Get a paginated list of hotels with smart resume_key validation.
+    
+    PAGINATION LOGIC:
+    - FIRST request: No resume_key needed (automatically detected)
+    - SUBSEQUENT requests: Must provide valid resume_key from previous response
+    
+    Resume key format: {hotel_id}_{50_character_random_string}
     Only hotels accessible by the user's provider permissions are returned.
-    Deduct points for general users.
+    Points deducted only for general users (super/admin users are exempt).
+    Total hotel count shows actual database count using: SELECT COUNT(ittid) FROM hotels
     """
 
-    # Deduct points and filter for general users
+    # 🚫 NO POINT DEDUCTION for super_user and admin_user
+    # Only deduct points for general_user
     if current_user.role == UserRole.GENERAL_USER:
         deduct_points_for_general_user(current_user, db)
         allowed_providers = [
@@ -567,24 +559,59 @@ def get_all_hotels(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have any permission for this request."
             )
+    elif current_user.role in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+        allowed_providers = None
     else:
         allowed_providers = None
 
-    # Decode and validate resume_key if present
+    # 🔒 SMART RESUME KEY VALIDATION
+    # Determine if this is a first request or subsequent request
+    is_first_request = not resume_key  # If no resume_key provided, treat as first request
+    
+    # If resume_key is provided, it must be valid (subsequent request)
+    if resume_key:
+        is_first_request = False
+        print(f"📄 Subsequent request detected with resume_key: {resume_key[:20]}...")
+    else:
+        is_first_request = True
+        print("📄 First request detected (no resume_key provided)")
+    
+    # Validate conflicting parameters (optional - can remove if not needed)
+    if first_request and resume_key:
+        print("⚠️  Warning: Both first_request=true and resume_key provided. Using resume_key logic.")
+        is_first_request = False
+
+    # 🔍 Enhanced resume_key validation (required for non-first requests)
     last_id = 0
     if resume_key:
         try:
+            # Validate resume_key is not empty or just whitespace
+            if not resume_key.strip():
+                raise ValueError("Resume key cannot be empty")
+            
             # Extract the ID from resume_key format: "id_randomstring"
             parts = resume_key.split("_", 1)
             if len(parts) != 2:
-                raise ValueError("Invalid format")
+                raise ValueError("Invalid resume key format. Expected format: 'id_randomstring'")
             
-            last_id = int(parts[0])
+            # Validate the ID part is a valid integer
+            try:
+                last_id = int(parts[0])
+                if last_id <= 0:
+                    raise ValueError("Invalid hotel ID in resume key")
+            except ValueError:
+                raise ValueError("Resume key must start with a valid hotel ID")
+            
             random_part = parts[1]
             
             # Validate that the random part has expected length and characters
             if len(random_part) != 50:
-                raise ValueError("Invalid random part length")
+                raise ValueError(f"Invalid random part length. Expected 50 characters, got {len(random_part)}")
+            
+            # Validate random part contains only alphanumeric characters
+            if not random_part.isalnum():
+                raise ValueError("Random part must contain only alphanumeric characters")
             
             # Check if the hotel ID actually exists in the database
             hotel_exists = db.query(models.Hotel).filter(
@@ -592,7 +619,7 @@ def get_all_hotels(
             ).first()
             
             if not hotel_exists:
-                raise ValueError("Resume key references non-existent hotel record")
+                raise ValueError(f"Resume key references non-existent hotel record (ID: {last_id})")
             
             # For general users, also check if they have access to this hotel through their providers
             if allowed_providers is not None:
@@ -602,12 +629,19 @@ def get_all_hotels(
                 ).first()
                 
                 if not hotel_accessible:
-                    raise ValueError("Resume key references hotel not accessible to user")
+                    raise ValueError(f"Resume key references hotel not accessible to user (ITTID: {hotel_exists.ittid})")
+            
+            print(f"✅ Valid resume_key: Starting from hotel ID {last_id}")
                 
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid resume_key: {str(e)}. Please use a valid resume_key from a previous response or omit it to start from the beginning."
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Error processing resume_key: {str(e)}. Please use a valid resume_key from a previous response."
             )
 
     query = db.query(Hotel).order_by(Hotel.id)
@@ -624,14 +658,18 @@ def get_all_hotels(
 
     hotels = query.limit(limit).all()
 
-    # Prepare next resume_key (random string + last hotel id)
+    # 🔑 Generate next resume_key with enhanced validation
     if hotels and len(hotels) == limit:
         last_hotel_id = hotels[-1].id
+        # Generate cryptographically secure random string
         rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
         next_resume_key = f"{last_hotel_id}_{rand_str}"
+        print(f"📄 Generated resume_key for next page: {last_hotel_id}_[50-char-random]")
     else:
         next_resume_key = None
+        print("📄 No more pages available - resume_key is null")
 
+    # 🏨 Build hotel list with proper datetime serialization
     hotel_list = [
         {
             "ittid": hotel.ittid,
@@ -646,20 +684,51 @@ def get_all_hotels(
                 "latitude": hotel.latitude,
                 "longitude": hotel.longitude
             },
-
-            "updated_at": hotel.updated_at,
-            "created_at": hotel.created_at,
+            "updated_at": hotel.updated_at.isoformat() if hotel.updated_at else None,
+            "created_at": hotel.created_at.isoformat() if hotel.created_at else None,
         }
         for hotel in hotels
     ]
 
-    total_hotel = db.query(Hotel).count()
+    # 📊 Get ACTUAL total hotel count using: SELECT COUNT(ittid) FROM hotels
+    # This shows the real total number of hotels in the database
+    total_hotel = db.query(func.count(Hotel.ittid)).scalar()
+    
+    # Get accessible hotel count for user (for reference)
+    if allowed_providers is not None:
+        # Count only hotels accessible to general user
+        accessible_hotel_ids = db.query(ProviderMapping.ittid).filter(
+            ProviderMapping.provider_name.in_(allowed_providers)
+        ).distinct().all()
+        accessible_hotel_ids = [h[0] for h in accessible_hotel_ids]
+        accessible_hotel_count = db.query(Hotel).filter(Hotel.ittid.in_(accessible_hotel_ids)).count()
+    else:
+        # Super/admin users can access all hotels
+        accessible_hotel_count = total_hotel
+
+    print(f"📊 Returning {len(hotel_list)} hotels out of {accessible_hotel_count} accessible hotels (Total in DB: {total_hotel})")
+
     return {
         "resume_key": next_resume_key,
         "page": page,
         "limit": limit,
-        "total_hotel": total_hotel,
-        "hotels": hotel_list
+        "total_hotel": total_hotel,  # Actual count from database: SELECT COUNT(ittid) FROM hotels
+        "accessible_hotel_count": accessible_hotel_count,  # Hotels user can access
+        "hotels": hotel_list,
+        "pagination_info": {
+            "current_page_count": len(hotel_list),
+            "has_next_page": next_resume_key is not None,
+            "user_role": current_user.role,
+            "point_deduction_applied": current_user.role == UserRole.GENERAL_USER,
+            "is_first_request": is_first_request,
+            "resume_key_required_for_next": next_resume_key is not None
+        },
+        "usage_instructions": {
+            "first_request": "No resume_key needed for the first request",
+            "subsequent_requests": "Must provide valid resume_key from previous response for next pages",
+            "resume_key_format": "{hotel_id}_{50_character_random_string}",
+            "note": "resume_key is automatically required for subsequent requests"
+        }
     }
 
 
