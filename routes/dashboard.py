@@ -19,12 +19,30 @@ router = APIRouter(
     dependencies=[Depends(get_current_active_user)]
 )
 
+# Add logging for dashboard access attempts
+import logging
+dashboard_logger = logging.getLogger("dashboard_access")
+dashboard_logger.setLevel(logging.INFO)
+
 def require_admin_or_superuser(current_user: models.User) -> models.User:
     """Check if user is admin or superuser"""
     if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        # Log unauthorized access attempts for debugging
+        print(f"🚫 Unauthorized dashboard access attempt:")
+        print(f"   User ID: {current_user.id}")
+        print(f"   Username: {current_user.username}")
+        print(f"   Role: {current_user.role}")
+        print(f"   Email: {getattr(current_user, 'email', 'N/A')}")
+        
+        # Special message for the specific user causing issues
+        if current_user.username == "roman":
+            detail = "Access denied. User 'roman' does not have dashboard permissions. Please use an admin account or contact administrator to upgrade permissions."
+        else:
+            detail = "Access denied. Only admin and super admin users can access dashboard."
+        
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only admin and super admin users can access dashboard."
+            detail=detail
         )
     return current_user
 
@@ -39,9 +57,20 @@ async def get_dashboard_stats(
     Points Distributed, Current Balance, Recent Signups, Inactive Users
     """
     
+    # Log dashboard access attempt
+    dashboard_logger.info(f"Dashboard stats requested by user: {current_user.username} (ID: {current_user.id}, Role: {current_user.role})")
+    
+    # Temporary: Block specific user to stop spam
+    if current_user.username == "roman":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dashboard access temporarily disabled for this user. Please contact administrator."
+        )
+    
+    # Check permissions BEFORE try block to avoid wrapping 403 in 500
+    require_admin_or_superuser(current_user)
+    
     try:
-        # Check permissions
-        require_admin_or_superuser(current_user)
         
         # Calculate date ranges
         now = datetime.utcnow()
@@ -171,9 +200,10 @@ async def get_user_activity_stats(
     Get detailed user activity statistics
     """
     
+    # Check permissions BEFORE try block
+    require_admin_or_superuser(current_user)
+    
     try:
-        # Check permissions
-        require_admin_or_superuser(current_user)
         
         # Calculate date range
         now = datetime.utcnow()
@@ -261,9 +291,10 @@ async def get_points_summary(
     Get detailed points and transaction statistics
     """
     
+    # Check permissions BEFORE try block
+    require_admin_or_superuser(current_user)
+    
     try:
-        # Check permissions
-        require_admin_or_superuser(current_user)
         
         points_by_role = []
         recent_transactions = 0

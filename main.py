@@ -36,6 +36,7 @@ from routes.dashboard import router as dashboard_router
 from routes.hotelRawData import router as raw_content_data
 from routes.hotelFormattingData import router as hotel_formatting_data
 from routes.hotelRawDataCollectionFromSupplier import router as hotel_row_data_collection
+from routes.locations import router as locations_router
 
 from fastapi.middleware.cors import CORSMiddleware
 from security.middleware import create_security_middleware_stack
@@ -122,6 +123,7 @@ app.include_router(dashboard_router)
 app.include_router(raw_content_data)
 app.include_router(hotel_formatting_data)
 app.include_router(hotel_row_data_collection)
+app.include_router(locations_router)
 
 
 
