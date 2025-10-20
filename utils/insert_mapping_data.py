@@ -2,7 +2,7 @@ import os
 import json
 import requests
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, MetaData, Table, select
+from sqlalchemy import create_engine, MetaData, Table, select, desc, update
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
@@ -13,7 +13,7 @@ import threading
 load_dotenv()
 
 API_BASE = "http://127.0.0.1:8001/v1.0"
-ENDPOINT = f"{API_BASE}/hotels/mapping/add_provider_all_details_with_ittid/"
+ENDPOINT = f"{API_BASE}/hotels/add_provider_all_details_with_ittid/"
 
 def get_database_engine():
     db_uri = (
@@ -109,18 +109,18 @@ from sqlalchemy import desc
 
 def fetch_all_mappings(engine, offset=0, limit=10000):
     meta = MetaData()
-    table = Table("global_hotel_mapping_copy", meta, autoload_with=engine)
+    table = Table("global_hotel_mapping_copy_2", meta, autoload_with=engine)
 
     try:
         with Session(engine) as sess:
             stmt = (
-                select(table).order_by(desc(table.c.ittid)).offset(offset).limit(limit)
+                select(table).where(table.c.mapStatus != "upd1").order_by(desc(table.c.ittid)).offset(offset).limit(limit)
+
             )
             results = sess.execute(stmt).all()
             return results
     finally:
         engine.dispose()
-
 
 
 def post_mapping(session, headers, payload):
@@ -147,6 +147,42 @@ seen_lock = threading.Lock()
 seen = set()
 
 
+def update_map_status(engine, ittid):
+    """Update mapStatus to 'upd1' for the given ittid"""
+    meta = MetaData()
+    table = Table("global_hotel_mapping_copy_2", meta, autoload_with=engine)
+
+    try:
+        with Session(engine) as sess:
+            stmt = update(table).where(table.c.ittid == ittid).values(mapStatus="upd1")
+            sess.execute(stmt)
+            sess.commit()
+    except Exception as e:
+        print(f"❌ Error updating mapStatus for ittid {ittid}: {e}")
+    finally:
+        engine.dispose()
+
+
+def post_mapping(session, headers, payload, engine):
+    """POST and update mapStatus on success"""
+    try:
+        resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
+        resp.raise_for_status()
+        update_map_status(engine, payload["ittid"])
+        return payload
+
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 401:
+            print("⚠️ Token expired. Refreshing access token...")
+            new_headers = get_headers()
+            resp = session.post(ENDPOINT, headers=new_headers, data=json.dumps(payload))
+            resp.raise_for_status()
+            update_map_status(engine, payload["ittid"])
+            return payload
+        else:
+            raise e
+
+
 def main():
     engine = get_database_engine()
     headers = get_headers()
@@ -170,22 +206,22 @@ def main():
 
                         key = (payload["provider_name"], payload["provider_id"])
 
-                        # ✅ Thread-safe duplicate check
                         with seen_lock:
                             if key in seen:
                                 continue
                             seen.add(key)
 
                         futures.append(
-                            executor.submit(post_mapping, sess, headers, payload)
+                            executor.submit(
+                                post_mapping, sess, headers, payload, engine
+                            )
                         )
 
-            # ✅ Wait for all threads to finish before next batch
             for fut in as_completed(futures):
                 try:
                     payload = fut.result()
                     print(
-                        f"✅ Inserted: itt id={payload['ittid']} | "
+                        f"✅ Inserted and Updated: itt id={payload['ittid']} | "
                         f"provider={payload['provider_name']} | "
                         f"id={payload['provider_id']} | "
                         f"type={payload['system_type']}"
@@ -195,7 +231,6 @@ def main():
 
             offset += batch_size
             time.sleep(0.2)
-
 
 if __name__ == "__main__":
     main()
