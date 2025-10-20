@@ -30,11 +30,20 @@ from routes.mapping import router as mapping_router
 from routes.health import router as health_router
 from routes.cache_management import router as cache_router
 from routes.cached_user_routes import router as cache_users_router
+from routes.audit_dashboard import router as audit_router
+from routes.dashboard import router as dashboard_router
+
+from routes.hotelRawData import router as raw_content_data
+from routes.hotelFormattingData import router as hotel_formatting_data
+from routes.hotelRawDataCollectionFromSupplier import router as hotel_row_data_collection
+from routes.locations import router as locations_router
 
 from fastapi.middleware.cors import CORSMiddleware
+from security.middleware import create_security_middleware_stack
+
 
 app = FastAPI()
-
+create_security_middleware_stack(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -107,6 +116,15 @@ app.include_router(mapping_router)
 app.include_router(health_router)
 app.include_router(cache_router)
 app.include_router(cache_users_router)
+app.include_router(audit_router)
+app.include_router(dashboard_router)
+
+
+app.include_router(raw_content_data)
+app.include_router(hotel_formatting_data)
+app.include_router(hotel_row_data_collection)
+app.include_router(locations_router)
+
 
 
 # Compute absolute path to the directory containing this file

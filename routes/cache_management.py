@@ -16,7 +16,7 @@ from models import User
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/cache",
+    prefix="/v1.0/cache",
     tags=["Cache Management"])
 
 @router.get("/health")

@@ -26,6 +26,9 @@ class CacheConfig:
     USER_LIST_TTL = 60    # 1 minute
     USER_DETAILS_TTL = 180  # 3 minutes
     DASHBOARD_STATS_TTL = 600  # 10 minutes
+    
+    # Enhanced TTL for superadmin operations
+    SUPERADMIN_USER_LIST_TTL = 900  # 15 minutes - longer cache for superadmin
 
 class RedisCache:
     """Redis cache manager for user management system"""
@@ -183,12 +186,19 @@ class CacheKeys:
     USER_LIST = "user_list"
     USER_DETAILS = "user_details"
     DASHBOARD_STATS = "dashboard_stats"
+    SUPERADMIN_USER_LIST = "superadmin_user_list"
     
     @staticmethod
     def user_list_key(page: int, limit: int, filters: dict) -> str:
         """Generate cache key for user list"""
         filter_hash = hash(str(sorted(filters.items())))
         return f"{CacheKeys.USER_LIST}:page_{page}:limit_{limit}:filters_{filter_hash}"
+    
+    @staticmethod
+    def superadmin_user_list_key(page: int, limit: int, filters: dict) -> str:
+        """Generate cache key for superadmin user list with enhanced caching"""
+        filter_hash = hash(str(sorted(filters.items())))
+        return f"{CacheKeys.SUPERADMIN_USER_LIST}:page_{page}:limit_{limit}:filters_{filter_hash}"
     
     @staticmethod
     def user_details_key(user_id: str) -> str:
@@ -201,6 +211,7 @@ class CacheKeys:
         patterns = [
             f"{CacheKeys.USER_STATS}*",
             f"{CacheKeys.USER_LIST}*",
+            f"{CacheKeys.SUPERADMIN_USER_LIST}*",
             f"{CacheKeys.DASHBOARD_STATS}*"
         ]
         

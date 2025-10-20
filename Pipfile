@@ -25,6 +25,9 @@ fastapi-cache2 = "*"
 email-validator = "*"
 jsonschema = "*"
 httpx = "*"
+bleach = "*"
+pandas = "*"
+xmltodict = "*"
 psutil = "*"
 
 [dev-packages]

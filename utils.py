@@ -16,6 +16,10 @@ blacklist = redis.Redis(host="localhost", port=6379, db=0)
 
 PER_REQUEST_POINT_DEDUCTION = 10  
 
+def is_exempt_from_point_deduction(user: models.User) -> bool:
+    """Check if user is exempt from point deductions (super_user and admin_user)."""
+    return user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]
+
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -85,7 +89,18 @@ def deduct_points_for_general_user(
         current_user: models.User, db: Session,
         points: int = PER_REQUEST_POINT_DEDUCTION
     ):
-    """Deduct points for general_user."""
+    """Deduct points for general_user only. Super users and admin users are exempt."""
+    
+    # 🚫 NO POINT DEDUCTION for super_user and admin_user
+    if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        # Log the exemption for monitoring
+        print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+        return  # Exit early, no deduction for privileged users
+    
+    # Only deduct points for general_user
+    if current_user.role != models.UserRole.GENERAL_USER:
+        return  # No deduction for other roles
+    
     # Get the user's points
     user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
     if not user_points or user_points.current_points < points:
@@ -94,10 +109,9 @@ def deduct_points_for_general_user(
             detail="Insufficient points to access this endpoint."
         )
 
-    # Deduct points
+    # Deduct points only for general users
     user_points.current_points -= points
     user_points.total_used_points += points
-
 
     # Check if a deduction transaction already exists for the user
     existing_transaction = db.query(models.PointTransaction).filter(

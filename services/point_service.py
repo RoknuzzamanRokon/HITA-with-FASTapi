@@ -217,7 +217,7 @@ class PointService:
 
     def deduct_points(self, user_id: str, points: int, reason: str = "deduction") -> bool:
         """
-        Deduct points from a user.
+        Deduct points from a user. Super users and admin users are exempt from point deductions.
         
         Args:
             user_id: User ID to deduct points from
@@ -225,9 +225,20 @@ class PointService:
             reason: Reason for deduction
             
         Returns:
-            True if deduction was successful
+            True if deduction was successful or user is exempt
         """
         try:
+            # Check user role first
+            user = self.db.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"User not found: {user_id}")
+                return False
+            
+            # 🚫 NO POINT DEDUCTION for super_user and admin_user
+            if user.role in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+                logger.info(f"🔓 Point deduction skipped for {user.role}: {user.email}")
+                return True  # Return success without deducting points
+            
             logger.info(f"Deducting {points} points from user {user_id}")
             
             user_points = self.db.query(UserPoint).filter(UserPoint.user_id == user_id).first()
@@ -236,7 +247,7 @@ class PointService:
                 logger.warning(f"Insufficient points for user {user_id}")
                 return False
             
-            # Update points
+            # Update points (only for general users)
             user_points.current_points -= points
             user_points.total_used_points += points
             user_points.updated_at = datetime.utcnow()

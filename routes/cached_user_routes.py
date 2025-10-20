@@ -5,12 +5,15 @@ Enhanced user routes with caching support
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
+from datetime import datetime
 import logging
 
 from database import get_db
 import models
 from services.cached_user_service import CachedUserService
 from routes.auth import get_current_user
+from models import User, UserRole
+from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 from models import User, UserRole
 
 logger = logging.getLogger(__name__)
@@ -31,33 +34,53 @@ async def get_users_paginated(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Get paginated list of users with caching"""
+    """Get paginated list of users with caching (Super User and Admin User only)"""
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user list
+    if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user list."
+        )
     
     try:
-        if current_user.role == models.UserRole.GENERAL_USER:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="General users cannot access the user list"
-            )
-        else:
-            # Initialize cached user service
-            cached_service = CachedUserService(db)
-            
-            # Get paginated users with caching
-            result = cached_service.get_users_paginated(
-                page=page,
-                limit=limit,
-                search=search,
-                role=role,
-                is_active=is_active,
-                sort_by=sort_by,
-                sort_order=sort_order
-            )
-            
-            return {
-                "success": True,
-                "data": result
-            }
+        # 📝 AUDIT LOG: Record user list access
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ACCESS,
+            user_id=current_user.id,
+            details={
+                "endpoint": "/v1.0/users/list",
+                "action": "view_user_list",
+                "page": page,
+                "limit": limit,
+                "search": search,
+                "role_filter": role
+            },
+            security_level=SecurityLevel.MEDIUM,
+            success=True
+        )
+        
+        # Initialize cached user service
+        cached_service = CachedUserService(db)
+        
+        # Get paginated users with enhanced caching for superadmin
+        result = cached_service.get_users_paginated(
+            page=page,
+            limit=limit,
+            search=search,
+            role=role,
+            is_active=is_active,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            current_user_role=current_user.role
+        )
+        
+        return {
+            "success": True,
+            "data": result
+        }
+        
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
         raise HTTPException(
@@ -70,9 +93,28 @@ async def get_user_statistics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Get user statistics with caching"""
+    """Get user statistics with caching (Super User and Admin User only)"""
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user statistics
+    if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user statistics."
+        )
     
     try:
+        # 📝 AUDIT LOG: Record statistics access
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ACCESS,
+            user_id=current_user.id,
+            details={
+                "endpoint": "/v1.0/users/statistics",
+                "action": "view_user_statistics"
+            },
+            security_level=SecurityLevel.MEDIUM,
+            success=True
+        )
         # Initialize cached user service
         cached_service = CachedUserService(db)
         
@@ -97,9 +139,29 @@ async def get_user_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Get detailed user information with caching"""
+    """Get detailed user information with caching (Super User and Admin User only)"""
+    
+    # 🔒 SECURITY CHECK: Only super users and admin users can access user details
+    if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only super users and admin users can view user details."
+        )
     
     try:
+        # 📝 AUDIT LOG: Record user details access
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ACCESS,
+            user_id=current_user.id,
+            details={
+                "endpoint": f"/v1.0/users/{user_id}/details",
+                "action": "view_user_details",
+                "target_user_id": user_id
+            },
+            security_level=SecurityLevel.MEDIUM,
+            success=True
+        )
         # Initialize cached user service
         cached_service = CachedUserService(db)
         
@@ -195,6 +257,71 @@ async def invalidate_user_cache(
             detail=f"Failed to invalidate user cache: {str(e)}"
         )
 
+# Cache management endpoints for superadmin
+@router.post("/cache/warm")
+async def warm_user_cache(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Warm up user cache (Super User only)"""
+    
+    # Check if user is superadmin
+    if current_user.role != UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super users can warm cache"
+        )
+    
+    try:
+        cached_service = CachedUserService(db)
+        cached_service.warm_cache(for_superadmin=True)
+        
+        logger.info(f"Cache warmed by superadmin: {current_user.id}")
+        
+        return {
+            "success": True,
+            "message": "Cache warming completed successfully",
+            "warmed_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Cache warming failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cache warming failed: {str(e)}"
+        )
+
+@router.get("/cache/status")
+async def get_cache_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get cache status (Super User only)"""
+    
+    # Check if user is superadmin
+    if current_user.role != UserRole.SUPER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super users can check cache status"
+        )
+    
+    try:
+        cached_service = CachedUserService(db)
+        cache_status = cached_service.get_cache_status()
+        
+        return {
+            "success": True,
+            "data": cache_status,
+            "checked_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Cache status check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cache status check failed: {str(e)}"
+        )
+
 # Health check endpoint for cached services
 @router.get("/health/cache")
 async def cache_health_check() -> Dict[str, Any]:
@@ -205,7 +332,7 @@ async def cache_health_check() -> Dict[str, Any]:
         
         # Test basic cache operations
         test_key = "health_check_test"
-        test_value = {"timestamp": "2025-01-01T00:00:00", "test": True}
+        test_value = {"timestamp": datetime.utcnow().isoformat(), "test": True}
         
         # Test cache operations
         cache_available = cache.is_available

@@ -1,0 +1,1079 @@
+{
+	"info": {
+		"_postman_id": "8eca462e-0fcf-4baa-a1d5-771dd2812a03",
+		"name": "Giata",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "38769584"
+	},
+	"item": [
+		{
+			"name": "Work Flow",
+			"item": [
+				{
+					"name": "get_data_with_providercode_and_providerId",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/gds/hotelbeds/5788",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"gds",
+								"hotelbeds",
+								"5788"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_data_with_providercode_and_providerId Copy",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/multi/since/2025-07-15",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"multi",
+								"since",
+								"2025-07-15"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_all_list_of_properties_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/1062826",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"1062826"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_item_list_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/items/617221",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"items",
+								"617221"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_text_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://ghgml.giatamedia.com/webservice/rest/1.0/texts/en/1073915",
+							"protocol": "http",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"texts",
+								"en",
+								"1073915"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "mapping_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/mappings/giata/1074602",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"mappings",
+								"giata",
+								"1074602"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_facility_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/factsheets/36733",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"factsheets",
+								"36733"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_img_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://ghgml.giatamedia.com/webservice/rest/1.0/images/617221",
+							"protocol": "http",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"images",
+								"617221"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "All API",
+			"item": [
+				{
+					"name": "get_list_of_gds",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.0/providers/gds",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"providers",
+								"gds"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_all_list_of_properties_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/692490",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"692490"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_all_country_code_destinationId_cityId_cityName",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.0/geography",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"geography"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_list_of_all_airport",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.0/airports",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"airports"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_images_with_giata_ids",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						},
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://ghgml.giatamedia.com/webservice/rest/1.0/images/4945",
+							"protocol": "http",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"images",
+								"4945"
+							]
+						},
+						"description": "This endpoint makes an HTTP GET request to retrieve data. Below is the JSON schema for the response:\n\n``` json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"property1\": {\n      \"type\": \"string\"\n    },\n    \"property2\": {\n      \"type\": \"number\"\n    },\n    \"property3\": {\n      \"type\": \"boolean\"\n    }\n    // Add more properties as per the actual response\n  }\n}\n\n ```"
+					},
+					"response": []
+				},
+				{
+					"name": "get_data_with_providercode_and_providerId",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.0/properties/gds/grnconnect/1002852",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"properties",
+								"gds",
+								"grnconnect",
+								"1002852"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_country_info_with_country_id",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.0/properties/country/AE",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"properties",
+								"country",
+								"AE"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_city_info_with_city_id",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.0/properties/city/22053",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"properties",
+								"city",
+								"22053"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_all_hotel_info_with_country_code",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/multi/country/FJ",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"multi",
+								"country",
+								"FJ"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_mapping_list_using_supplier_with_code",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://ghgml.giatamedia.com/webservice/rest/1.0/mappings/juniper/JP016511",
+							"protocol": "http",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"mappings",
+								"juniper",
+								"JP016511"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_details_with_giata_ids",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/76625",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"76625"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_data_with_date",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "https://multicodes.giatamedia.com/webservice/rest/1.latest/properties/moved/since/2025-03-01",
+							"protocol": "https",
+							"host": [
+								"multicodes",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.latest",
+								"properties",
+								"moved",
+								"since",
+								"2025-03-01"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_mappingdata_with_supplier_id",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://ghgml.giatamedia.com/webservice/rest/1.0/mappings/goglobal/1410765",
+							"protocol": "http",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"mappings",
+								"goglobal",
+								"1410765"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_item_list_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/items/23051",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"items",
+								"23051"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_facility_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/factsheets/1376209",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"factsheets",
+								"1376209"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_text_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/texts/en/842381",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"texts",
+								"en",
+								"842381"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_img_with_giata",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://ghgml.giatamedia.com/webservice/rest/1.0/images/63919",
+							"protocol": "https",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"images",
+								"63919"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "get_list_of_supplier",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "Nofshon123.",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "giata|nofshon-tours.com",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://ghgml.giatamedia.com/webservice/rest/1.0/mappings",
+							"protocol": "http",
+							"host": [
+								"ghgml",
+								"giatamedia",
+								"com"
+							],
+							"path": [
+								"webservice",
+								"rest",
+								"1.0",
+								"mappings"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "New Request",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

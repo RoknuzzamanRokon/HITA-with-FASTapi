@@ -68,9 +68,10 @@ class CachedUserService:
         role: Optional[str] = None,
         is_active: Optional[bool] = None,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
+        sort_order: str = "desc",
+        current_user_role: str = None
     ) -> Dict[str, Any]:
-        """Get paginated users with caching"""
+        """Get paginated users with enhanced caching for superadmin"""
         
         # Build filters for cache key
         filters = {
@@ -81,15 +82,28 @@ class CachedUserService:
             'sort_order': sort_order
         }
         
-        # Try to get from cache
-        cache_key = CacheKeys.user_list_key(page, limit, filters)
+        # Enhanced cache key for superadmin - use special key for superadmin requests
+        if current_user_role == 'super_user':
+            cache_key = CacheKeys.superadmin_user_list_key(page, limit, filters)
+            cache_ttl = CacheConfig.SUPERADMIN_USER_LIST_TTL  # Longer TTL for superadmin
+        else:
+            cache_key = CacheKeys.user_list_key(page, limit, filters)
+            cache_ttl = CacheConfig.USER_LIST_TTL
+        
+        # Try to get from cache first
         cached_result = cache.get(cache_key)
         
         if cached_result:
-            logger.debug(f"Cache hit for user list: {cache_key}")
+            logger.info(f"🚀 Cache hit for superadmin user list: {cache_key}")
+            # Add cache metadata to response
+            cached_result['cache_info'] = {
+                'cached': True,
+                'cache_key': cache_key,
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
             return cached_result
         
-        logger.info(f"Fetching user list from database: page={page}, limit={limit}")
+        logger.info(f"💾 Fetching user list from database for caching: page={page}, limit={limit}, role={current_user_role}")
         
         # Build query
         query = self.db.query(User)
@@ -180,12 +194,24 @@ class CachedUserService:
         result = {
             'users': user_list,
             'pagination': pagination,
-            'statistics': self.get_user_statistics()
+            'statistics': self.get_user_statistics(),
+            'cache_info': {
+                'cached': False,
+                'cache_key': cache_key,
+                'generated_at': datetime.utcnow().isoformat()
+            }
         }
         
-        # Cache the result
-        cache.set(cache_key, result, CacheConfig.USER_LIST_TTL)
-        logger.debug(f"Cached user list: {cache_key}")
+        # Cache the result with appropriate TTL
+        cache_success = cache.set(cache_key, result, cache_ttl)
+        
+        if cache_success:
+            if current_user_role == 'super_user':
+                logger.info(f"✅ Successfully cached superadmin user list: {cache_key} (TTL: {cache_ttl}s)")
+            else:
+                logger.debug(f"Cached user list: {cache_key}")
+        else:
+            logger.warning(f"Failed to cache user list: {cache_key}")
         
         return result
     
@@ -353,7 +379,7 @@ class CachedUserService:
         logger.info(f"Invalidating user caches for user_id: {user_id}")
         CacheKeys.invalidate_user_caches(user_id)
     
-    def warm_cache(self):
+    def warm_cache(self, for_superadmin: bool = True):
         """Warm up frequently accessed caches"""
         logger.info("Warming up caches...")
         
@@ -364,10 +390,63 @@ class CachedUserService:
             # Warm dashboard statistics
             self.get_dashboard_statistics()
             
-            # Warm first page of users
+            # Warm first page of users for regular users
             self.get_users_paginated(page=1, limit=25)
+            
+            # Warm superadmin cache if requested
+            if for_superadmin:
+                logger.info("🔥 Warming superadmin cache...")
+                self.get_users_paginated(
+                    page=1, 
+                    limit=25, 
+                    current_user_role='super_user'
+                )
+                # Warm additional common pages for superadmin
+                self.get_users_paginated(
+                    page=2, 
+                    limit=25, 
+                    current_user_role='super_user'
+                )
             
             logger.info("Cache warming completed successfully")
             
         except Exception as e:
             logger.error(f"Cache warming failed: {e}")
+    
+    def get_cache_status(self) -> Dict[str, Any]:
+        """Get cache status for superadmin monitoring"""
+        try:
+            # Check if cache is available
+            if not cache.is_available:
+                return {
+                    'cache_available': False,
+                    'error': 'Redis cache not available'
+                }
+            
+            # Get sample cache keys to check status
+            sample_keys = [
+                CacheKeys.superadmin_user_list_key(1, 25, {}),
+                f"{CacheKeys.USER_STATS}:get_user_statistics:",
+                f"{CacheKeys.DASHBOARD_STATS}:get_dashboard_statistics:"
+            ]
+            
+            cache_status = {}
+            for key in sample_keys:
+                exists = cache.exists(key)
+                cache_status[key] = {
+                    'exists': exists,
+                    'has_data': cache.get(key) is not None if exists else False
+                }
+            
+            return {
+                'cache_available': True,
+                'cache_keys_status': cache_status,
+                'superadmin_cache_ready': cache_status.get(sample_keys[0], {}).get('exists', False)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking cache status: {e}")
+            return {
+                'cache_available': False,
+                'error': str(e)
+            }
