@@ -11,6 +11,42 @@
 			"name": "Authentication",
 			"item": [
 				{
+					"name": "Who am  I",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "",
+								"value": "",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{host}}/v1.0/user/me/",
+							"host": [
+								"{{host}}"
+							],
+							"path": [
+								"v1.0",
+								"user",
+								"me",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
 					"name": "Register a New User",
 					"request": {
 						"method": "POST",
@@ -90,14 +126,12 @@
 									"key": "username",
 									"value": "ursamroko",
 									"description": "super user",
-									"type": "text",
-									"disabled": true
+									"type": "text"
 								},
 								{
 									"key": "password",
 									"value": "ursamroko123",
-									"type": "text",
-									"disabled": true
+									"type": "text"
 								},
 								{
 									"key": "username",
@@ -116,12 +150,14 @@
 									"key": "username",
 									"value": "roman",
 									"description": "general user",
-									"type": "text"
+									"type": "text",
+									"disabled": true
 								},
 								{
 									"key": "password",
 									"value": "roman123",
-									"type": "text"
+									"type": "text",
+									"disabled": true
 								},
 								{
 									"key": "username",
@@ -213,42 +249,6 @@
 					"response": []
 				},
 				{
-					"name": "Who am  I",
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							},
-							{
-								"key": "Authorization",
-								"value": "Bearer {{token}}",
-								"type": "text"
-							},
-							{
-								"key": "",
-								"value": "",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{host}}/v1.0/user/me/",
-							"host": [
-								"{{host}}"
-							],
-							"path": [
-								"v1.0",
-								"user",
-								"me",
-								""
-							]
-						}
-					},
-					"response": []
-				},
-				{
 					"name": "Refresh token",
 					"event": [
 						{
@@ -282,7 +282,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb21hbiIsInVzZXJfaWQiOiI1Nzc5MzU2MDgxIiwicm9sZSI6ImdlbmVyYWxfdXNlciIsImV4cCI6MTc2MDAxMTU0OCwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc2MDAwOTc0OH0.29f0ikJeNsPpeNbGPjXWTVNvIgeHp1KSBvJ5_ohBU7c\",\r\n    \"token_type\": \"bearer\",\r\n    \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb21hbiIsInVzZXJfaWQiOiI1Nzc5MzU2MDgxIiwiZXhwIjoxNzYwNjE0NTQ4LCJ0eXBlIjoicmVmcmVzaCIsImlhdCI6MTc2MDAwOTc0OH0.391cTIzp3jUdRZL4SojfXRav8-ZN1F6ED5991fhHNMs\"\r\n}"
+							"raw": "{\r\n    \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb21hbiIsInVzZXJfaWQiOiI1Nzc5MzU2MDgxIiwicm9sZSI6ImdlbmVyYWxfdXNlciIsImV4cCI6MTc2MjczODU2MiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc2MDkzODU2Mn0.cIYbVLsJwQvBaYcdyFBVIep8TEF24JYzc6_eoTz-YC8\",\r\n    \"token_type\": \"bearer\",\r\n    \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb21hbiIsInVzZXJfaWQiOiI1Nzc5MzU2MDgxIiwiZXhwIjoxNzYxNTQzMzYyLCJ0eXBlIjoicmVmcmVzaCIsImlhdCI6MTc2MDkzODU2Mn0.rqJsc4nkCVtybL3jtEzM2r0mW3WDJCbPIqyN8cF_UfA\"\r\n}"
 						},
 						"url": {
 							"raw": "{{host}}/v1.0/auth/refresh/",
@@ -712,7 +712,7 @@
 								],
 								"body": {
 									"mode": "raw",
-									"raw": "{\r\n    \"hotel_name\": \"Rent Top Apartments Avenida Diagonal\"\r\n}",
+									"raw": "{\r\n    \"hotel_name\": \"Pestana Amsterdam Riverside\"\r\n}",
 									"options": {
 										"raw": {
 											"language": "json"
@@ -1126,67 +1126,6 @@
 										"content",
 										"get_basic_country_info",
 										""
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "-------------------Get Country json(get it static)",
-							"protocolProfileBehavior": {
-								"disableBodyPruning": true
-							},
-							"request": {
-								"method": "GET",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json",
-										"type": "text"
-									},
-									{
-										"key": "Authorization",
-										"value": "Bearer {{token}}",
-										"type": "text"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{host}}/v1.0/mapping/get_basic_mapping_with_info?supplier_name={{provider_name}}&country_iso={{country_iso}}&limit_per_page={{limit_value}}",
-									"host": [
-										"{{host}}"
-									],
-									"path": [
-										"v1.0",
-										"mapping",
-										"get_basic_mapping_with_info"
-									],
-									"query": [
-										{
-											"key": "supplier_name",
-											"value": "{{provider_name}}"
-										},
-										{
-											"key": "country_iso",
-											"value": "{{country_iso}}"
-										},
-										{
-											"key": "limit_per_page",
-											"value": "{{limit_value}}"
-										},
-										{
-											"key": "resume_key",
-											"value": "{{resume_value}}",
-											"disabled": true
-										}
 									]
 								}
 							},
@@ -3430,14 +3369,15 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/audit/my-activity",
+							"raw": "{{host}}/v1.0/audit/my_activity/",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"audit",
-								"my-activity"
+								"my_activity",
+								""
 							]
 						}
 					},
@@ -3465,14 +3405,14 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/audit/activity-summary?days=30",
+							"raw": "{{host}}/v1.0/audit/activity_summary?days=30",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"audit",
-								"activity-summary"
+								"activity_summary"
 							],
 							"query": [
 								{
@@ -3506,14 +3446,15 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/audit/security-events",
+							"raw": "{{host}}/v1.0/audit/security_events/",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"audit",
-								"security-events"
+								"security_events",
+								""
 							]
 						}
 					},
@@ -3619,14 +3560,14 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/dashboard/points-summary/",
+							"raw": "{{host}}/v1.0/dashboard/points_summary/",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"dashboard",
-								"points-summary",
+								"points_summary",
 								""
 							]
 						}
@@ -3655,14 +3596,14 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/dashboard/user-activity/",
+							"raw": "{{host}}/v1.0/dashboard/user_activity/",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"dashboard",
-								"user-activity",
+								"user_activity",
 								""
 							]
 						}
@@ -3755,7 +3696,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/content/hotels/search/advanced?query=Grand Hotel",
+							"raw": "{{host}}/v1.0/content/hotels/search/advanced?latitude=47.5822&longitude=19.0497&radius_km=50",
 							"host": [
 								"{{host}}"
 							],
@@ -3768,8 +3709,71 @@
 							],
 							"query": [
 								{
-									"key": "query",
-									"value": "Grand Hotel"
+									"key": "latitude",
+									"value": "47.5822"
+								},
+								{
+									"key": "longitude",
+									"value": "19.0497"
+								},
+								{
+									"key": "radius_km",
+									"value": "50"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Locations",
+			"item": [
+				{
+					"name": "Get all Cities",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{host}}/v1.0/locations/cities/",
+							"host": [
+								"{{host}}"
+							],
+							"path": [
+								"v1.0",
+								"locations",
+								"cities",
+								""
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"disabled": true
 								}
 							]
 						}

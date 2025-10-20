@@ -18,7 +18,7 @@ router = APIRouter(
     dependencies=[Depends(get_current_active_user)]
 )
 
-@router.get("/my-activity")
+@router.get("/my_activity")
 async def get_my_activity(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -52,7 +52,7 @@ async def get_my_activity(
         ]
     }
 
-@router.get("/security-events")
+@router.get("/security_events")
 async def get_security_events(
     admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -88,7 +88,7 @@ async def get_security_events(
         ]
     }
 
-@router.get("/activity-summary")
+@router.get("/activity_summary")
 async def get_activity_summary(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -105,7 +105,7 @@ async def get_activity_summary(
     
     return summary
 
-@router.get("/system-summary")
+@router.get("/system_activity_summary")
 async def get_system_activity_summary(
     admin: models.User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -165,7 +165,7 @@ async def get_user_activity(
         ]
     }
 
-@router.get("/activity-types")
+@router.get("/activity_types")
 async def get_available_activity_types():
     """Get list of all available activity types"""
     

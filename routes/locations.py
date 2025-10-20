@@ -87,7 +87,7 @@ async def get_all_countries(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching countries: {str(e)}")
 
 
-@router.get("/country-codes", response_model=List[CountryCodeResponse])
+@router.get("/country_codes", response_model=List[CountryCodeResponse])
 async def get_all_country_codes(db: Session = Depends(get_db)):
     """
     Get all unique country codes from locations
@@ -103,7 +103,7 @@ async def get_all_country_codes(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching country codes: {str(e)}")
 
 
-@router.get("/cities-with-countries", response_model=List[CityWithCountryResponse])
+@router.get("/cities_with_countries", response_model=List[CityWithCountryResponse])
 async def get_cities_with_countries(db: Session = Depends(get_db)):
     """
     Get all unique cities with their corresponding countries

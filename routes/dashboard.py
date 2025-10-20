@@ -190,7 +190,7 @@ async def get_dashboard_stats(
             detail=f"Failed to fetch dashboard statistics: {str(e)}"
         )
 
-@router.get("/user-activity")
+@router.get("/user_activity")
 async def get_user_activity_stats(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -282,7 +282,7 @@ async def get_user_activity_stats(
             detail=f"Failed to fetch user activity statistics: {str(e)}"
         )
 
-@router.get("/points-summary")
+@router.get("/points_summary")
 async def get_points_summary(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
