@@ -14,7 +14,15 @@ load_dotenv()
 DATABASE_URL = os.getenv("DB_CONNECTION")
 # DATABASE_URL = "sqlite:///./hita.db"
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=5,          # Number of connections to maintain in the pool
+    max_overflow=10,      # Additional connections beyond pool_size
+    pool_timeout=30,      # Timeout for getting connection from pool
+    pool_recycle=3600,    # Recycle connections after 1 hour
+    pool_pre_ping=True,   # Validate connections before use
+    echo=False            # Set to True for SQL debugging
+)
 
 @event.listens_for(engine, "connect")
 def enable_sqlite_fk_constraints(dbapi_connection, connection_record):
@@ -34,3 +42,15 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+# Connection pool health check
+def get_pool_status():
+    """Get current connection pool status"""
+    pool = engine.pool
+    return {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+        "invalid": pool.invalid()
+    }

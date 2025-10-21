@@ -37,13 +37,30 @@ from routes.hotelRawData import router as raw_content_data
 from routes.hotelFormattingData import router as hotel_formatting_data
 from routes.hotelRawDataCollectionFromSupplier import router as hotel_row_data_collection
 from routes.locations import router as locations_router
+from routes.database_health import router as db_health_router
+from routes.analytics import router as analytics_router, dashboard_router as analytics_dashboard_router
+from routes.ml_mapping import router as ml_mapping_router
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from security.middleware import create_security_middleware_stack
+from middleware.ip_middleware import IPAddressMiddleware
 
 
 app = FastAPI()
 create_security_middleware_stack(app)
+
+# Add IP address middleware to properly extract client IPs
+app.add_middleware(
+    IPAddressMiddleware,
+    trusted_proxies=['127.0.0.1', '::1', '192.168.0.0/16', '10.0.0.0/8']
+)
+
+# Add trusted host middleware to handle proxy headers
+app.add_middleware(
+    TrustedHostMiddleware, 
+    allowed_hosts=["*"]  # Configure this based on your deployment
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -124,7 +141,10 @@ app.include_router(raw_content_data)
 app.include_router(hotel_formatting_data)
 app.include_router(hotel_row_data_collection)
 app.include_router(locations_router)
-
+app.include_router(db_health_router)
+app.include_router(analytics_router)
+app.include_router(analytics_dashboard_router)
+app.include_router(ml_mapping_router)
 
 
 # Compute absolute path to the directory containing this file

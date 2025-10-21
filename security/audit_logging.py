@@ -405,6 +405,11 @@ class AuditLogger:
     
     def _extract_ip_address(self, request: Request) -> Optional[str]:
         """Extract and validate IP address from request"""
+        # First try to get from middleware state (preferred method)
+        if hasattr(request.state, 'real_ip') and request.state.real_ip:
+            return request.state.real_ip
+        
+        # Fallback to manual extraction
         # Check for forwarded headers (when behind proxy/load balancer)
         forwarded_for = request.headers.get('X-Forwarded-For')
         if forwarded_for:
@@ -415,6 +420,15 @@ class AuditLogger:
         real_ip = request.headers.get('X-Real-IP')
         if real_ip and validate_ip_address(real_ip):
             return real_ip
+        
+        # Check additional headers
+        client_ip = request.headers.get('X-Client-IP')
+        if client_ip and validate_ip_address(client_ip):
+            return client_ip
+        
+        cf_ip = request.headers.get('CF-Connecting-IP')
+        if cf_ip and validate_ip_address(cf_ip):
+            return cf_ip
         
         # Fall back to direct client IP
         if request.client and validate_ip_address(request.client.host):
