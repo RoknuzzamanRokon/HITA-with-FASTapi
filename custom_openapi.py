@@ -2,11 +2,6 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
 
-app = FastAPI()
-
-# Mount static files first
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 def custom_openapi(app: FastAPI):
     if app.openapi_schema:
@@ -99,13 +94,16 @@ def custom_openapi(app: FastAPI):
     ]
     
     # Add security schemes
-    openapi_schema["components"]["securitySchemes"] = {
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "JWT token obtained from the authentication endpoint"
-        }
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    if "securitySchemes" not in openapi_schema["components"]:
+        openapi_schema["components"]["securitySchemes"] = {}
+    
+    openapi_schema["components"]["securitySchemes"]["BearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token obtained from the authentication endpoint"
     }
     
     # Add global security requirement
@@ -463,5 +461,5 @@ def add_example_responses(openapi_schema):
         }
 
 
-# This is the critical fix ⚠️
-app.openapi = custom_openapi 
+# Remove this line - it causes circular reference and breaks docs
+# The openapi method is properly set in main.py 

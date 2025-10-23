@@ -14,6 +14,12 @@ except ImportError as e:
     logging.error(f"Failed to import HotelMapper: {e}")
     HotelMapper = None
 
+try:
+    from mapping_without_push import HotelMapper as HotelMapperWithoutPush
+except ImportError as e:
+    logging.error(f"Failed to import HotelMapperWithoutPush: {e}")
+    HotelMapperWithoutPush = None
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -180,6 +186,62 @@ async def batch_find_match_data(request: BatchHotelMappingRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
+@router.post("/find_match_data_without_push", response_model=List[HotelMappingResponse])
+async def find_match_data_without_push(request: HotelMappingRequest):
+    """
+    Find matching hotel data using ML mapping algorithm WITHOUT push step
+    
+    This endpoint takes a supplier name and hotel ID, fetches hotel details directly from 
+    the /hotel/details endpoint (skipping the /hotel/pushhotel step), and matches it 
+    against the internal hotel database using advanced fuzzy matching algorithms.
+    
+    Key differences from find_match_data:
+    - No /hotel/pushhotel API call required
+    - Faster execution (one API call instead of two)
+    - Direct data retrieval from /hotel/details
+    - Better reliability (no dependency on push success)
+    
+    Args:
+        request: HotelMappingRequest containing supplier_name and hotel_id
+        
+    Returns:
+        List containing the matched hotel data with confidence scores and matching information
+        
+    Raises:
+        HTTPException: If HotelMapperWithoutPush is not available, hotel not found, or other errors occur
+    """
+    if HotelMapperWithoutPush is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="HotelMapperWithoutPush module is not available. Please check the mapping_without_push.py file."
+        )
+    
+    try:
+        # Initialize the hotel mapper with the correct CSV path
+        csv_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'hotelcontent', 'itt_hotel_basic_info.csv')
+        mapper = HotelMapperWithoutPush(csv_file_path=csv_path)
+        
+        logger.info(f"Processing mapping request WITHOUT PUSH for {request.supplier_name}:{request.hotel_id}")
+        
+        # Perform the hotel mapping (direct details retrieval)
+        result = mapper.map_hotel(request.supplier_name, request.hotel_id)
+        
+        if result:
+            # Return the result as a list (consistent with find_match_data endpoint)
+            return [result]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No matching hotel found for {request.supplier_name}:{request.hotel_id}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in find_match_data_without_push: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
 @router.get("/health")
 async def health_check():
     """
@@ -192,6 +254,12 @@ async def health_check():
         "status": "healthy",
         "service": "ML Hotel Mapping",
         "hotel_mapper_available": HotelMapper is not None,
+        "hotel_mapper_without_push_available": HotelMapperWithoutPush is not None,
+        "endpoints": {
+            "find_match_data": "Standard mapping with push step",
+            "find_match_data_without_push": "Direct mapping without push step",
+            "batch_find_match_data": "Batch mapping with push step"
+        },
         "version": "1.0"
     }
 
