@@ -15,47 +15,6 @@ def custom_openapi(app: FastAPI):
         ## Hotel API - Enhanced User Management System
         
         A comprehensive API for managing hotels, users, and point systems with enhanced features for dashboard integration.
-        
-        ### Key Features
-        - **User Management**: Create, update, delete, and manage users with role-based access control
-        - **Point System**: Comprehensive point allocation and transaction management
-        - **Enhanced Search**: Advanced filtering, sorting, and pagination capabilities
-        - **Statistics & Analytics**: Real-time user statistics and activity tracking
-        - **Security**: Role-based permissions, input validation, and audit logging
-        - **Performance**: Optimized queries, caching, and database indexing
-        
-        ### Authentication
-        All endpoints require authentication via JWT tokens. Include the token in the Authorization header:
-        ```
-        Authorization: Bearer <your-jwt-token>
-        ```
-        
-        ### User Roles
-        - **SUPER_USER**: Full system access, can create any user type
-        - **ADMIN_USER**: Can create and manage general users, limited point operations
-        - **GENERAL_USER**: Basic access to personal information and point checking
-        
-        ### Error Handling
-        The API returns structured error responses with detailed information:
-        - **400**: Bad Request - Invalid input data
-        - **401**: Unauthorized - Missing or invalid authentication
-        - **403**: Forbidden - Insufficient permissions
-        - **404**: Not Found - Resource doesn't exist
-        - **422**: Validation Error - Input validation failed
-        - **500**: Internal Server Error - System error
-        
-        ### Rate Limiting
-        Some endpoints have rate limiting to prevent abuse:
-        - User creation: 5 requests per minute
-        - Point operations: 10 requests per minute
-        
-        ### Pagination
-        List endpoints support pagination with the following parameters:
-        - `page`: Page number (default: 1)
-        - `limit`: Items per page (default: 25, max: 100)
-        - `search`: Search term for filtering
-        - `sort_by`: Field to sort by
-        - `sort_order`: Sort direction (asc/desc)
         """,
         routes=app.routes,
     )

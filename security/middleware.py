@@ -52,6 +52,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         """Main middleware dispatch method"""
         start_time = time.time()
         
+        # Skip security middleware for documentation endpoints
+        if request.url.path in ['/docs', '/redoc', '/openapi.json']:
+            response = await call_next(request)
+            # Add minimal security headers for docs
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            return response
+        
         # Get database session
         db = next(get_db())
         
@@ -341,7 +348,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             'X-XSS-Protection': '1; mode=block',
             'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
             'Referrer-Policy': 'strict-origin-when-cross-origin',
-            'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
+            'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;"
         }
         
         for header, value in security_headers.items():
