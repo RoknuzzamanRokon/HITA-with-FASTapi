@@ -4,6 +4,8 @@ from typing import List, Optional, Dict, Any
 import sys
 import os
 import logging
+import json
+import glob
 
 # Add the tests directory to the path to import mapping_3
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'ml'))
@@ -69,6 +71,19 @@ class BatchHotelMappingResponse(BaseModel):
     successful_mappings: List[HotelMappingResponse]
     failed_mappings: List[Dict[str, str]]
     summary: Dict[str, int]
+
+class NotMappedHotelRequest(BaseModel):
+    supplier_name: str = Field(..., description="Supplier name (e.g., 'agoda')")
+
+class NotMappedHotelResponse(BaseModel):
+    supplier_name: str
+    total_hotel_id: int
+    hotel_id: List[int]
+
+class NotUpdateContentHotelResponse(BaseModel):
+    supplier_name: str
+    total_hotel_id: int
+    hotel_id: List[int]
 
 @router.post("/find_match_data", response_model=List[HotelMappingResponse])
 async def find_match_data(request: HotelMappingRequest):
@@ -282,3 +297,195 @@ async def get_supported_suppliers():
         ],
         "total_count": 1
     }
+
+def get_hotel_ids_from_folder(supplier_name: str) -> List[int]:
+    """
+    Get hotel IDs from JSON files in the supplier folder
+    
+    Args:
+        supplier_name: Name of the supplier (e.g., 'agoda')
+        
+    Returns:
+        List of hotel IDs extracted from JSON filenames
+    """
+    RAW_BASE_DIR = r"D:\content_for_hotel_json\cdn_row_collection"
+    supplier_folder = os.path.join(RAW_BASE_DIR, supplier_name)
+    
+    if not os.path.exists(supplier_folder):
+        logger.warning(f"Supplier folder not found: {supplier_folder}")
+        return []
+    
+    try:
+        # Get all JSON files in the folder
+        json_files = glob.glob(os.path.join(supplier_folder, "*.json"))
+        
+        # Extract hotel IDs from filenames (remove .json extension)
+        hotel_ids = []
+        for file_path in json_files:
+            filename = os.path.basename(file_path)
+            hotel_id_str = filename.replace('.json', '')
+            
+            # Try to convert to integer
+            try:
+                hotel_id = int(hotel_id_str)
+                hotel_ids.append(hotel_id)
+            except ValueError:
+                logger.warning(f"Skipping non-numeric hotel ID: {hotel_id_str}")
+                continue
+        
+        return sorted(hotel_ids)
+        
+    except Exception as e:
+        logger.error(f"Error reading hotel IDs from folder {supplier_folder}: {str(e)}")
+        return []
+
+def get_hotel_ids_from_database(supplier_name: str) -> List[int]:
+    """
+    Get hotel IDs from database using the existing utility function logic
+    
+    Args:
+        supplier_name: Name of the supplier (e.g., 'agoda')
+        
+    Returns:
+        List of hotel IDs from database
+    """
+    try:
+        # Import the utility function
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+        from create_txt_file_follow_a_supplier import generate_hotel_id_files, provider_mappings, engine, table
+        
+        # Get columns for the specified supplier
+        columns = provider_mappings.get(supplier_name)
+        if not columns:
+            logger.warning(f"Supplier {supplier_name} not found in provider mappings.")
+            return []
+
+        from sqlalchemy import text
+        import pandas as pd
+        import numpy as np
+        
+        selected_columns = ", ".join(columns)
+        where_clause = " OR ".join([f"{col} IS NOT NULL AND {col} != ''" for col in columns])
+        query = f"SELECT {selected_columns} FROM {table} WHERE {where_clause};"
+        
+        df = pd.read_sql(text(query), engine)
+        
+        hotel_ids = set()
+        for col in columns:
+            # Clean and collect non-empty IDs
+            non_empty = df[col].astype(str).str.strip().replace(r'^\s*$', np.nan, regex=True).dropna()
+            hotel_ids.update(non_empty.unique())
+        
+        # Convert to integers where possible
+        numeric_ids = []
+        for id_str in hotel_ids:
+            try:
+                numeric_ids.append(int(id_str))
+            except ValueError:
+                logger.warning(f"Skipping non-numeric hotel ID from database: {id_str}")
+                continue
+        
+        return sorted(numeric_ids)
+        
+    except Exception as e:
+        logger.error(f"Error getting hotel IDs from database for {supplier_name}: {str(e)}")
+        return []
+
+@router.post("/get_not_mapped_hotel_id_list", response_model=NotMappedHotelResponse)
+async def get_not_mapped_hotel_id_list(request: NotMappedHotelRequest):
+    """
+    Get list of hotel IDs that exist in supplier folder but not in database
+    
+    This endpoint compares hotel IDs from JSON files in the supplier folder
+    with hotel IDs stored in the database and returns the difference.
+    
+    Args:
+        request: NotMappedHotelRequest containing supplier_name
+        
+    Returns:
+        NotMappedHotelResponse with supplier name, total count, and list of unmapped hotel IDs
+        
+    Raises:
+        HTTPException: If supplier folder not found or other errors occur
+    """
+    try:
+        logger.info(f"Processing not mapped hotel ID request for supplier: {request.supplier_name}")
+        
+        # Step 1: Get hotel IDs from supplier folder (JSON files)
+        folder_hotel_ids = get_hotel_ids_from_folder(request.supplier_name)
+        logger.info(f"Found {len(folder_hotel_ids)} hotel IDs in folder")
+        
+        # Step 2: Get hotel IDs from database
+        db_hotel_ids = get_hotel_ids_from_database(request.supplier_name)
+        logger.info(f"Found {len(db_hotel_ids)} hotel IDs in database")
+        
+        # Step 3: Calculate difference (folder IDs - database IDs)
+        folder_set = set(folder_hotel_ids)
+        db_set = set(db_hotel_ids)
+        not_mapped_ids = sorted(list(folder_set - db_set))
+        
+        logger.info(f"Found {len(not_mapped_ids)} unmapped hotel IDs")
+        
+        return NotMappedHotelResponse(
+            supplier_name=request.supplier_name,
+            total_hotel_id=len(not_mapped_ids),
+            hotel_id=not_mapped_ids
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in get_not_mapped_hotel_id_list: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@router.post("/get_not_update_content_hotel_id_list", response_model=NotUpdateContentHotelResponse)
+async def get_not_update_content_hotel_id_list(request: NotMappedHotelRequest):
+    """
+    Get list of hotel IDs that exist in database but not in supplier folder
+    
+    This endpoint compares hotel IDs from the database with hotel IDs in JSON files
+    in the supplier folder and returns hotel IDs that are in database but missing from folder.
+    These are hotels that may need content updates.
+    
+    Args:
+        request: NotMappedHotelRequest containing supplier_name
+        
+    Returns:
+        NotUpdateContentHotelResponse with supplier name, total count, and list of hotel IDs
+        
+    Raises:
+        HTTPException: If supplier folder not found or other errors occur
+    """
+    try:
+        logger.info(f"Processing not update content hotel ID request for supplier: {request.supplier_name}")
+        
+        # Step 1: Get hotel IDs from supplier folder (JSON files)
+        folder_hotel_ids = get_hotel_ids_from_folder(request.supplier_name)
+        logger.info(f"Found {len(folder_hotel_ids)} hotel IDs in folder")
+        
+        # Step 2: Get hotel IDs from database
+        db_hotel_ids = get_hotel_ids_from_database(request.supplier_name)
+        logger.info(f"Found {len(db_hotel_ids)} hotel IDs in database")
+        
+        # Step 3: Calculate difference (database IDs - folder IDs)
+        folder_set = set(folder_hotel_ids)
+        db_set = set(db_hotel_ids)
+        not_update_content_ids = sorted(list(db_set - folder_set))
+        
+        logger.info(f"Found {len(not_update_content_ids)} hotel IDs in database but not in folder")
+        
+        return NotUpdateContentHotelResponse(
+            supplier_name=request.supplier_name,
+            total_hotel_id=len(not_update_content_ids),
+            hotel_id=not_update_content_ids
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in get_not_update_content_hotel_id_list: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+    
+    
