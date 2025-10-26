@@ -29,6 +29,7 @@ bleach = "*"
 pandas = "*"
 xmltodict = "*"
 psutil = "*"
+aiohttp = "*"
 
 [dev-packages]
 pytest = "*"
