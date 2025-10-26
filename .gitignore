@@ -41,4 +41,5 @@ deploy.yml
 
 static/hotelcontent/
 static/countryJson
-static
+static/*
+!.gitkeep
