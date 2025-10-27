@@ -260,48 +260,136 @@ async def login_for_access_token(
     db: Session = Depends(get_db),
 ):
     """
-    User Authentication - Login and Get Access/Refresh Tokens
+    🔐 **User Authentication - Login and Get JWT Tokens**
     
-    This endpoint authenticates users and provides JWT tokens for API access.
-    
-    **Authentication Flow:**
-    1. Validates username/email and password
-    2. Generates access token (30,000 minutes expiry)
-    3. Generates refresh token (7 days expiry)
-    4. Stores refresh token in Redis for security
-    5. Logs authentication events for audit
-    
-    **Request Body:**
-    - `username`: Username or email address
-    - `password`: User's password
-    
-    **Response:**
-    - `access_token`: JWT token for API authentication
-    - `token_type`: Always "bearer"
-    - `refresh_token`: Token for refreshing access tokens
-    
-    **Security Features:**
-    - Password verification using bcrypt
-    - Token blacklisting support
-    - Audit logging for failed/successful attempts
-    - Rate limiting protection
-    
-    **Error Responses:**
-    - `401 Unauthorized`: Invalid credentials
-    - `400 Bad Request`: Invalid request format
-    
-    **Usage Example:**
+    Authenticates users and returns JWT tokens for secure API access. This endpoint implements
+    OAuth2 password flow for token generation with enhanced security features.
+
+    ---
+
+    ## 🚀 **Quick Start**
     ```bash
-    curl -X POST "/v1.0/auth/token" \
-         -H "Content-Type: application/x-www-form-urlencoded" \
+    # Basic authentication request
+    curl -X POST "https://api.yourdomain.com/v1.0/auth/token" \\
+         -H "Content-Type: application/x-www-form-urlencoded" \\
          -d "username=john_doe&password=secure_password"
     ```
+
+    ## 📋 **Request Details**
+
+    ### **Form Data Parameters**
+    | Parameter | Type | Required | Description |
+    |-----------|------|----------|-------------|
+    | `username` | string | ✅ | Username or email address |
+    | `password` | string | ✅ | User's password |
+
+    ### **Content-Type**
+    `application/x-www-form-urlencoded`
+
+    ---
+
+    ## ✅ **Successful Response**
+    ```json
+    {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        "token_type": "bearer",
+        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+    ```
+
+    ### **Token Information**
+    | Token Type | Expiration | Usage |
+    |------------|------------|-------|
+    | Access Token | 30,000 minutes | API authentication |
+    | Refresh Token | 7 days | Obtain new access tokens |
+
+    ---
+
+    ## 🔒 **Security Features**
+
+    - 🔑 **Bcrypt Password Hashing** - Secure password verification
+    - ⚡ **Token Blacklisting** - Immediate token revocation support
+    - 📝 **Audit Logging** - Comprehensive authentication tracking
+    - 🛡️ **Rate Limiting** - Brute force protection
+    - 🔄 **Refresh Token Rotation** - Secure token renewal
+    - 💾 **Redis Storage** - Secure refresh token management
+
+    ---
+
+    ## ❌ **Error Responses**
+
+    ### **401 Unauthorized**
+    ```json
+    {
+        "detail": "Incorrect username or password"
+    }
+    ```
+    **Causes:** Invalid credentials, inactive account, or locked account
+
+    ### **400 Bad Request**
+    ```json
+    {
+        "detail": "Invalid request format"
+    }
+    ```
+    **Causes:** Missing parameters, malformed data
+
+    ---
+
+    ## 🛠️ **Usage Examples**
+
+
+    ### **Python**
+    ```python
+    import requests
     
-    **Token Usage:**
-    Include the access token in subsequent requests:
+    response = requests.post(
+        "https://api.yourdomain.com/v1.0/auth/token",
+        data={
+            "username": "john_doe",
+            "password": "secure_password"
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    
+    tokens = response.json()
     ```
-    Authorization: Bearer <access_token>
+
+    ### **Using the Access Token**
+    ```bash
+    # Include in API requests
+    curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+         "https://api.yourdomain.com/v1.0/protected-endpoint"
     ```
+
+    ---
+
+    ## 📊 **Audit & Monitoring**
+
+    - ✅ Successful logins are logged with user ID and timestamp
+    - ❌ Failed attempts are recorded with IP address and reason
+    - 📍 Geographic and device information tracking
+    - 🔍 Real-time security monitoring
+
+    ---
+
+    ## ⚠️ **Important Notes**
+
+    - Store tokens securely - never in localStorage for production
+    - Access tokens expire - implement automatic refresh logic
+    - Refresh tokens should be stored securely (httpOnly cookies recommended)
+    - Report suspicious activity immediately to security team
+
+    ---
+
+    ## 🔄 **Token Refresh Flow**
+
+    1. Access token expires → Use refresh token at `/auth/refresh`
+    2. Validate refresh token → Generate new access/refresh tokens
+    3. Old refresh token → Invalidated in Redis
+    4. New tokens → Returned to client
+
+    For more details, see the token refresh endpoint documentation.
     """
     audit_logger = AuditLogger(db)
     
