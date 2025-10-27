@@ -43,3 +43,6 @@ static/hotelcontent/
 static/countryJson
 static/*
 !.gitkeep
+
+
+routes/path.py
