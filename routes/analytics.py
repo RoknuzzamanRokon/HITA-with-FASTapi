@@ -44,7 +44,52 @@ router = APIRouter(
 
 @router.get("/test/health")
 async def test_analytics_router(request: Request):
-    """Simple test endpoint to verify router is working"""
+    """
+    Analytics Router Health Check Endpoint
+    
+    A simple test endpoint to verify that the analytics router is functioning correctly
+    and to test IP address extraction from various sources including middleware and headers.
+    
+    This endpoint is useful for:
+    - System health monitoring and diagnostics
+    - Testing IP middleware functionality
+    - Verifying router connectivity and configuration
+    - Debugging proxy and load balancer configurations
+    
+    Args:
+        request (Request): FastAPI request object containing headers and client information
+    
+    Returns:
+        dict: A dictionary containing:
+            - message (str): Confirmation that the analytics router is working
+            - status (str): Current status of the router ("ok")
+            - ip_info (dict): Detailed IP address information including:
+                - from_middleware (str): IP extracted by middleware
+                - from_client (str): Direct client IP from request
+                - headers (dict): Various IP-related headers for debugging
+    
+    Example Response:
+        {
+            "message": "Analytics router is working",
+            "status": "ok",
+            "ip_info": {
+                "from_middleware": "192.168.1.100",
+                "from_client": "127.0.0.1",
+                "headers": {
+                    "X-Forwarded-For": "192.168.1.100",
+                    "X-Real-IP": "192.168.1.100",
+                    "X-Client-IP": null,
+                    "CF-Connecting-IP": null
+                }
+            }
+        }
+    
+    HTTP Status Codes:
+        200: Router is functioning correctly
+    
+    Note:
+        This endpoint does not require authentication and can be used for external monitoring.
+    """
     # Test IP extraction
     ip_from_state = getattr(request.state, 'real_ip', None)
     ip_from_client = request.client.host if request.client else None
@@ -72,8 +117,79 @@ async def get_dashboard_analytics(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get comprehensive analytics for dashboard display.
-    Includes user statistics, activity trends, and point distribution.
+    Get Comprehensive Dashboard Analytics
+    
+    Retrieves comprehensive analytics data specifically formatted for dashboard display,
+    including user statistics, activity trends, point distribution, and system metrics.
+    
+    This endpoint provides real-time analytics data that powers administrative dashboards
+    with key performance indicators and business intelligence metrics.
+    
+    Features:
+    - Real-time user statistics aggregation
+    - 30-day user creation trend analysis
+    - Point distribution analytics by user role
+    - Activity summary with recent user engagement
+    - Role-based data filtering and access control
+    
+    Args:
+        current_user (models.User): Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Comprehensive dashboard analytics containing:
+            - statistics (UserStatistics): User counts by role and status
+            - user_creation_trend (List[dict]): Daily user creation over 30 days
+            - point_distribution (List[dict]): Point allocation by role with averages
+            - activity_summary (dict): Recent activity metrics
+            - generated_at (datetime): Timestamp of data generation
+    
+    Access Control:
+        - SUPER_USER: Can view all system analytics
+        - ADMIN_USER: Can view analytics for users they created
+        - GENERAL_USER: Can view their own analytics only
+    
+    Example Response:
+        {
+            "statistics": {
+                "total_users": 150,
+                "super_users": 2,
+                "admin_users": 8,
+                "general_users": 140,
+                "active_users": 95,
+                "inactive_users": 55
+            },
+            "user_creation_trend": [
+                {"date": "2024-01-01", "count": 5},
+                {"date": "2024-01-02", "count": 3}
+            ],
+            "point_distribution": [
+                {
+                    "role": "GENERAL_USER",
+                    "total_points": 450000,
+                    "user_count": 140,
+                    "average_points": 3214.3
+                }
+            ],
+            "activity_summary": {
+                "active_users_last_7_days": 45,
+                "total_transactions_last_30_days": 1250
+            },
+            "generated_at": "2024-01-15T10:30:00.000000"
+        }
+    
+    HTTP Status Codes:
+        200: Analytics data retrieved successfully
+        401: Unauthorized - Invalid or missing authentication token
+        500: Internal server error during data aggregation
+    
+    Raises:
+        HTTPException: 500 if database query fails or data aggregation errors occur
+    
+    Performance Notes:
+        - Uses optimized database queries with proper indexing
+        - Implements efficient joins for related data aggregation
+        - Results are suitable for caching to improve response times
     """
     try:
         user_service = UserService(db)
@@ -166,7 +282,92 @@ async def get_point_analytics(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get detailed point analytics and distribution metrics.
+    Get Detailed Point Analytics and Distribution Metrics
+    
+    Provides comprehensive analytics about point allocation, usage patterns, and distribution
+    across users. This endpoint is designed for administrative users to monitor point economy
+    and user engagement through point-based activities.
+    
+    Analytics Features:
+    - Point allocation statistics by transaction type
+    - Top users ranking by current and total points
+    - Point usage trends over the last 30 days
+    - Transaction volume and average metrics
+    - Point economy health indicators
+    
+    Args:
+        current_user (models.User): Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Detailed point analytics containing:
+            - allocation_statistics (List[dict]): Breakdown by transaction type with:
+                - allocation_type (str): Type of transaction (allocation, deduction, etc.)
+                - total_points (int): Total points for this transaction type
+                - transaction_count (int): Number of transactions
+                - average_per_transaction (float): Average points per transaction
+            - top_users (List[dict]): Top 10 users by points with:
+                - username (str): User's username
+                - email (str): User's email address
+                - current_points (int): Current available points
+                - total_points (int): Total points ever received
+            - usage_trend (List[dict]): Daily point usage over 30 days with:
+                - date (str): Date in YYYY-MM-DD format
+                - points_used (int): Points consumed on that date
+            - generated_at (datetime): Timestamp of data generation
+    
+    Access Control:
+        - SUPER_USER: Can view all point analytics across the system
+        - ADMIN_USER: Can view analytics for users they created
+        - GENERAL_USER: Access denied (403 Forbidden)
+    
+    Example Response:
+        {
+            "allocation_statistics": [
+                {
+                    "allocation_type": "allocation",
+                    "total_points": 50000,
+                    "transaction_count": 25,
+                    "average_per_transaction": 2000.0
+                },
+                {
+                    "allocation_type": "deduction",
+                    "total_points": 15000,
+                    "transaction_count": 150,
+                    "average_per_transaction": 100.0
+                }
+            ],
+            "top_users": [
+                {
+                    "username": "power_user_1",
+                    "email": "user1@example.com",
+                    "current_points": 8500,
+                    "total_points": 12000
+                }
+            ],
+            "usage_trend": [
+                {"date": "2024-01-01", "points_used": 450},
+                {"date": "2024-01-02", "points_used": 320}
+            ],
+            "generated_at": "2024-01-15T10:30:00.000000"
+        }
+    
+    HTTP Status Codes:
+        200: Point analytics retrieved successfully
+        401: Unauthorized - Invalid or missing authentication token
+        403: Forbidden - Insufficient permissions (only super_user/admin_user allowed)
+        500: Internal server error during analytics calculation
+    
+    Raises:
+        HTTPException: 
+            - 403 if user lacks required permissions
+            - 500 if database query fails or calculation errors occur
+    
+    Business Intelligence:
+        - Helps identify point allocation patterns and trends
+        - Monitors user engagement through point consumption
+        - Provides insights for point economy balancing
+        - Supports decision-making for point pricing strategies
     """
     try:
         # Check permissions
@@ -266,8 +467,120 @@ async def get_user_activity(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get comprehensive user activity analytics for a specified date range.
-    Returns summary statistics, individual user activity, and activity trends.
+    Get Comprehensive User Activity Analytics for Date Range
+    
+    Provides detailed user activity analytics for a specified date range with comprehensive
+    insights into user behavior, API usage patterns, and engagement metrics. This endpoint
+    is essential for understanding user interaction patterns and system utilization.
+    
+    Key Features:
+    - Flexible date range analysis with custom start/end dates
+    - Optional role-based filtering for targeted analysis
+    - Individual user activity profiling (up to 50 users for performance)
+    - Daily active user trends and peak usage hour analysis
+    - Favorite endpoint identification for each user
+    - Comprehensive summary statistics
+    
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format (required)
+        end_date (str): End date in YYYY-MM-DD format (required)
+        user_role (Optional[str]): Filter by specific user role (GENERAL_USER, ADMIN_USER, SUPER_USER)
+        current_user (models.User): Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Comprehensive user activity analytics containing:
+            - summary (dict): High-level statistics including:
+                - total_active_users (int): Users with activity in the period
+                - new_users_this_period (int): Users created during the period
+                - total_api_requests (int): Total API requests made
+                - average_requests_per_user (float): Average requests per active user
+            - user_activity (List[dict]): Individual user details (max 50) with:
+                - user_id (str): Anonymized user identifier
+                - username (str): User's username
+                - email (str): User's email address
+                - role (str): User's role in the system
+                - last_login (str): ISO timestamp of last login
+                - total_requests (int): Total requests in the period
+                - points_used (int): Points consumed during the period
+                - active_days (int): Number of days with activity
+                - favorite_endpoints (List[str]): Top 2 most accessed endpoints
+            - activity_trends (dict): Trend analysis including:
+                - daily_active_users (List[dict]): Daily user activity counts
+                - peak_usage_hours (List[dict]): Hourly request distribution
+    
+    Access Control:
+        - SUPER_USER: Can view all user activity across the system
+        - ADMIN_USER: Can view activity for users they created
+        - GENERAL_USER: Access denied (403 Forbidden)
+    
+    Query Parameters Validation:
+        - start_date and end_date must be in YYYY-MM-DD format
+        - end_date must be after start_date
+        - user_role must be a valid UserRole enum value if provided
+        - Date range should be reasonable (recommended max 365 days)
+    
+    Example Response:
+        {
+            "summary": {
+                "total_active_users": 45,
+                "new_users_this_period": 8,
+                "total_api_requests": 1250,
+                "average_requests_per_user": 27.78
+            },
+            "user_activity": [
+                {
+                    "user_id": "user_123",
+                    "username": "john_doe",
+                    "email": "john@example.com",
+                    "role": "GENERAL_USER",
+                    "last_login": "2024-01-14T15:30:00Z",
+                    "total_requests": 45,
+                    "points_used": 450,
+                    "active_days": 12,
+                    "favorite_endpoints": [
+                        "/v1.0/hotel/details",
+                        "/v1.0/content/get_all_hotel_info"
+                    ]
+                }
+            ],
+            "activity_trends": {
+                "daily_active_users": [
+                    {"date": "2024-01-01", "count": 25},
+                    {"date": "2024-01-02", "count": 30}
+                ],
+                "peak_usage_hours": [
+                    {"hour": 9, "requests": 100},
+                    {"hour": 14, "requests": 150}
+                ]
+            }
+        }
+    
+    HTTP Status Codes:
+        200: User activity analytics retrieved successfully
+        400: Bad Request - Invalid date format or parameters
+        401: Unauthorized - Invalid or missing authentication token
+        403: Forbidden - Insufficient permissions
+        500: Internal server error during analytics processing
+    
+    Raises:
+        HTTPException:
+            - 400 if date format is invalid or parameters are malformed
+            - 403 if user lacks required permissions
+            - 500 if database query fails or processing errors occur
+    
+    Performance Considerations:
+        - Results limited to 50 users for optimal response time
+        - Uses efficient database queries with proper indexing
+        - Consider implementing pagination for large datasets
+        - Suitable for caching with appropriate TTL
+    
+    Business Intelligence Applications:
+        - User engagement analysis and retention studies
+        - API usage pattern identification
+        - Peak load planning and capacity management
+        - Feature adoption and usage analytics
+        - User behavior segmentation and profiling
     """
     try:
         # Check permissions
@@ -496,8 +809,128 @@ async def get_user_engagement(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get comprehensive user engagement metrics including daily/weekly/monthly active users,
-    feature adoption rates, and user segmentation analysis.
+    Get Comprehensive User Engagement Metrics and Analytics
+    
+    Provides detailed user engagement analytics including DAU/WAU/MAU metrics, feature
+    adoption rates, user segmentation analysis, and retention metrics. This endpoint is
+    crucial for understanding user engagement patterns and product adoption.
+    
+    Key Engagement Metrics:
+    - Daily/Weekly/Monthly Active Users (DAU/WAU/MAU)
+    - User retention rate analysis (month-over-month)
+    - Average session duration calculations
+    - Feature adoption rates and usage patterns
+    - User segmentation (power users vs casual users)
+    
+    Analytics Categories:
+    1. Engagement Metrics: Core user activity measurements
+    2. Feature Adoption: How users interact with different features
+    3. User Segments: Behavioral classification of users
+    
+    Args:
+        current_user (models.User): Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Comprehensive engagement analytics containing:
+            - engagement_metrics (dict): Core engagement data with:
+                - daily_active_users (int): Users active in last 24 hours
+                - weekly_active_users (int): Users active in last 7 days
+                - monthly_active_users (int): Users active in last 30 days
+                - user_retention_rate (float): Month-over-month retention percentage
+                - average_session_duration (str): Average session time in HH:MM:SS format
+            - feature_adoption (List[dict]): Feature usage statistics with:
+                - feature (str): Feature name identifier
+                - usage_count (int): Total usage instances
+                - unique_users (int): Number of unique users using the feature
+                - adoption_rate (float): Percentage of users who adopted the feature
+            - user_segments (List[dict]): User behavioral segments with:
+                - segment (str): Segment name (power_users, casual_users)
+                - count (int): Number of users in this segment
+                - avg_requests_per_day (int): Average daily API requests
+                - points_consumption (str): Consumption pattern (high, low)
+    
+    Access Control:
+        - SUPER_USER: Can view all user engagement metrics
+        - ADMIN_USER: Can view metrics for users they created
+        - GENERAL_USER: Access denied (403 Forbidden)
+    
+    Engagement Metrics Definitions:
+        - DAU: Users with any transaction/activity in the last 24 hours
+        - WAU: Users with any transaction/activity in the last 7 days
+        - MAU: Users with any transaction/activity in the last 30 days
+        - Retention Rate: (Users active this month AND last month) / (Users active last month)
+        - Power Users: Users with 15+ transactions per month
+        - Casual Users: Users with fewer than 15 transactions per month
+    
+    Feature Tracking:
+        - hotel_search: Users who made hotel-related API requests
+        - booking_management: Users with multiple complex transactions
+        - Adoption Rate: (Users using feature / Total users) * 100
+    
+    Example Response:
+        {
+            "engagement_metrics": {
+                "daily_active_users": 25,
+                "weekly_active_users": 85,
+                "monthly_active_users": 120,
+                "user_retention_rate": 67.5,
+                "average_session_duration": "00:28:45"
+            },
+            "feature_adoption": [
+                {
+                    "feature": "hotel_search",
+                    "usage_count": 450,
+                    "unique_users": 75,
+                    "adoption_rate": 62.5
+                },
+                {
+                    "feature": "booking_management",
+                    "usage_count": 256,
+                    "unique_users": 45,
+                    "adoption_rate": 37.5
+                }
+            ],
+            "user_segments": [
+                {
+                    "segment": "power_users",
+                    "count": 15,
+                    "avg_requests_per_day": 25,
+                    "points_consumption": "high"
+                },
+                {
+                    "segment": "casual_users",
+                    "count": 105,
+                    "avg_requests_per_day": 3,
+                    "points_consumption": "low"
+                }
+            ]
+        }
+    
+    HTTP Status Codes:
+        200: Engagement metrics retrieved successfully
+        401: Unauthorized - Invalid or missing authentication token
+        403: Forbidden - Insufficient permissions
+        500: Internal server error during metrics calculation
+    
+    Raises:
+        HTTPException:
+            - 403 if user lacks required permissions
+            - 500 if database query fails or calculation errors occur
+    
+    Business Intelligence Applications:
+        - Product engagement and adoption analysis
+        - User retention and churn prediction
+        - Feature usage optimization and prioritization
+        - User experience improvement initiatives
+        - Marketing and user acquisition strategy
+        - Product roadmap planning based on usage patterns
+    
+    Performance Notes:
+        - Calculations are based on transaction patterns for efficiency
+        - Uses optimized queries with proper database indexing
+        - Results suitable for dashboard display and caching
+        - Consider implementing real-time updates for critical metrics
     """
     try:
         # Check permissions
@@ -697,8 +1130,136 @@ async def get_system_health(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get comprehensive system health metrics including performance indicators,
-    API endpoint statistics, and database health metrics.
+    Get Comprehensive System Health Metrics and Performance Indicators
+    
+    Provides detailed system health analytics including performance metrics, API endpoint
+    statistics, database health indicators, and overall system status. This endpoint is
+    essential for system monitoring, performance optimization, and operational intelligence.
+    
+    Health Monitoring Categories:
+    1. System Status: Overall health and uptime metrics
+    2. Performance Metrics: Response times, throughput, and resource usage
+    3. API Endpoints: Individual endpoint performance and reliability
+    4. Database Metrics: Connection health and query performance
+    
+    Monitoring Features:
+    - Real-time system status assessment
+    - Performance trend analysis based on actual usage
+    - Resource utilization monitoring (CPU, memory, disk)
+    - API endpoint reliability and performance tracking
+    - Database connection pool and query performance metrics
+    
+    Args:
+        current_user (models.User): Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Comprehensive system health metrics containing:
+            - system_status (str): Overall system health (healthy, degraded, critical)
+            - uptime (str): System uptime percentage
+            - last_updated (str): ISO timestamp of last health check
+            - performance_metrics (dict): System performance data with:
+                - avg_response_time (int): Average response time in milliseconds
+                - requests_per_second (int): Current request handling capacity
+                - error_rate (float): Error rate as percentage
+                - cpu_usage (float): CPU utilization percentage
+                - memory_usage (float): Memory utilization percentage
+                - disk_usage (float): Disk utilization percentage
+            - api_endpoints (List[dict]): Individual endpoint metrics with:
+                - endpoint (str): API endpoint path
+                - avg_response_time (int): Average response time in milliseconds
+                - success_rate (float): Success rate percentage
+                - requests_count (int): Total requests in monitoring period
+                - error_count (int): Total errors in monitoring period
+            - database_metrics (dict): Database health indicators with:
+                - connection_pool_usage (int): Connection pool utilization percentage
+                - query_avg_time (int): Average query execution time in milliseconds
+                - slow_queries_count (int): Number of slow queries detected
+                - active_connections (int): Current active database connections
+    
+    Access Control:
+        - SUPER_USER: Can view all system health metrics
+        - ADMIN_USER: Can view system health metrics
+        - GENERAL_USER: Access denied (403 Forbidden)
+    
+    System Status Determination:
+        - healthy: Recent activity detected, all systems operational
+        - degraded: Limited activity or performance issues detected
+        - critical: System failures or severe performance degradation
+    
+    Performance Metrics Calculation:
+        - Based on actual transaction volume and system activity
+        - Response times calculated from recent API usage patterns
+        - Resource usage estimated from system load and activity
+        - Error rates derived from transaction success/failure patterns
+    
+    Example Response:
+        {
+            "system_status": "healthy",
+            "uptime": "99.97%",
+            "last_updated": "2024-01-15T10:30:00Z",
+            "performance_metrics": {
+                "avg_response_time": 245,
+                "requests_per_second": 125,
+                "error_rate": 0.02,
+                "cpu_usage": 45.5,
+                "memory_usage": 67.2,
+                "disk_usage": 38.1
+            },
+            "api_endpoints": [
+                {
+                    "endpoint": "/v1.0/hotels/search",
+                    "avg_response_time": 180,
+                    "success_rate": 99.8,
+                    "requests_count": 850,
+                    "error_count": 2
+                },
+                {
+                    "endpoint": "/v1.0/user/points/give",
+                    "avg_response_time": 95,
+                    "success_rate": 99.9,
+                    "requests_count": 320,
+                    "error_count": 1
+                }
+            ],
+            "database_metrics": {
+                "connection_pool_usage": 75,
+                "query_avg_time": 45,
+                "slow_queries_count": 12,
+                "active_connections": 150
+            }
+        }
+    
+    HTTP Status Codes:
+        200: System health metrics retrieved successfully
+        401: Unauthorized - Invalid or missing authentication token
+        403: Forbidden - Insufficient permissions
+        500: Internal server error during health check
+    
+    Raises:
+        HTTPException:
+            - 403 if user lacks required permissions
+            - 500 if health check fails or metrics calculation errors occur
+    
+    Operational Intelligence Applications:
+        - System performance monitoring and alerting
+        - Capacity planning and resource optimization
+        - API endpoint performance analysis and optimization
+        - Database performance tuning and connection management
+        - SLA monitoring and compliance reporting
+        - Incident response and troubleshooting support
+    
+    Monitoring Integration:
+        - Suitable for integration with monitoring systems (Prometheus, Grafana)
+        - Can be used for automated alerting and notification systems
+        - Provides data for performance dashboards and reports
+        - Supports proactive system maintenance and optimization
+    
+    Performance Notes:
+        - Metrics calculated based on actual system activity for accuracy
+        - Uses efficient database queries to minimize monitoring overhead
+        - Results can be cached for frequent monitoring without performance impact
+        - Consider implementing real-time streaming for critical metrics
     """
     try:
         # Check permissions
@@ -858,8 +1419,126 @@ async def get_dashboard_user_activity(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get user activity analytics for dashboard display over a specified number of days.
-    Returns daily activity trends, most active users, and activity breakdown by type.
+    Get Dashboard User Activity Analytics Over Configurable Time Period
+    
+    Provides user activity analytics specifically optimized for dashboard display over a
+    configurable time period. This endpoint delivers key activity metrics, user rankings,
+    and activity type breakdowns in a format perfect for dashboard visualization.
+    
+    Dashboard Features:
+    - Configurable analysis period (1-365 days)
+    - Daily activity trend visualization data
+    - Top 10 most active users ranking
+    - Activity breakdown by operation type
+    - Optimized data format for charts and graphs
+    
+    Key Metrics Provided:
+    1. Daily Activity Trends: Day-by-day activity counts and unique user metrics
+    2. Most Active Users: User ranking by activity volume with role information
+    3. Activity Type Breakdown: Categorized activity counts (hotel operations, logins)
+    
+    Args:
+        days (int): Number of days to analyze (1-365, default: 30)
+        current_user (models.User): Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Dashboard-optimized activity analytics containing:
+            - period_days (int): Actual number of days analyzed
+            - daily_activity (List[dict]): Daily trend data with:
+                - date (str): Date in YYYY-MM-DD format
+                - activity_count (int): Total activities on that date
+                - unique_users (int): Number of unique active users
+            - most_active_users (List[dict]): Top 10 users by activity with:
+                - id (str): Anonymized user identifier
+                - username (str): User's username
+                - email (str): User's email address
+                - role (str): User's role in the system
+                - activity_count (int): Total activities in the period
+            - activity_by_type (dict): Activity breakdown with:
+                - hotel_created (int): Number of hotel creation activities
+                - hotel_updated (int): Number of hotel update activities
+                - hotel_deleted (int): Number of hotel deletion activities
+                - user_login (int): Number of user login activities
+    
+    Access Control:
+        - SUPER_USER: Can view all user activity across the system
+        - ADMIN_USER: Can view activity for users they created
+        - GENERAL_USER: Access denied (403 Forbidden)
+    
+    Parameter Validation:
+        - days must be between 1 and 365 (inclusive)
+        - Invalid values will result in 400 Bad Request
+        - Default value of 30 days provides good balance of detail and performance
+    
+    Activity Type Classification:
+        - hotel_created: Point deductions >= 10 points (assumed hotel creation cost)
+        - hotel_updated: Point deductions < 10 points (assumed update cost)
+        - hotel_deleted: Estimated at ~5% of hotel creation activities
+        - user_login: Login activities from activity logs or session data
+    
+    Example Response:
+        {
+            "period_days": 30,
+            "daily_activity": [
+                {
+                    "date": "2024-01-01",
+                    "activity_count": 45,
+                    "unique_users": 12
+                },
+                {
+                    "date": "2024-01-02",
+                    "activity_count": 52,
+                    "unique_users": 15
+                }
+            ],
+            "most_active_users": [
+                {
+                    "id": "user_123",
+                    "username": "power_user",
+                    "email": "power@example.com",
+                    "role": "GENERAL_USER",
+                    "activity_count": 85
+                }
+            ],
+            "activity_by_type": {
+                "hotel_created": 25,
+                "hotel_updated": 120,
+                "hotel_deleted": 1,
+                "user_login": 450
+            }
+        }
+    
+    HTTP Status Codes:
+        200: Dashboard activity analytics retrieved successfully
+        400: Bad Request - Invalid days parameter (must be 1-365)
+        401: Unauthorized - Invalid or missing authentication token
+        403: Forbidden - Insufficient permissions
+        500: Internal server error during analytics processing
+    
+    Raises:
+        HTTPException:
+            - 400 if days parameter is out of valid range
+            - 403 if user lacks required permissions
+            - 500 if database query fails or processing errors occur
+    
+    Dashboard Integration:
+        - Data format optimized for chart libraries (Chart.js, D3.js, etc.)
+        - Suitable for real-time dashboard updates
+        - Efficient queries designed for frequent polling
+        - Results can be cached for improved dashboard performance
+    
+    Visualization Recommendations:
+        - daily_activity: Line chart showing activity trends over time
+        - most_active_users: Bar chart or table showing user rankings
+        - activity_by_type: Pie chart or donut chart showing activity distribution
+        - Use different colors for different activity types for better UX
+    
+    Performance Considerations:
+        - Optimized for dashboard refresh rates (typically 30-60 seconds)
+        - Uses efficient database queries with proper indexing
+        - Results ordered chronologically for easy visualization
+        - Consider implementing WebSocket updates for real-time dashboards
     """
     try:
         # Check permissions

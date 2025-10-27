@@ -6,6 +6,10 @@ import os
 import logging
 import json
 import glob
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import time
+from functools import lru_cache
 
 # Add the tests directory to the path to import mapping_3
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'ml'))
@@ -298,9 +302,16 @@ async def get_supported_suppliers():
         "total_count": 1
     }
 
-def get_hotel_ids_from_folder(supplier_name: str) -> List[int]:
+@lru_cache(maxsize=10)
+def get_hotel_ids_from_folder_cached(supplier_name: str) -> tuple:
     """
-    Get hotel IDs from JSON files in the supplier folder
+    Cached version of get_hotel_ids_from_folder that returns a tuple for caching
+    """
+    return tuple(get_hotel_ids_from_folder_fast(supplier_name))
+
+def get_hotel_ids_from_folder_fast(supplier_name: str) -> List[int]:
+    """
+    Optimized version to get hotel IDs from JSON files in the supplier folder
     
     Args:
         supplier_name: Name of the supplier (e.g., 'agoda')
@@ -316,32 +327,47 @@ def get_hotel_ids_from_folder(supplier_name: str) -> List[int]:
         return []
     
     try:
-        # Get all JSON files in the folder
-        json_files = glob.glob(os.path.join(supplier_folder, "*.json"))
+        start_time = time.time()
         
-        # Extract hotel IDs from filenames (remove .json extension)
+        # Use os.listdir instead of glob for better performance
+        all_files = os.listdir(supplier_folder)
+        
+        # Filter and process JSON files in one pass
         hotel_ids = []
-        for file_path in json_files:
-            filename = os.path.basename(file_path)
-            hotel_id_str = filename.replace('.json', '')
-            
-            # Try to convert to integer
-            try:
-                hotel_id = int(hotel_id_str)
-                hotel_ids.append(hotel_id)
-            except ValueError:
-                logger.warning(f"Skipping non-numeric hotel ID: {hotel_id_str}")
-                continue
+        for filename in all_files:
+            if filename.endswith('.json'):
+                hotel_id_str = filename[:-5]  # Remove .json extension
+                
+                # Quick numeric check before conversion
+                if hotel_id_str.isdigit():
+                    hotel_ids.append(int(hotel_id_str))
         
-        return sorted(hotel_ids)
+        # Sort once at the end
+        result = sorted(hotel_ids)
+        
+        logger.info(f"Folder scan completed in {time.time() - start_time:.2f}s, found {len(result)} hotel IDs")
+        return result
         
     except Exception as e:
         logger.error(f"Error reading hotel IDs from folder {supplier_folder}: {str(e)}")
         return []
 
-def get_hotel_ids_from_database(supplier_name: str) -> List[int]:
+def get_hotel_ids_from_folder(supplier_name: str) -> List[int]:
     """
-    Get hotel IDs from database using the existing utility function logic
+    Get hotel IDs from JSON files using cached version
+    """
+    return list(get_hotel_ids_from_folder_cached(supplier_name))
+
+@lru_cache(maxsize=10)
+def get_hotel_ids_from_database_cached(supplier_name: str) -> tuple:
+    """
+    Cached version of get_hotel_ids_from_database that returns a tuple for caching
+    """
+    return tuple(get_hotel_ids_from_database_fast(supplier_name))
+
+def get_hotel_ids_from_database_fast(supplier_name: str) -> List[int]:
+    """
+    Optimized version to get hotel IDs from database
     
     Args:
         supplier_name: Name of the supplier (e.g., 'agoda')
@@ -350,9 +376,11 @@ def get_hotel_ids_from_database(supplier_name: str) -> List[int]:
         List of hotel IDs from database
     """
     try:
+        start_time = time.time()
+        
         # Import the utility function
         sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
-        from create_txt_file_follow_a_supplier import generate_hotel_id_files, provider_mappings, engine, table
+        from create_txt_file_follow_a_supplier import provider_mappings, engine, table
         
         # Get columns for the specified supplier
         columns = provider_mappings.get(supplier_name)
@@ -361,43 +389,46 @@ def get_hotel_ids_from_database(supplier_name: str) -> List[int]:
             return []
 
         from sqlalchemy import text
-        import pandas as pd
-        import numpy as np
         
-        selected_columns = ", ".join(columns)
-        where_clause = " OR ".join([f"{col} IS NOT NULL AND {col} != ''" for col in columns])
-        query = f"SELECT {selected_columns} FROM {table} WHERE {where_clause};"
-        
-        df = pd.read_sql(text(query), engine)
-        
-        hotel_ids = set()
+        # Optimized query - use UNION ALL for better performance
+        union_queries = []
         for col in columns:
-            # Clean and collect non-empty IDs
-            non_empty = df[col].astype(str).str.strip().replace(r'^\s*$', np.nan, regex=True).dropna()
-            hotel_ids.update(non_empty.unique())
+            union_queries.append(f"SELECT DISTINCT {col} as hotel_id FROM {table} WHERE {col} IS NOT NULL AND {col} != '' AND {col} REGEXP '^[0-9]+$'")
         
-        # Convert to integers where possible
-        numeric_ids = []
-        for id_str in hotel_ids:
-            try:
-                numeric_ids.append(int(id_str))
-            except ValueError:
-                logger.warning(f"Skipping non-numeric hotel ID from database: {id_str}")
-                continue
+        query = " UNION ALL ".join(union_queries)
+        final_query = f"SELECT DISTINCT hotel_id FROM ({query}) as combined_ids ORDER BY CAST(hotel_id AS UNSIGNED)"
         
-        return sorted(numeric_ids)
+        # Execute query directly without pandas for better performance
+        with engine.connect() as connection:
+            result = connection.execute(text(final_query))
+            hotel_ids = [int(row[0]) for row in result.fetchall()]
+        
+        logger.info(f"Database query completed in {time.time() - start_time:.2f}s, found {len(hotel_ids)} hotel IDs")
+        return hotel_ids
         
     except Exception as e:
         logger.error(f"Error getting hotel IDs from database for {supplier_name}: {str(e)}")
         return []
 
+def get_hotel_ids_from_database(supplier_name: str) -> List[int]:
+    """
+    Get hotel IDs from database using cached version
+    """
+    return list(get_hotel_ids_from_database_cached(supplier_name))
+
 @router.post("/get_not_mapped_hotel_id_list", response_model=NotMappedHotelResponse)
 async def get_not_mapped_hotel_id_list(request: NotMappedHotelRequest):
     """
-    Get list of hotel IDs that exist in supplier folder but not in database
+    OPTIMIZED: Get list of hotel IDs that exist in supplier folder but not in database
     
     This endpoint compares hotel IDs from JSON files in the supplier folder
     with hotel IDs stored in the database and returns the difference.
+    
+    Performance optimizations:
+    - Async processing with ThreadPoolExecutor
+    - Cached database and folder queries
+    - Optimized SQL queries
+    - Faster file system operations
     
     Args:
         request: NotMappedHotelRequest containing supplier_name
@@ -409,22 +440,30 @@ async def get_not_mapped_hotel_id_list(request: NotMappedHotelRequest):
         HTTPException: If supplier folder not found or other errors occur
     """
     try:
-        logger.info(f"Processing not mapped hotel ID request for supplier: {request.supplier_name}")
+        start_time = time.time()
+        logger.info(f"Processing OPTIMIZED not mapped hotel ID request for supplier: {request.supplier_name}")
         
-        # Step 1: Get hotel IDs from supplier folder (JSON files)
-        folder_hotel_ids = get_hotel_ids_from_folder(request.supplier_name)
+        # Use ThreadPoolExecutor to run both operations concurrently
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit both tasks concurrently
+            folder_future = executor.submit(get_hotel_ids_from_folder, request.supplier_name)
+            db_future = executor.submit(get_hotel_ids_from_database, request.supplier_name)
+            
+            # Wait for both to complete
+            folder_hotel_ids = folder_future.result()
+            db_hotel_ids = db_future.result()
+        
         logger.info(f"Found {len(folder_hotel_ids)} hotel IDs in folder")
-        
-        # Step 2: Get hotel IDs from database
-        db_hotel_ids = get_hotel_ids_from_database(request.supplier_name)
         logger.info(f"Found {len(db_hotel_ids)} hotel IDs in database")
         
-        # Step 3: Calculate difference (folder IDs - database IDs)
+        # Step 3: Calculate difference (folder IDs - database IDs) using sets for O(n) performance
         folder_set = set(folder_hotel_ids)
         db_set = set(db_hotel_ids)
         not_mapped_ids = sorted(list(folder_set - db_set))
         
+        total_time = time.time() - start_time
         logger.info(f"Found {len(not_mapped_ids)} unmapped hotel IDs")
+        logger.info(f"Total processing time: {total_time:.2f} seconds")
         
         return NotMappedHotelResponse(
             supplier_name=request.supplier_name,
@@ -442,11 +481,17 @@ async def get_not_mapped_hotel_id_list(request: NotMappedHotelRequest):
 @router.post("/get_not_update_content_hotel_id_list", response_model=NotUpdateContentHotelResponse)
 async def get_not_update_content_hotel_id_list(request: NotMappedHotelRequest):
     """
-    Get list of hotel IDs that exist in database but not in supplier folder
+    OPTIMIZED: Get list of hotel IDs that exist in database but not in supplier folder
     
     This endpoint compares hotel IDs from the database with hotel IDs in JSON files
     in the supplier folder and returns hotel IDs that are in database but missing from folder.
     These are hotels that may need content updates.
+    
+    Performance optimizations:
+    - Async processing with ThreadPoolExecutor
+    - Cached database and folder queries
+    - Optimized SQL queries
+    - Faster file system operations
     
     Args:
         request: NotMappedHotelRequest containing supplier_name
@@ -458,22 +503,30 @@ async def get_not_update_content_hotel_id_list(request: NotMappedHotelRequest):
         HTTPException: If supplier folder not found or other errors occur
     """
     try:
-        logger.info(f"Processing not update content hotel ID request for supplier: {request.supplier_name}")
+        start_time = time.time()
+        logger.info(f"Processing OPTIMIZED not update content hotel ID request for supplier: {request.supplier_name}")
         
-        # Step 1: Get hotel IDs from supplier folder (JSON files)
-        folder_hotel_ids = get_hotel_ids_from_folder(request.supplier_name)
+        # Use ThreadPoolExecutor to run both operations concurrently
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit both tasks concurrently
+            folder_future = executor.submit(get_hotel_ids_from_folder, request.supplier_name)
+            db_future = executor.submit(get_hotel_ids_from_database, request.supplier_name)
+            
+            # Wait for both to complete
+            folder_hotel_ids = folder_future.result()
+            db_hotel_ids = db_future.result()
+        
         logger.info(f"Found {len(folder_hotel_ids)} hotel IDs in folder")
-        
-        # Step 2: Get hotel IDs from database
-        db_hotel_ids = get_hotel_ids_from_database(request.supplier_name)
         logger.info(f"Found {len(db_hotel_ids)} hotel IDs in database")
         
-        # Step 3: Calculate difference (database IDs - folder IDs)
+        # Step 3: Calculate difference (database IDs - folder IDs) using sets for O(n) performance
         folder_set = set(folder_hotel_ids)
         db_set = set(db_hotel_ids)
         not_update_content_ids = sorted(list(db_set - folder_set))
         
+        total_time = time.time() - start_time
         logger.info(f"Found {len(not_update_content_ids)} hotel IDs in database but not in folder")
+        logger.info(f"Total processing time: {total_time:.2f} seconds")
         
         return NotUpdateContentHotelResponse(
             supplier_name=request.supplier_name,
@@ -486,6 +539,39 @@ async def get_not_update_content_hotel_id_list(request: NotMappedHotelRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
+        )
+
+@router.post("/clear_cache")
+async def clear_hotel_id_cache():
+    """
+    Clear the cached hotel ID data for all suppliers
+    
+    Use this endpoint when:
+    - New hotel data is added to the database
+    - New JSON files are added to supplier folders
+    - You want to refresh the cached data
+    
+    Returns:
+        Dict with cache clearing status
+    """
+    try:
+        # Clear the LRU caches
+        get_hotel_ids_from_folder_cached.cache_clear()
+        get_hotel_ids_from_database_cached.cache_clear()
+        
+        logger.info("Hotel ID caches cleared successfully")
+        
+        return {
+            "success": True,
+            "message": "Hotel ID caches cleared successfully",
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing caches: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error clearing caches: {str(e)}"
         )
     
     

@@ -1157,9 +1157,37 @@ async def get_users_paginated(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get paginated list of users with comprehensive filtering and sorting.
-    Supports search, role filtering, active status filtering, and multi-field sorting.
-    🔒 RESTRICTED: Only super users and admin users can access this endpoint.
+    Retrieve a paginated list of users based on comprehensive filtering and sorting criteria.
+
+    This endpoint is used to fetch a list of user accounts, allowing for pagination,
+    keyword searching across username and email, filtering by user role and active status,
+    and sorting results by specified fields and order.
+
+    ---
+    ### 🔒 **RESTRICTED ACCESS**
+    Only **Super Users** and **Admin Users** are authorized to access this endpoint.
+
+    ### **Parameters**
+    - `page` (int): The current page number to retrieve. Must be $1$ or greater.
+    - `limit` (int): The maximum number of items to return per page. Must be between $1$ and $100$.
+    - `search` (Optional[str]): A keyword to filter users by partial match on `username` or `email`.
+    - `role` (Optional[models.UserRole]): An exact user role to filter by (e.g., 'ADMIN_USER', 'STANDARD_USER').
+    - `is_active` (Optional[bool]): A boolean flag to filter users by their active status (`True` for active, `False` for inactive).
+    - `sort_by` (Optional[str]): The field name to sort the results by (e.g., 'created_at', 'username', 'email'). Defaults to 'created_at'.
+    - `sort_order` (Optional[str]): The direction for sorting: 'asc' for ascending or 'desc' for descending. Defaults to 'desc'.
+    - `current_user` (models.User): The authenticated user making the request (Dependency).
+    - `db` (Session): The database session (Dependency).
+
+    ### **Returns**
+    - `PaginatedUserResponse`: An object containing the list of users for the requested page,
+      along with pagination metadata (total items, total pages, current page, etc.).
+
+    ### **Responses**
+    - **200 OK**: Successfully returned the paginated list of users.
+    - **400 BAD REQUEST**: If sorting parameters (`sort_by`, `sort_order`) are invalid, or if other query parameters violate constraints (e.g., `limit` out of range).
+    - **401 UNAUTHORIZED**: If the request lacks valid authentication credentials.
+    - **403 FORBIDDEN**: If the authenticated user's role is not `SUPER_USER` or `ADMIN_USER`.
+    - **500 INTERNAL SERVER ERROR**: A generic error occurred on the server while processing the request.
     """
     
     # 🔒 SECURITY CHECK: Only super users and admin users can access user list
@@ -1197,8 +1225,8 @@ async def get_users_paginated(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching users"
         )
-
-
+        
+        
 @router.get("/stats", response_model=UserStatistics)
 async def get_user_statistics(
     current_user: Annotated[models.User, Depends(get_current_user)] = None,
