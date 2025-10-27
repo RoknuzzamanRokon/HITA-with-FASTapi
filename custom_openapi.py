@@ -386,6 +386,149 @@ This API module provides complete hotel data management, supplier integration, a
 All operations are logged for audit purposes and include comprehensive error handling with detailed error messages.
             """,
         },
+        {
+            "name": "Hotel mapping",
+            "description": """
+# 🗺️ Hotel Mapping & Rate Management API
+
+**Advanced hotel mapping and rate type management system**
+
+This API module provides specialized functionality for managing hotel provider mappings, rate types, and comprehensive hotel data retrieval with advanced filtering and pagination capabilities. It enables efficient management of hotel-provider relationships and rate information across multiple suppliers.
+
+### 🔑 Key Features
+
+**🗺️ Provider Mapping Management:**
+- Add and update rate type information for hotel-provider combinations
+- Comprehensive provider mapping validation and error handling
+- Automatic creation or update of existing rate type records
+- Transactional integrity with rollback on errors
+
+**💰 Rate Type Management:**
+- Room title and rate name management
+- Sell per night pricing configuration
+- Rate type information updates and modifications
+- Historical tracking with created/updated timestamps
+
+**📊 Advanced Data Retrieval:**
+- Multi-supplier hotel mapping data with comprehensive filtering
+- Country-based location filtering with ISO codes
+- Pagination support with resume keys for large datasets
+- Cached responses for improved performance (2-hour cache)
+
+**🔍 Filtering & Search:**
+- Filter by multiple supplier names simultaneously
+- Country-based filtering using ISO country codes
+- Configurable page limits (1-500 records per page)
+- Resume key pagination for efficient large dataset navigation
+
+### 🎯 Available Operations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/add_rate_type_with_ittid_and_pid` | POST | Add or update rate type information for hotel-provider mapping |
+| `/update_rate_type` | PUT | Update existing rate type information |
+| `/get_basic_mapping_with_info` | GET | Retrieve comprehensive hotel mapping data with filtering |
+
+### 🔄 Mapping Workflow
+
+1. **Rate Type Creation** → Add rate information for hotel-provider combinations
+2. **Rate Updates** → Modify existing rate type details and pricing
+3. **Data Retrieval** → Query comprehensive mapping data with filters
+4. **Pagination** → Navigate through large datasets efficiently
+5. **Caching** → Leverage cached responses for improved performance
+
+### 📋 Data Structure
+
+**Rate Type Information:**
+- Hotel ITTID (Internal Travel Technology ID)
+- Provider mapping ID and relationship
+- Room title and descriptive information
+- Rate name and classification
+- Sell per night pricing
+- Creation and modification timestamps
+
+**Mapping Response Data:**
+- Provider-specific hotel IDs and mappings
+- Hotel basic information (name, coordinates, rating)
+- Location data (address, country, coordinates)
+- Rate type details (room titles, rate names, pricing)
+- External system IDs (Vervotech, Giata codes)
+- Photo and media information
+
+### 🔐 Access Control & Security
+
+**Required Roles:**
+- **Super User**: Full access to all mapping operations
+- **Admin User**: Full access to all mapping operations
+- **General User**: No access to mapping endpoints
+
+**Security Features:**
+- JWT token authentication required
+- Role-based access validation
+- Comprehensive audit logging
+- Input validation and sanitization
+- Error handling with detailed logging
+
+### 📊 Performance & Caching
+
+**Caching Strategy:**
+- 2-hour cache expiration for mapping data retrieval
+- Redis-based caching for improved response times
+- Cache invalidation on data updates
+- Optimized database queries with proper indexing
+
+**Pagination Features:**
+- Resume key-based pagination for consistent results
+- Configurable page sizes (1-500 records)
+- Total count information for UI pagination
+- Efficient large dataset handling
+
+### 🚨 Error Handling
+
+Comprehensive error handling with standardized HTTP status codes:
+
+- **400 Bad Request**: Invalid resume_key format or malformed requests
+- **401 Unauthorized**: Missing or invalid authentication tokens
+- **403 Forbidden**: Insufficient permissions (non-admin/super users)
+- **404 Not Found**: Hotel, provider mapping, or rate type not found
+- **422 Unprocessable Entity**: Validation errors in request parameters
+- **500 Internal Server Error**: Database errors or system failures
+
+### 🔍 Use Cases
+
+**Rate Management:**
+- Hotel rate configuration and updates
+- Provider-specific pricing management
+- Rate type categorization and organization
+- Bulk rate updates and modifications
+
+**Data Integration:**
+- Multi-supplier data aggregation
+- Hotel mapping data export and reporting
+- Integration with external booking systems
+- Data synchronization across platforms
+
+**Analytics & Reporting:**
+- Hotel availability and rate analysis
+- Provider performance metrics
+- Geographic distribution analysis
+- Rate competitiveness reporting
+
+### 📈 Response Formats
+
+**JSON Response Structure:**
+- Standardized response format with metadata
+- File attachment headers for data export
+- Comprehensive error messages with context
+- Pagination metadata for navigation
+
+**Data Export:**
+- JSON file attachment format
+- Comprehensive hotel mapping data
+- Ready for integration with external systems
+- Structured data for analytics and reporting
+            """,
+        },
     ]
     
     # Add tags to the schema

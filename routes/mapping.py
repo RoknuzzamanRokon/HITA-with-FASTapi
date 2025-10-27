@@ -22,7 +22,7 @@ router = APIRouter(
 )
 
 
-@router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED, include_in_schema=False)
+@router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED)
 def add_rate_type(
     provider_data: AddRateTypeRequest,
     db: Session = Depends(get_db),
@@ -122,7 +122,7 @@ def add_rate_type(
         )
 
 
-@router.put("/update_rate_type", status_code=status.HTTP_200_OK, include_in_schema=False)
+@router.put("/update_rate_type", status_code=status.HTTP_200_OK)
 def update_rate_type(
     update_data: UpdateRateTypeRequest,
     db: Session = Depends(get_db),
