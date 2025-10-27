@@ -529,6 +529,211 @@ Comprehensive error handling with standardized HTTP status codes:
 - Structured data for analytics and reporting
             """,
         },
+        {
+            "name": "Users Activity",
+            "description": """
+## 👥 User Management & Activity API
+
+**Comprehensive user account management and activity tracking system**
+
+This API module provides complete user lifecycle management, point allocation systems, supplier permissions, and detailed user activity tracking. It enables role-based user administration with comprehensive audit trails and flexible user management capabilities.
+
+### 🔑 Key Features
+
+**👤 User Account Management:**
+- Complete user profile creation and management with role-based validation
+- User authentication and profile information retrieval
+- Role-based user creation (Super User, Admin User, General User)
+- Account activation, deactivation, and comprehensive user lifecycle management
+
+**💰 Point Management System:**
+- Flexible point allocation with predefined package types
+- Point balance tracking and transaction history
+- Point reset capabilities for administrative control
+- Comprehensive point usage analytics and reporting
+
+**🔐 Role-Based Access Control:**
+- Three-tier user role system (Super User, Admin User, General User)
+- Hierarchical permission structure with role inheritance
+- Role-specific operation permissions and access controls
+- Administrative oversight and user management capabilities
+
+**🏨 Supplier Permission Management:**
+- User-specific supplier access permissions
+- Role-based supplier access (unlimited for admins, specific for general users)
+- Supplier permission validation and management
+- Complete supplier catalog and availability tracking
+
+### 🎯 Available Operations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/me` | GET | Get current user profile and account information |
+| `/` | POST | Create new user with role-based validation |
+| `/create_super_user` | POST | Create super user accounts (super user only) |
+| `/create_admin_user` | POST | Create admin user accounts (super user only) |
+| `/create_general_user` | POST | Create general user accounts (admin/super user) |
+| `/points/give` | POST | Allocate points to users with package types |
+| `/reset_point/{user_id}/` | POST | Reset user points to zero (admin operation) |
+| `/points/check/me` | GET | Get detailed point history and transactions |
+| `/check/all` | GET | List all users with enhanced filtering and pagination |
+| `/check/user_info/{user_id}` | GET | Get specific user information and details |
+| `/active_my_supplier` | GET | Get user's accessible supplier permissions |
+| `/get_list_of_available_suppliers` | GET | Get complete system supplier catalog |
+| `/list` | GET | Enhanced paginated user listing with search |
+| `/stats` | GET | Get comprehensive user statistics |
+| `/{user_id}/details` | GET | Get detailed user information with analytics |
+| `/{user_id}/activity` | GET | Get user activity and usage analytics |
+| `/bulk` | POST | Perform bulk user operations (create/update/delete) |
+| `/{user_id}` | PUT | Update user information with validation |
+| `/{user_id}` | DELETE | Delete user with complete cleanup |
+| `/enhanced/create` | POST | Enhanced user creation with comprehensive validation |
+| `/health` | GET | User management service health check |
+
+### 🔄 User Management Workflow
+
+1. **User Creation** → Role-based user account creation with validation
+2. **Point Allocation** → Assign points using predefined packages
+3. **Permission Assignment** → Configure supplier access permissions
+4. **Activity Monitoring** → Track user activity and usage patterns
+5. **Account Management** → Update, deactivate, or delete user accounts
+
+### 💰 Point Allocation Packages
+
+**Package Types and Values:**
+- **ADMIN_USER_PACKAGE**: 4,000,000 points (Administrative package)
+- **ONE_YEAR_PACKAGE**: 1,000,000 points (Annual subscription)
+- **ONE_MONTH_PACKAGE**: 80,000 points (Monthly subscription)
+- **PER_REQUEST_POINT**: 10,000 points (Pay-per-request)
+- **GUEST_POINT**: 1,000 points (Guest/trial access)
+
+**Point Management Features:**
+- Automatic point deduction for non-super users
+- Unlimited points for super users
+- Complete transaction logging and audit trail
+- Point balance validation and insufficient funds handling
+
+### 🔐 Role-Based Permissions
+
+**Super User:**
+- Create any user role (Super User, Admin User, General User)
+- Unlimited point allocation capabilities
+- Access to all suppliers and system functions
+- Complete user management and administrative control
+
+**Admin User:**
+- Create General User accounts only
+- Point allocation with balance deduction
+- Access to all suppliers in the system
+- User management for created accounts
+
+**General User:**
+- No user creation capabilities
+- Limited to assigned supplier permissions
+- Point consumption for API usage
+- Personal profile and activity access only
+
+### 📊 User Analytics & Reporting
+
+**User Statistics:**
+- Total user counts by role and status
+- User creation trends and growth metrics
+- Point distribution and usage analytics
+- Activity patterns and engagement metrics
+
+**Activity Tracking:**
+- User login and session tracking
+- API usage patterns and frequency
+- Point transaction history and analysis
+- Supplier access and usage monitoring
+
+**Enhanced Features:**
+- Pagination and search capabilities
+- Advanced filtering by role, status, and activity
+- Bulk operations for administrative efficiency
+- Real-time statistics and health monitoring
+
+### 🔍 Search & Filtering
+
+**Advanced Search:**
+- Username and email search capabilities
+- Role-based filtering and sorting
+- Activity status and date range filtering
+- Pagination with configurable page sizes
+
+**Bulk Operations:**
+- Create multiple users simultaneously
+- Update user information in batches
+- Delete users with complete cleanup
+- Administrative efficiency tools
+
+### 🚨 Error Handling
+
+Comprehensive error handling with standardized HTTP status codes:
+
+- **400 Bad Request**: Invalid input data or validation failures
+- **401 Unauthorized**: Missing or invalid authentication tokens
+- **403 Forbidden**: Insufficient role permissions for operation
+- **404 Not Found**: User, points, or supplier permissions not found
+- **409 Conflict**: Duplicate user email or username conflicts
+- **422 Unprocessable Entity**: Request validation errors
+- **500 Internal Server Error**: Database errors or system failures
+
+### 🔒 Security Features
+
+**Authentication & Authorization:**
+- JWT token-based authentication
+- Role-based access control validation
+- Session management and token validation
+- Multi-device logout capabilities
+
+**Data Protection:**
+- Password hashing using bcrypt
+- Sensitive data masking and filtering
+- Audit logging for all user operations
+- GDPR-compliant data handling
+
+**Business Rules:**
+- Role hierarchy enforcement
+- Point allocation validation
+- Supplier permission verification
+- Account integrity maintenance
+
+### 🔍 Use Cases
+
+**Administrative Management:**
+- User account provisioning and management
+- Point allocation and balance management
+- Supplier permission configuration
+- System user analytics and reporting
+
+**Self-Service Operations:**
+- User profile management and updates
+- Point balance checking and transaction history
+- Supplier access verification
+- Personal activity monitoring
+
+**Integration Applications:**
+- User data synchronization with external systems
+- Automated user provisioning workflows
+- Point system integration with billing
+- Activity analytics for business intelligence
+
+### 📈 Response Formats
+
+**Standardized Responses:**
+- Consistent JSON response structure
+- Comprehensive error messages with context
+- Pagination metadata for large datasets
+- Activity and analytics data formatting
+
+**Enhanced Features:**
+- Real-time user statistics
+- Activity trend analysis
+- Point usage analytics
+- Supplier access reporting
+            """,
+        },
     ]
     
     # Add tags to the schema

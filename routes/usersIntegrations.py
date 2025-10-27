@@ -53,37 +53,63 @@ async def self_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Get the current user's details."""
-    user_points = (
-        db.query(models.UserPoint)
-        .filter(models.UserPoint.user_id == current_user.id)
-        .first()
-    )
-    # print("This Is User Point.", user_points)
-    available_points = user_points.current_points if user_points else 0
-    total_points = user_points.total_points if user_points else 0
+        """
+        Get the authenticated user's profile and account details.
 
-    suppliers = [
-        perm.provider_name
-        for perm in db.query(models.UserProviderPermission)
-        .filter(models.UserProviderPermission.user_id == current_user.id)
-        .all()
-    ]
-    active_supplier = list(set(suppliers))
+        Returns:
+        - Basic info (ID, username, email, role)
+        - Point balance (available & total points)
+        - Active supplier permissions
+        - Account creation & update timestamps
 
-    # Return the user's details
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "email": current_user.email,
-        "user_status": current_user.role,
-        "available_points": available_points,
-        "total_points": total_points,
-        "active_supplier": active_supplier,
-        "created_at": current_user.created_at,
-        "updated_at": current_user.updated_at,
-        "need_to_next_upgrade": "It function is not implemented yet",
-    }
+        Notes:
+        - Requires valid JWT authentication
+        - Only returns data for the logged-in user
+
+        Raises:
+        - 401: Unauthorized (invalid or missing token)
+        - 500: Database or internal error
+        """
+
+    try:
+        # Get user points information
+        user_points = (
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == current_user.id)
+            .first()
+        )
+        available_points = user_points.current_points if user_points else 0
+        total_points = user_points.total_points if user_points else 0
+
+        # Get active supplier permissions
+        suppliers = [
+            perm.provider_name
+            for perm in db.query(models.UserProviderPermission)
+            .filter(models.UserProviderPermission.user_id == current_user.id)
+            .all()
+        ]
+        active_supplier = list(set(suppliers))
+
+        # Return the user's details
+        return {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "user_status": current_user.role,
+            "available_points": available_points,
+            "total_points": total_points,
+            "active_supplier": active_supplier,
+            "created_at": current_user.created_at,
+            "updated_at": current_user.updated_at,
+            "need_to_next_upgrade": "It function is not implemented yet",
+        }
+        
+    except Exception as e:
+        # Handle any unexpected database or other errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving user information: {str(e)}"
+        )
 
 
 @router.post("/", response_model=UserResponse)
@@ -92,84 +118,116 @@ async def create_user(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Create a new user (general endpoint that routes to appropriate creation method)."""
-    
-    # Validate permissions based on the role being created
-    if user_data.role == models.UserRole.SUPER_USER:
-        if current_user.role != models.UserRole.SUPER_USER:
+    """
+    Create a new user account with role-based permissions.
+
+    Only authorized users can create new accounts:
+    - Super User → can create any role
+    - Admin User → can create General Users only
+    - General User → cannot create users
+
+    Features:
+    - Validates duplicate email/username
+    - Hashes password securely (bcrypt)
+    - Enforces role-based creation rules
+    - Initializes user point account (0 points)
+    - Tracks creator info for audit
+
+    Raises:
+    - 400: Invalid input
+    - 403: Permission denied
+    - 409: User already exists
+    - 500: Database error
+    """
+
+    try:
+        # Validate permissions based on the role being created
+        if user_data.role == models.UserRole.SUPER_USER:
+            if current_user.role != models.UserRole.SUPER_USER:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only super users can create super users"
+                )
+        elif user_data.role == models.UserRole.ADMIN_USER:
+            if current_user.role not in [models.UserRole.SUPER_USER]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only super users can create admin users"
+                )
+        # General users can be created by super users and admin users
+        elif user_data.role == models.UserRole.GENERAL_USER:
+            if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions to create users"
+                )
+        
+        # Check if user already exists
+        existing_user = db.query(models.User).filter(
+            (models.User.email == user_data.email) | 
+            (models.User.username == user_data.username)
+        ).first()
+        
+        if existing_user:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super users can create super users"
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User with this email or username already exists"
             )
-    elif user_data.role == models.UserRole.ADMIN_USER:
-        if current_user.role not in [models.UserRole.SUPER_USER]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super users can create admin users"
-            )
-    # General users can be created by super users and admin users
-    elif user_data.role == models.UserRole.GENERAL_USER:
-        if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to create users"
-            )
-    
-    # Check if user already exists
-    existing_user = db.query(models.User).filter(
-        (models.User.email == user_data.email) | 
-        (models.User.username == user_data.username)
-    ).first()
-    
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User with this email or username already exists"
+        
+        # Create the user
+        hashed_password = pwd_context.hash(user_data.password)
+        new_user = models.User(
+            id=secrets.token_hex(5),
+            username=user_data.username,
+            email=user_data.email,
+            hashed_password=hashed_password,
+            role=user_data.role,
+            is_active=True,
+            created_by=f"{current_user.role.value}: {current_user.email}",
+            created_at=datetime.utcnow()
         )
-    
-    # Create the user
-    hashed_password = pwd_context.hash(user_data.password)
-    new_user = models.User(
-        id=secrets.token_hex(5),
-        username=user_data.username,
-        email=user_data.email,
-        hashed_password=hashed_password,
-        role=user_data.role,
-        is_active=True,
-        created_by=f"{current_user.role.value}: {current_user.email}",
-        created_at=datetime.utcnow()
-    )
-    
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    # Create initial user points
-    user_points = models.UserPoint(
-        user_id=new_user.id,
-        current_points=0,
-        total_points=0,
-        paid_status="Unpaid"
-    )
-    db.add(user_points)
-    db.commit()
-    
-    return {
-        "id": new_user.id,
-        "username": new_user.username,
-        "email": new_user.email,
-        "user_status": new_user.role,
-        "available_points": 0,
-        "total_points": 0,
-        "active_supplier": [],
-        "created_at": new_user.created_at,
-        "updated_at": new_user.updated_at,
-        "need_to_next_upgrade": "It function is not implemented yet",
-    }
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        # Create initial user points
+        user_points = models.UserPoint(
+            user_id=new_user.id,
+            current_points=0,
+            total_points=0,
+            paid_status="Unpaid"
+        )
+        db.add(user_points)
+        db.commit()
+        
+        return {
+            "id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "user_status": new_user.role,
+            "available_points": 0,
+            "total_points": 0,
+            "active_supplier": [],
+            "created_at": new_user.created_at,
+            "updated_at": new_user.updated_at,
+            "need_to_next_upgrade": "It function is not implemented yet",
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        # Handle any unexpected database or other errors
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while creating the user: {str(e)}"
+        )
 
 
 @router.post(
-    "/create_super_user", response_model=SuperUserResponse, include_in_schema=False
+    "/create_super_user", response_model=SuperUserResponse
 )
 def create_super_admin(
     user_data: dict,
@@ -287,14 +345,31 @@ def create_super_admin(
 
 
 @router.post(
-    "/create_admin_user", response_model=AdminUserResponse, include_in_schema=False
+    "/create_admin_user", response_model=AdminUserResponse
 )
 def create_admin_user(
     admin_data: dict,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Create an admin user (only accessible by super_user)."""
+    """
+    Create a new Admin User (Super User only).
+
+    This endpoint allows Super Users to create new Admin accounts with 
+    validated credentials and secure password hashing.
+
+    Features:
+    - Accessible only by Super Users
+    - Validates duplicate username/email
+    - Hashes password securely
+    - Supports both service-based and fallback creation logic
+
+    Raises:
+    - 400: Invalid input or duplicate user
+    - 403: Unauthorized (not a Super User)
+    - 500: Unexpected database or internal error
+    """
+
     try:
         # Use the enhanced user service for better validation and error handling
         user_service = UserService(db)
@@ -407,13 +482,30 @@ def create_admin_user(
         }
 
 
-@router.post("/create_general_user", response_model=User, include_in_schema=False)
+@router.post("/create_general_user", response_model=User)
 def create_general_user(
     user_data: dict,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Create a general user (only accessible by super_user or admin_user)."""
+    """
+    Create a new General User (Super User or Admin User only).
+
+    This endpoint lets Super or Admin users create General User accounts 
+    with proper validation and secure password hashing.
+
+    Features:
+    - Accessible by Super Users and Admin Users
+    - Validates unique email and username
+    - Hashes password securely
+    - Tracks creator role and email
+
+    Raises:
+    - 400: Invalid input or duplicate user
+    - 403: Unauthorized (not Super/Admin User)
+    - 500: Internal or database error
+    """
+
     try:
         # Use the enhanced user service for better validation and error handling
         user_service = UserService(db)
@@ -528,158 +620,225 @@ def create_general_user(
         }
 
 
-@router.post("/points/give", include_in_schema=False)
+@router.post("/points/give")
 def give_points(
     request: GivePointsRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Give points to another user based on allocation type."""
+    """
+    Allocate points from one user to another based on predefined packages.
+
+    Authorized Roles:
+    - Super User: Can give points to anyone (unlimited balance)
+    - Admin User: Can give points only to General Users (deducts from balance)
+    - General User: Cannot give points
+
+    Point Packages:
+    - ADMIN_USER_PACKAGE → 4,000,000
+    - ONE_YEAR_PACKAGE → 1,000,000
+    - ONE_MONTH_PACKAGE → 80,000
+    - PER_REQUEST_POINT → 10,000
+    - GUEST_POINT → 1,000
+
+    Business Rules:
+    - Admin → General only
+    - Super Users → No point deduction
+    - All transactions logged with audit trail
+
+    Raises:
+    - 400: Invalid package or insufficient balance
+    - 403: Unauthorized role or permission
+    - 404: Receiver not found
+    - 500: Database error
+    """
+
+    
     # Validate giver's role
     if current_user.role not in [
-        models.UserRole.SUPER_USER,
-        models.UserRole.ADMIN_USER,
-    ]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user or admin_user can give points.",
-        )
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user or admin_user can give points.",
+            )
 
-    # Find the receiver by email
-    receiver = (
-        db.query(models.User)
-        .filter(
-            models.User.email == request.receiver_email,
-            models.User.id == request.receiver_id,
-        )
-        .first()
-    )
-    if not receiver or not receiver.email:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Receiver not found or receiver does not have a valid email.",
-        )
-
-    # Ensure admin_user can only give points to general_user
-    if (
-        current_user.role == models.UserRole.ADMIN_USER
-        and receiver.role != models.UserRole.GENERAL_USER
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin users can only give points to general users.",
-        )
-
-    # Get or create user points for receiver
-    receiver_points = (
-        db.query(models.UserPoint)
-        .filter(models.UserPoint.user_id == receiver.id)
-        .first()
-    )
-    if not receiver_points:
-        receiver_points = models.UserPoint(
-            user_id=receiver.id,
-            user_email=receiver.email,  # Set email when creating
-            total_points=0,
-            current_points=0,
-            total_used_points=0,
-        )
-        db.add(receiver_points)
-    # Always ensure email is set for existing records
-    receiver_points.user_email = receiver.email
-
-    # Determine points based on allocation type
-    if request.allocation_type == models.PointAllocationType.ADMIN_USER_PACKAGE:
-        points = 4000000
-    elif request.allocation_type == models.PointAllocationType.ONE_YEAR_PACKAGE:
-        points = 1000000
-    elif request.allocation_type == models.PointAllocationType.ONE_MONTH_PACKAGE:
-        points = 80000
-    elif request.allocation_type == models.PointAllocationType.PER_REQUEST_POINT:
-        points = 10000
-    elif request.allocation_type == models.PointAllocationType.GUEST_POINT:
-        points = 1000
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid allocation type."
-        )
-
-    # Super users have unlimited points, skip deduction
-    if current_user.role != models.UserRole.SUPER_USER:
-        giver_points = (
-            db.query(models.UserPoint)
-            .filter(models.UserPoint.user_id == current_user.id)
+        # Find the receiver by email
+        receiver = (
+            db.query(models.User)
+            .filter(
+                models.User.email == request.receiver_email,
+                models.User.id == request.receiver_id,
+            )
             .first()
         )
-        if not giver_points or giver_points.current_points < points:
+        
+        if not receiver or not receiver.email:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient points to give.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Receiver not found or receiver does not have a valid email.",
             )
-        # Deduct from giver
-        giver_points.current_points -= points
-        giver_points.total_used_points += points
 
-    # Add to receiver
-    receiver_points.total_points += points
-    receiver_points.current_points += points
+        # Ensure admin_user can only give points to general_user
+        if (
+            current_user.role == models.UserRole.ADMIN_USER
+            and receiver.role != models.UserRole.GENERAL_USER
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin users can only give points to general users.",
+            )
 
-    # Update receiver's created_by field based on giver's role
-    if current_user.role == models.UserRole.ADMIN_USER:
-        receiver.created_by = f"admin_user: {current_user.email}"
-    elif current_user.role == models.UserRole.SUPER_USER:
-        receiver.created_by = f"super_user: {current_user.email}"
+        # Get or create user points for receiver
+        receiver_points = (
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == receiver.id)
+            .first()
+        )
+        if not receiver_points:
+            receiver_points = models.UserPoint(
+                user_id=receiver.id,
+                user_email=receiver.email,  # Set email when creating
+                total_points=0,
+                current_points=0,
+                total_used_points=0,
+            )
+            db.add(receiver_points)
+        # Always ensure email is set for existing records
+        receiver_points.user_email = receiver.email
 
-    # Log the transaction with emails
-    transaction = models.PointTransaction(
-        giver_id=current_user.id,
-        receiver_id=receiver.id,
-        giver_email=current_user.email,
-        receiver_email=receiver.email,
-        points=points,
-        transaction_type=request.allocation_type.value,
-        created_at=datetime.utcnow(),
-    )
-    db.add(transaction)
-    db.commit()
+        # Determine points based on allocation type
+        if request.allocation_type == models.PointAllocationType.ADMIN_USER_PACKAGE:
+            points = 4000000
+        elif request.allocation_type == models.PointAllocationType.ONE_YEAR_PACKAGE:
+            points = 1000000
+        elif request.allocation_type == models.PointAllocationType.ONE_MONTH_PACKAGE:
+            points = 80000
+        elif request.allocation_type == models.PointAllocationType.PER_REQUEST_POINT:
+            points = 10000
+        elif request.allocation_type == models.PointAllocationType.GUEST_POINT:
+            points = 1000
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid allocation type."
+            )
 
-    return {"message": f"Successfully gave {points} points to {receiver.username}."}
+        # Super users have unlimited points, skip deduction
+        if current_user.role != models.UserRole.SUPER_USER:
+            giver_points = (
+                db.query(models.UserPoint)
+                .filter(models.UserPoint.user_id == current_user.id)
+                .first()
+            )
+            if not giver_points or giver_points.current_points < points:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Insufficient points to give.",
+                )
+            # Deduct from giver
+            giver_points.current_points -= points
+            giver_points.total_used_points += points
+
+        # Add to receiver
+        receiver_points.total_points += points
+        receiver_points.current_points += points
+
+        # Update receiver's created_by field based on giver's role
+        if current_user.role == models.UserRole.ADMIN_USER:
+            receiver.created_by = f"admin_user: {current_user.email}"
+        elif current_user.role == models.UserRole.SUPER_USER:
+            receiver.created_by = f"super_user: {current_user.email}"
+
+        # Log the transaction with emails
+        transaction = models.PointTransaction(
+            giver_id=current_user.id,
+            receiver_id=receiver.id,
+            giver_email=current_user.email,
+            receiver_email=receiver.email,
+            points=points,
+            transaction_type=request.allocation_type.value,
+            created_at=datetime.utcnow(),
+        )
+        db.add(transaction)
+        db.commit()
+
+        return {"message": f"Successfully gave {points} points to {receiver.username}."}
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        # Handle any unexpected database or other errors
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while allocating points: {str(e)}"
+        )
 
 
-@router.post("/reset_point/{user_id}/", include_in_schema=False)
+@router.post("/reset_point/{user_id}/")
 def reset_user_point(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Reset all points for the specified user to 0.
-    Only super_user or admin_user can reset points.
+    Reset a user's points to zero.
+
+    Roles Allowed:
+        - super_user
+        - admin_user
+
+    Effects:
+        - total_points → 0
+        - current_points → 0
+        - total_used_points → 0
+
+    Raises:
+        403 → Unauthorized role
+        404 → User points not found
+        500 → DB error
     """
-    if current_user.role not in [
-        models.UserRole.SUPER_USER,
-        models.UserRole.ADMIN_USER,
-    ]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user or admin_user can reset points.",
+    try:
+        # Validate user permissions
+        if current_user.role not in [
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user or admin_user can reset points.",
+            )
+
+        # Find user points record
+        user_points = (
+            db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).first()
         )
+        if not user_points:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User points not found.",
+            )
 
-    user_points = (
-        db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).first()
-    )
-    if not user_points:
+        # Reset all point values to zero
+        user_points.total_points = 0
+        user_points.current_points = 0
+        user_points.total_used_points = 0
+        db.commit()
+
+        return {"message": f"Points for user {user_id} have been reset to 0."}
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        # Handle any unexpected database or other errors
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User points not found.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while resetting user points: {str(e)}"
         )
-
-    user_points.total_points = 0
-    user_points.current_points = 0
-    user_points.total_used_points = 0
-    db.commit()
-
-    return {"message": f"Points for user {user_id} have been reset to 0."}
 
 
 @router.get("/points/check/me")
@@ -687,84 +846,109 @@ def check_point_details(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Get point details for the current user, grouped by received and used points."""
-    user_points = (
-        db.query(models.UserPoint)
-        .filter(models.UserPoint.user_id == current_user.id)
-        .first()
-    )
-    total = user_points.total_points if user_points else 0
-    current = user_points.current_points if user_points else 0
-    used = user_points.total_used_points if user_points else 0
-    user_email = getattr(user_points, "user_email", None) if user_points else None
+    """
+    Get the current user's point balance and transaction history.
 
-    # Get all transactions for the user
-    transactions = (
-        db.query(models.PointTransaction)
-        .filter(
-            (models.PointTransaction.giver_id == current_user.id)
-            | (models.PointTransaction.receiver_id == current_user.id)
+    Returns:
+        - total_points: Total earned points
+        - current_points: Available points
+        - total_points_used: Points spent
+        - transactions:
+            - get_point_history → Points received
+            - uses_request_history → Points used for requests
+
+    Roles:
+        - All authenticated users
+
+    Raises:
+        401 → Unauthorized
+        500 → Internal server/database error
+    """
+        # Get user points information
+        user_points = (
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == current_user.id)
+            .first()
         )
-        .all()
-    )
+        total = user_points.total_points if user_points else 0
+        current = user_points.current_points if user_points else 0
+        used = user_points.total_used_points if user_points else 0
+        user_email = getattr(user_points, "user_email", None) if user_points else None
 
-    # Group transactions
-    get_point_history = []
-    uses_request_history = []
-
-    total_used_point = 0
-    for t in transactions:
-        # Points received (current user is receiver)
-        if t.receiver_id == current_user.id and t.transaction_type != "deduction":
-            get_point_history.append(
-                {
-                    "id": t.id,
-                    "giver_id": t.giver_id,
-                    "giver_email": t.giver_email,
-                    "receiver_id": t.receiver_id,
-                    "receiver_email": t.receiver_email,
-                    "points": t.points,
-                    "transaction_type": t.transaction_type,
-                    "created_at": t.created_at,
-                }
+        # Get all transactions for the user
+        transactions = (
+            db.query(models.PointTransaction)
+            .filter(
+                (models.PointTransaction.giver_id == current_user.id)
+                | (models.PointTransaction.receiver_id == current_user.id)
             )
-            total_used_point += t.points
-        # Points used (current user is giver and type is deduction)
-        elif t.giver_id == current_user.id and t.transaction_type == "deduction":
-            uses_request_history.append(
+            .all()
+        )
+
+        # Group transactions by type
+        get_point_history = []
+        uses_request_history = []
+
+        total_used_point = 0
+        for t in transactions:
+            # Points received (current user is receiver)
+            if t.receiver_id == current_user.id and t.transaction_type != "deduction":
+                get_point_history.append(
+                    {
+                        "id": t.id,
+                        "giver_id": t.giver_id,
+                        "giver_email": t.giver_email,
+                        "receiver_id": t.receiver_id,
+                        "receiver_email": t.receiver_email,
+                        "points": t.points,
+                        "transaction_type": t.transaction_type,
+                        "created_at": t.created_at,
+                    }
+                )
+                total_used_point += t.points
+            # Points used (current user is giver and type is deduction)
+            elif t.giver_id == current_user.id and t.transaction_type == "deduction":
+                uses_request_history.append(
+                    {
+                        "id": t.id,
+                        "user_id": t.giver_id,
+                        "user_email": t.giver_email,
+                        "point_used": t.points,
+                        "total_request": (
+                            t.points // 10 if t.points else 0
+                        ),  # Assuming 10 points per request
+                        "transaction_type": t.transaction_type,
+                        "created_at": t.created_at,
+                    }
+                )
+
+        data = {
+            "user_mail": user_email,
+            "total_points": total,
+            "current_points": current,
+            "total_points_used": used,
+            "transactions": [
                 {
-                    "id": t.id,
-                    "user_id": t.giver_id,
-                    "user_email": t.giver_email,
-                    "point_used": t.points,
-                    "total_request": (
-                        t.points // 10 if t.points else 0
-                    ),  # Assuming 10 points per request
-                    "transaction_type": t.transaction_type,
-                    "created_at": t.created_at,
-                }
-            )
+                    "user_name": current_user.username,
+                    "user_id": current_user.id,
+                    "total_used_point": total_used_point,
+                    "get_point_history": get_point_history,
+                },
+                {"uses_request_history": uses_request_history},
+            ],
+        }
 
-    data = {
-        "user_mail": user_email,
-        "total_points": total,
-        "current_points": current,
-        "total_points_used": used,
-        "transactions": [
-            {
-                "user_name": current_user.username,
-                "user_id": current_user.id,
-                "total_used_point": total_used_point,
-                "get_point_history": get_point_history,
-            },
-            {"uses_request_history": uses_request_history},
-        ],
-    }
-
-    return data
+        return data
+        
+    except Exception as e:
+        # Handle any unexpected database or other errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving point details: {str(e)}"
+        )
 
 
-@router.get("/check/all", include_in_schema=False)
+@router.get("/check/all")
 def check_all_users(
     page: Optional[int] = Query(None, ge=1, description="Page number for pagination"),
     limit: Optional[int] = Query(None, ge=1, le=100, description="Items per page"),
@@ -774,9 +958,24 @@ def check_all_users(
 ):
     """
     Get all users created by the current user.
-    Works for both SUPER_USER and ADMIN_USER.
-    Includes user points, activity, and active suppliers.
-    Now supports optional pagination and search for enhanced functionality.
+
+    Supports:
+        - Pagination (page, limit)
+        - Search (username/email)
+        - Role filtering (SUPER_USER, ADMIN_USER)
+
+    Returns:
+        - root_user: Requesting user's info
+        - super_users, admin_users, general_users
+        - pagination: Page info (page, total, total_pages, etc.)
+
+    Roles:
+        - super_user
+        - admin_user
+
+    Raises:
+        403 → Access denied for general users
+        500 → Internal error
     """
 
     # --- Access control ---
@@ -1030,15 +1229,25 @@ def convert_to_legacy_format(user_response: UserListResponse):
 #     return response
 
 
-@router.get("/check/user_info/{user_id}", include_in_schema=False)
+@router.get("/check/user_info/{user_id}")
 def check_user_info(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Only show user info if the user was created by the current user (super or admin).
+    Retrieve detailed info for a specific user.
+
+    - Access restricted to SUPER_USER or ADMIN_USER.
+    - Only returns info for users created by the current user.
+
+    Returns:
+    - User ID, username, email
+    - Role, active status, created_by
+    - Points summary (total, current, paid status, total RQ)
+    - Recent activity status (using_rq_status)
     """
+
     if current_user.role not in [
         models.UserRole.SUPER_USER,
         models.UserRole.ADMIN_USER,
@@ -1099,27 +1308,55 @@ def active_my_supplier(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Return a list of active suppliers (provider names) for the current user.
-    Admin and super users have access to all suppliers.
+    Retrieve the list of active suppliers accessible to the current user.
+
+    - Admin/Super Users have access to all suppliers.
+    - General Users get only their assigned suppliers.
+
+    Returns:
+    - Admin/Super Users: {"my_supplier": "Active all supplier."}
+    - General Users: {"my_supplier": ["supplier1", "supplier2", ...]}
+
+    Raises:
+    - 404: If a General User has no suppliers assigned
+    - 500: On unexpected errors (e.g., database issues)
+
+    Role-Based Access:
+    - SUPER_USER / ADMIN_USER: All suppliers
+    - General User: Only assigned suppliers
     """
-    # Admin and super users have access to all suppliers
-    if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
-        return {"my_supplier": "Active all supplier."}
-    
-    # Regular users get their specific supplier permissions
-    suppliers = [
-        perm.provider_name
-        for perm in db.query(models.UserProviderPermission)
-        .filter(models.UserProviderPermission.user_id == current_user.id)
-        .all()
-    ]
-    unique_suppliers = list(set(suppliers))
-    if not unique_suppliers:
+
+    try:
+        # Admin and super users have access to all suppliers
+        if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+            return {"my_supplier": "Active all supplier."}
+        
+        # Regular users get their specific supplier permissions
+        suppliers = [
+            perm.provider_name
+            for perm in db.query(models.UserProviderPermission)
+            .filter(models.UserProviderPermission.user_id == current_user.id)
+            .all()
+        ]
+        unique_suppliers = list(set(suppliers))
+        
+        if not unique_suppliers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No active suppliers found. Please contact your admin.",
+            )
+            
+        return {"my_supplier": unique_suppliers}
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        # Handle any unexpected database or other errors
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active suppliers found. Please contact your admin.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving supplier information: {str(e)}"
         )
-    return {"my_supplier": unique_suppliers}
 
 
 @router.get("/get_list_of_available_suppliers")
@@ -1128,18 +1365,48 @@ def get_list_of_available_suppliers(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Return a list of all unique supplier (provider_name) values from provider_mappings.
+    Retrieve a list of all available suppliers in the system.
+
+    - Returns unique supplier names from provider mappings.
+    - Useful for system overview, admin tasks, and UI supplier selection.
+
+    Returns:
+    - dict with:
+        - total_supplier: Total count of unique suppliers
+        - supplier_list: List of supplier names
+
+    Raises:
+    - 404: If no suppliers are found
+    - 500: On unexpected errors (e.g., database issues)
+
+    Access:
+    - Any authenticated user can access this endpoint.
     """
-    suppliers = [
-        row.provider_name
-        for row in db.query(models.ProviderMapping.provider_name).distinct().all()
-    ]
-    if not suppliers:
+
+    try:
+        # Get all unique supplier names from provider mappings
+        suppliers = [
+            row.provider_name
+            for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+        ]
+        
+        if not suppliers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suppliers found. Please contact your admin.",
+            )
+            
+        return {"total_supplier": len(suppliers), "supplier_list": suppliers}
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        # Handle any unexpected database or other errors
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No suppliers found. Please contact your admin.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving supplier list: {str(e)}"
         )
-    return {"total_supplier": len(suppliers), "supplier_list": suppliers}
 
 
 # ===== ENHANCED USER MANAGEMENT ENDPOINTS =====
@@ -1157,38 +1424,31 @@ async def get_users_paginated(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Retrieve a paginated list of users based on comprehensive filtering and sorting criteria.
+    Retrieve a paginated list of users with filtering and sorting.
 
-    This endpoint is used to fetch a list of user accounts, allowing for pagination,
-    keyword searching across username and email, filtering by user role and active status,
-    and sorting results by specified fields and order.
+    - Only accessible by SUPER_USER or ADMIN_USER.
+    - Supports pagination, keyword search, role and active status filtering, and sorting.
 
-    ---
-    ### 🔒 **RESTRICTED ACCESS**
-    Only **Super Users** and **Admin Users** are authorized to access this endpoint.
+    Parameters:
+    - page (int): Page number (≥1)
+    - limit (int): Items per page (1–100)
+    - search (str, optional): Search by username or email
+    - role (UserRole, optional): Filter by user role
+    - is_active (bool, optional): Filter by active status
+    - sort_by (str, optional): Field to sort by (default: "created_at")
+    - sort_order (str, optional): "asc" or "desc" (default: "desc")
+    - current_user (User): Authenticated user
+    - db (Session): Database session
 
-    ### **Parameters**
-    - `page` (int): The current page number to retrieve. Must be $1$ or greater.
-    - `limit` (int): The maximum number of items to return per page. Must be between $1$ and $100$.
-    - `search` (Optional[str]): A keyword to filter users by partial match on `username` or `email`.
-    - `role` (Optional[models.UserRole]): An exact user role to filter by (e.g., 'ADMIN_USER', 'STANDARD_USER').
-    - `is_active` (Optional[bool]): A boolean flag to filter users by their active status (`True` for active, `False` for inactive).
-    - `sort_by` (Optional[str]): The field name to sort the results by (e.g., 'created_at', 'username', 'email'). Defaults to 'created_at'.
-    - `sort_order` (Optional[str]): The direction for sorting: 'asc' for ascending or 'desc' for descending. Defaults to 'desc'.
-    - `current_user` (models.User): The authenticated user making the request (Dependency).
-    - `db` (Session): The database session (Dependency).
+    Returns:
+    - PaginatedUserResponse: Users list with pagination metadata
 
-    ### **Returns**
-    - `PaginatedUserResponse`: An object containing the list of users for the requested page,
-      along with pagination metadata (total items, total pages, current page, etc.).
-
-    ### **Responses**
-    - **200 OK**: Successfully returned the paginated list of users.
-    - **400 BAD REQUEST**: If sorting parameters (`sort_by`, `sort_order`) are invalid, or if other query parameters violate constraints (e.g., `limit` out of range).
-    - **401 UNAUTHORIZED**: If the request lacks valid authentication credentials.
-    - **403 FORBIDDEN**: If the authenticated user's role is not `SUPER_USER` or `ADMIN_USER`.
-    - **500 INTERNAL SERVER ERROR**: A generic error occurred on the server while processing the request.
+    Raises:
+    - 403: If user is not SUPER_USER or ADMIN_USER
+    - 400: Invalid query parameters
+    - 500: Server error
     """
+
     
     # 🔒 SECURITY CHECK: Only super users and admin users can access user list
     if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
@@ -1233,9 +1493,21 @@ async def get_user_statistics(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get comprehensive user statistics for dashboard metrics.
-    Returns counts by role, activity status, and point distribution.
+    Retrieve comprehensive user statistics for dashboard metrics.
+
+    - Returns counts grouped by role, active status, and points distribution.
+    - Useful for admin dashboards and reporting.
+
+    Access:
+    - Requires authentication.
+
+    Returns:
+    - UserStatistics: Aggregated statistics for all users.
+
+    Raises:
+    - 500: If an unexpected error occurs during data retrieval.
     """
+ 
     try:
         user_service = UserService(db)
         statistics = user_service.get_user_statistics(current_user)
@@ -1255,8 +1527,24 @@ async def get_user_details(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get detailed user information including points, activity, and recent transactions.
+    Retrieve detailed information for a specific user.
+
+    - Includes points summary, activity status, and recent transactions.
+    - Access restricted to authorized users with permission to view the target user.
+
+    Parameters:
+    - user_id (str): The ID of the user to retrieve
+    - current_user (User): Authenticated user
+    - db (Session): Database session
+
+    Returns:
+    - UserDetailResponse: Detailed user information
+
+    Raises:
+    - 404: If user is not found or access is denied
+    - 500: On unexpected server or database errors
     """
+
     try:
         user_service = UserService(db)
         user_details = user_service.get_user_with_details(user_id, current_user)
@@ -1286,8 +1574,25 @@ async def get_user_activity(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Get user activity and analytics for specified time period.
+    Retrieve user activity and analytics for a specified time period.
+
+    - Returns activity data for the past `days` (default 30), including relevant metrics.
+    - Access restricted to users authorized to view the target user's activity.
+
+    Parameters:
+    - user_id (str): ID of the user
+    - days (int, optional): Number of days to look back (1–365, default 30)
+    - current_user (User): Authenticated user
+    - db (Session): Database session
+
+    Returns:
+    - UserActivityResponse: Activity data and analytics
+
+    Raises:
+    - 404: If user is not found or access is denied
+    - 500: On unexpected server or database errors
     """
+
     try:
         user_service = UserService(db)
         activity = user_service.get_user_activity(user_id, days, current_user)
@@ -1316,9 +1621,29 @@ async def bulk_user_operations(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Perform bulk user operations for administrative tasks.
-    Supports create, update, and delete operations in batch.
+    Perform bulk user operations (create, update, delete) in a single request.
+
+    - Only SUPER_USER or ADMIN_USER can perform these operations.
+    - Supports multiple operations with individual success/error tracking.
+
+    Parameters:
+    - operations (BulkUserOperationRequest): List of operations to perform
+    - current_user (User): Authenticated user performing the operations
+    - db (Session): Database session
+
+    Returns:
+    - dict: Summary of operations, including:
+        - total_operations: Total requested
+        - successful_operations: Count of successful operations
+        - failed_operations: Count of failed operations
+        - results: Details of successful operations
+        - errors: Details of failed operations
+
+    Raises:
+    - 403: If current user lacks sufficient permissions
+    - 500: On unexpected server or database errors
     """
+
     # Check permissions
     if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
         raise HTTPException(
@@ -1394,9 +1719,27 @@ async def update_user(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Update user with enhanced validation and partial update support.
-    Supports updating username, email, password, role, and active status.
+    Update an existing user with validation and partial updates.
+
+    - Supports updating username, email, password, role, and active status.
+    - Validates permissions and data before applying changes.
+
+    Parameters:
+    - user_id (str): ID of the user to update
+    - user_updates (UserUpdateRequest): Fields to update
+    - current_user (User): Authenticated user performing the update
+    - db (Session): Database session
+
+    Returns:
+    - UserListResponse: The updated user information
+
+    Raises:
+    - 403: If current user lacks permission to update
+    - 400: If input data is invalid
+    - 404: If the user does not exist
+    - 500: On unexpected server or database errors
     """
+
     try:
         user_service = UserService(db)
         updated_user = user_service.update_user_with_validation(user_id, user_updates, current_user)
@@ -1436,9 +1779,30 @@ async def delete_user(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Delete user with proper cleanup and confirmation.
-    Removes all related data including points, permissions, and sessions.
+    Delete a user and clean up all related data.
+
+    - Removes user points, permissions, sessions, and other related records.
+    - Access controlled: only authorized users can delete.
+
+    Parameters:
+    - user_id (str): ID of the user to delete
+    - current_user (User): Authenticated user performing the deletion
+    - db (Session): Database session
+
+    Returns:
+    - dict: Confirmation of deletion, including:
+        - deleted_user_id
+        - deleted_by
+        - deleted_at
+        - message
+
+    Raises:
+    - 403: If current user lacks permission
+    - 400: If input data is invalid
+    - 404: If the user does not exist
+    - 500: On unexpected server or database errors
     """
+
     try:
         user_service = UserService(db)
         success = user_service.delete_user_with_cleanup(user_id, current_user)
@@ -1483,9 +1847,26 @@ async def create_user_enhanced(
     db: Annotated[Session, Depends(get_db)] = None,
 ):
     """
-    Enhanced user creation endpoint with comprehensive validation.
-    Supports creating users with proper role validation and error handling.
+    Create a new user with enhanced validation and role checks.
+
+    - Validates input data, role permissions, and uniqueness.
+    - Provides detailed error handling for common issues.
+
+    Parameters:
+    - user_data (UserCreateRequest): Data for the new user
+    - current_user (User): Authenticated user performing the creation
+    - db (Session): Database session
+
+    Returns:
+    - UserListResponse: The newly created user information
+
+    Raises:
+    - 403: If current user lacks permission to create the user
+    - 409: If a user with the same email or username already exists
+    - 400: If input data is invalid
+    - 500: On unexpected server or database errors
     """
+
     try:
         user_service = UserService(db)
         created_user = user_service.create_user_with_validation(user_data, current_user)
