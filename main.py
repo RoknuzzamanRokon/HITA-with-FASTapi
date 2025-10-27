@@ -47,6 +47,7 @@ from security.middleware import create_security_middleware_stack
 from middleware.ip_middleware import IPAddressMiddleware
 
 
+
 app = FastAPI()
 create_security_middleware_stack(app)
 
@@ -152,5 +153,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Mount static files using the absolute path
 static_dir = os.path.join(BASE_DIR, "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# Override the default docs endpoint to use our custom HTML from custom_openapi
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """Custom Swagger UI with enhanced styling and features"""
+    from custom_openapi import create_custom_swagger_ui_response
+    return create_custom_swagger_ui_response(app)
+
 # Apply the custom OpenAPI schema
 app.openapi = lambda: custom_openapi(app)

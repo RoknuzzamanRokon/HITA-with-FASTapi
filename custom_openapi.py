@@ -4,20 +4,400 @@ from fastapi.openapi.utils import get_openapi
 
 
 def custom_openapi(app: FastAPI):
-    if app.openapi_schema:
-        return app.openapi_schema
+    # Force regeneration of schema for development (comment out for production)
+    # if app.openapi_schema:
+    #     return app.openapi_schema
     
     # Generate base schema
     openapi_schema = get_openapi(
-        title="Hotel API - User Management System",
-        version="V1.0",
-        description="""
-        ## Hotel API - Enhanced User Management System
-        
-        A comprehensive API for managing hotels, users, and point systems with enhanced features for dashboard integration.
-        """,
+        title=app.title,
+        version=app.version,
+        description=app.description,
         routes=app.routes,
     )
+    
+    # Manually add tags metadata - Define it here to ensure it's included
+    tags_metadata = [
+        {
+            "name": "Authentication",
+            "description": """
+## 🔐 Authentication & Authorization API
+
+**Comprehensive user authentication, authorization, and API key management system**
+
+This API module provides complete user authentication, JWT token management, API key generation, and role-based access control for the hotel booking system. It ensures secure access to all system resources with comprehensive user management capabilities.
+
+### 🔑 Key Features
+
+**🔓 User Authentication:**
+- JWT-based authentication with access and refresh tokens
+- OAuth2 password flow implementation
+- Secure password hashing and validation
+- Multi-device session management
+- Token refresh and automatic renewal
+
+**🔑 API Key Management:**
+- Personal API key generation and management
+- Administrative API key management for users
+- API key revocation and regeneration
+- Secure API key authentication alongside JWT
+
+**👥 User Registration & Management:**
+- User registration with email validation
+- User profile management and updates
+- Account activation and deactivation
+- Role-based user categorization
+
+**🛡️ Security & Access Control:**
+- Role-based access control (Super User, Admin, General User)
+- Secure logout with token invalidation
+- Multi-device logout functionality
+- Comprehensive audit logging for security events
+
+**⚙️ Administrative Functions:**
+- Super user management capabilities
+- User activation and deactivation controls
+- Bulk user operations and management
+- System health monitoring for authentication services
+
+### 🎯 Available Operations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/token` | POST | Login and obtain JWT access/refresh tokens |
+| `/refresh` | POST | Refresh expired access tokens |
+| `/register` | POST | Register new user accounts |
+| `/logout` | POST | Logout from current device |
+| `/logout_all` | POST | Logout from all devices |
+| `/me` | GET | Get current user profile information |
+| `/regenerate_api_key` | POST | Regenerate personal API key |
+| `/generate_api_key/{user_id}` | POST | Generate API key for specific user (Admin) |
+| `/revoke_api_key/{user_id}` | DELETE | Revoke API key for specific user (Admin) |
+| `/health` | GET | Authentication service health check |
+| `/super/users` | GET | Get all users (Super User only) |
+| `/super/users/{user_id}/activate` | PUT | Activate/deactivate user accounts (Admin) |
+| `/apikey/me` | GET | Get user profile using API key authentication |
+
+### 🔄 Authentication Flow
+
+1. **Registration** → Create new user account with email validation
+2. **Login** → Authenticate with credentials and receive JWT tokens
+3. **Access Resources** → Use access token for API requests
+4. **Token Refresh** → Refresh expired tokens using refresh token
+5. **API Key Usage** → Alternative authentication using personal API keys
+6. **Logout** → Invalidate tokens and end session
+
+### 🛡️ Security Features
+
+**Token Security:**
+- JWT tokens with configurable expiration times
+- Secure token storage and validation
+- Automatic token refresh mechanisms
+- Token blacklisting for logout functionality
+
+**Password Security:**
+- Bcrypt password hashing with salt
+- Password strength validation
+- Secure password reset mechanisms
+- Protection against brute force attacks
+
+**API Key Security:**
+- Cryptographically secure API key generation
+- API key scoping and permissions
+- Secure key storage and validation
+- Key rotation and revocation capabilities
+
+### 👤 User Roles & Permissions
+
+**Super User:**
+- Full system access and administrative privileges
+- User management and activation controls
+- API key management for all users
+- System configuration and monitoring
+
+**Admin User:**
+- User management within their scope
+- API key generation for managed users
+- Access to administrative functions
+- User activation and deactivation
+
+**General User:**
+- Personal profile management
+- Personal API key management
+- Access to assigned resources
+- Basic authentication functions
+
+### 🔒 Security Best Practices
+
+- All passwords are hashed using bcrypt with salt
+- JWT tokens include user role and permissions
+- API keys are generated using cryptographically secure methods
+- All authentication events are logged for audit purposes
+- Rate limiting and brute force protection implemented
+- Secure token storage and transmission protocols
+
+### 📊 Authentication Analytics
+
+- User login/logout tracking and analytics
+- Failed authentication attempt monitoring
+- API key usage statistics and monitoring
+- Session duration and activity tracking
+- Security event logging and alerting
+
+### 🚨 Error Handling
+
+Comprehensive error handling with standardized HTTP status codes:
+
+- **400 Bad Request**: Invalid credentials or malformed requests
+- **401 Unauthorized**: Missing or invalid authentication tokens
+- **403 Forbidden**: Insufficient permissions for requested operation
+- **404 Not Found**: User or resource not found
+- **409 Conflict**: Duplicate user registration or conflicts
+- **422 Unprocessable Entity**: Validation errors in request data
+- **500 Internal Server Error**: System errors or authentication failures
+            """,
+        },
+        {
+            "name": "User Profile",
+            "description": """
+# 👤 User Profile & Account Management API
+
+**Comprehensive user profile management and account information system**
+
+This API module provides complete user profile management, account information retrieval, and personal data management capabilities. It enables users to manage their profiles, view account details, and access personalized information within the hotel booking system.
+
+### 🔑 Key Features
+
+**👤 Profile Management:**
+- Complete user profile information retrieval
+- Personal account details and settings
+- User activity history and engagement metrics
+- Role and permission information display
+
+**📊 Account Information:**
+- Current point balance and transaction history
+- API key management and access credentials
+- Account status and activity tracking
+- Personal preferences and settings
+
+**🔐 Security & Privacy:**
+- Secure profile data access with authentication
+- Personal information protection and validation
+- Account security status and monitoring
+- Privacy-compliant data handling
+
+**📈 Activity & Analytics:**
+- User activity history and patterns
+- Engagement metrics and statistics
+- Transaction history and point usage
+- Account usage analytics and insights
+
+### 🎯 Available Operations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1.0/user/me` | GET | Get current user profile and account information |
+
+
+### 🔄 Profile Access Flow
+
+1. **Authentication** → Authenticate using JWT token or API key
+2. **Profile Retrieval** → Access personal profile information
+3. **Account Details** → View account status, points, and settings
+4. **Activity History** → Review account activity and transactions
+5. **Security Info** → Check account security and API key status
+
+### 📋 Profile Information Included
+
+**Basic Profile Data:**
+- User ID, username, and email address
+- Full name and contact information
+- Account creation date and last login
+- User role and permission level
+
+**Account Status:**
+- Account activation status (active/inactive)
+- Email verification status
+- Account security settings
+- Login history and device information
+
+**Points & Transactions:**
+- Current point balance and total points earned
+- Point transaction history (received vs used)
+- Point allocation details and sources
+- Payment status and point usage analytics
+
+**API Access:**
+- Personal API key information and status
+- API usage statistics and limits
+- Authentication method preferences
+- Access token information and expiry
+
+**Activity & Engagement:**
+- Recent login activity and patterns
+- API request history and usage
+- Feature usage and engagement metrics
+- Account interaction statistics
+
+### 🛡️ Security & Access Control
+
+**Authentication Methods:**
+- JWT Bearer token authentication
+- API key authentication
+- Session-based authentication
+- Multi-factor authentication support
+
+**Access Levels:**
+- **Personal Access**: Users can view their own profile information
+- **Administrative Access**: Admins can view user details they manage
+- **Super User Access**: Full access to all user profile information
+- **Audit Access**: Read-only access for compliance and monitoring
+
+**Data Protection:**
+- Sensitive information masking and filtering
+- Role-based data visibility controls
+- Audit logging for profile access events
+- GDPR-compliant data handling practices
+
+### 📊 Profile Analytics
+
+**User Engagement Metrics:**
+- Login frequency and session duration
+- Feature usage patterns and preferences
+- API request patterns and frequency
+- Account activity trends over time
+
+**Account Health Indicators:**
+- Account security score and status
+- Profile completeness percentage
+- Activity level classification
+- Account risk assessment metrics
+
+**Usage Statistics:**
+- Total API requests and usage patterns
+- Point earning and spending behavior
+- Feature adoption and usage rates
+- Account growth and engagement trends
+
+### 🔧 Profile Management Features
+
+**Self-Service Capabilities:**
+- Profile information viewing and validation
+- Account status monitoring and alerts
+- Personal API key management
+- Activity history review and analysis
+
+**Administrative Functions:**
+- User profile oversight and management
+- Account status modification and control
+- Bulk user information retrieval
+- User activity monitoring and reporting
+
+### 🚨 Error Handling
+
+Comprehensive error handling with standardized HTTP status codes:
+
+- **400 Bad Request**: Invalid profile request parameters
+- **401 Unauthorized**: Missing or invalid authentication credentials
+- **403 Forbidden**: Insufficient permissions to access profile data
+- **404 Not Found**: User profile or requested information not found
+- **429 Too Many Requests**: Rate limit exceeded for profile requests
+- **500 Internal Server Error**: System errors during profile retrieval
+
+### 🔍 Use Cases
+
+**End User Applications:**
+- User dashboard and profile display
+- Account settings and preferences management
+- Activity history and transaction review
+- API key management and security monitoring
+
+**Administrative Applications:**
+- User management and oversight dashboards
+- Account status monitoring and reporting
+- User activity analysis and insights
+- Compliance and audit reporting
+
+**Integration Applications:**
+- User information retrieval for external systems
+- Profile data synchronization and updates
+- Authentication and authorization validation
+- User analytics and reporting integration
+            """,
+        },
+        {
+            "name": "Hotels Integrations & Mapping",
+            "description": """
+## 🏨 Hotel Integration & Mapping API
+
+**Comprehensive hotel data management and supplier integration system**
+
+This API module provides complete hotel data management, supplier integration, and provider mapping functionality for the hotel booking system. It enables seamless integration with multiple hotel suppliers and provides robust hotel data management capabilities.
+
+### 🔑 Key Features
+
+**🏨 Hotel Management:**
+- Complete hotel record creation with all associated data (locations, contacts, chains)
+- Transactional integrity with automatic rollback on errors
+- Comprehensive validation and error handling
+- Automatic ITTID generation and relationship management
+
+**🔗 Provider Integration:**
+- Multi-supplier hotel mapping and integration (Booking.com, Expedia, etc.)
+- Duplicate detection and prevention
+- Provider-specific hotel ID management
+- System type classification (OTA, GDS, Direct) and metadata handling
+
+**🔐 Access Control & Security:**
+- Role-based access control (Super User, Admin, General User)
+- User permission validation and tracking
+- Comprehensive audit logging for all operations
+- Secure authentication and authorization
+
+**📊 Supplier Management:**
+- Supplier information retrieval and analytics
+- User-specific supplier access management
+- Hotel count statistics and availability tracking
+- System integration status monitoring
+
+### 🎯 Available Operations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/input_hotel_all_details` | POST | Create complete hotel records with all related data |
+| `/add_provider_all_details_with_ittid` | POST | Add provider mappings to existing hotels |
+| `/get_supplier_info` | GET | Retrieve supplier information and hotel counts |
+| `/get_user_accessible_suppliers` | GET | Get user's accessible supplier list with analytics |
+
+### 🔄 Integration Workflow
+
+1. **Hotel Creation** → Create complete hotel records with all related data
+2. **Provider Mapping** → Add supplier-specific hotel IDs and mappings  
+3. **Access Management** → Configure user permissions for supplier access
+4. **Data Validation** → Ensure data integrity and prevent duplicates
+5. **Monitoring** → Track supplier availability and system health
+
+### 🛡️ Security & Permissions
+
+- **Super User**: Full access to all hotel and supplier operations
+- **Admin User**: Full access to all hotel and supplier operations
+- **General User**: Limited access based on explicit supplier permissions
+
+All operations are logged for audit purposes and include comprehensive error handling with detailed error messages.
+            """,
+        },
+    ]
+    
+    # Add tags to the schema
+    openapi_schema["tags"] = tags_metadata
+    
+    # Also try to get tags from app if they exist and merge them
+    if hasattr(app, 'tags_metadata') and app.tags_metadata:
+        # Merge app tags with our defined tags, avoiding duplicates
+        existing_tag_names = {tag["name"] for tag in tags_metadata}
+        for app_tag in app.tags_metadata:
+            if app_tag["name"] not in existing_tag_names:
+                openapi_schema["tags"].append(app_tag)
 
     # Add logo configuration
     openapi_schema["info"]["x-logo"] = {
@@ -979,5 +1359,261 @@ def add_analytics_examples(paths):
         }
 
 
-# Remove this line - it causes circular reference and breaks docs
-# The openapi method is properly set in main.py 
+def get_swagger_ui_html(
+    *,
+    openapi_url: str,
+    title: str,
+    swagger_js_url: str = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui-bundle.js",
+    swagger_css_url: str = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css",
+    swagger_favicon_url: str = "https://fastapi.tiangolo.com/img/favicon.png",
+    oauth2_redirect_url: str = None,
+    init_oauth: dict = None,
+    swagger_ui_parameters: dict = None,
+) -> str:
+    """
+    Generate custom Swagger UI HTML with enhanced styling and features
+    
+    This function creates a customized Swagger UI interface with:
+    - Professional Hotel API branding and styling
+    - Enhanced user experience with loading screen
+    - Custom CSS for better visual hierarchy
+    - Interactive features and keyboard shortcuts
+    - Responsive design for all devices
+    """
+    import json
+    
+    current_swagger_ui_parameters = {
+        "dom_id": "#swagger-ui",
+        "layout": "BaseLayout",
+        "deepLinking": True,
+        "showExtensions": True,
+        "showCommonExtensions": True,
+        "syntaxHighlight.theme": "arta",
+        "defaultModelsExpandDepth": 2,
+        "defaultModelExpandDepth": 2,
+        "displayRequestDuration": True,
+        "filter": True,
+        "tryItOutEnabled": True,
+        "supportedSubmitMethods": ["get", "post", "put", "delete", "patch"],
+        "validatorUrl": None
+    }
+    if swagger_ui_parameters:
+        current_swagger_ui_parameters.update(swagger_ui_parameters)
+
+    oauth2_redirect_url_html = ""
+    if oauth2_redirect_url:
+        oauth2_redirect_url_html = f'"oauth2RedirectUrl": "{oauth2_redirect_url}",'
+
+    init_oauth_html = ""
+    if init_oauth:
+        init_oauth_html = f"""
+        ui.initOAuth({json.dumps(init_oauth)})
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>{title}</title>
+        <link rel="stylesheet" type="text/css" href="{swagger_css_url}" />
+        <link rel="stylesheet" type="text/css" href="/static/css/swagger-ui-custom.css" />
+        <link rel="icon" type="image/png" href="{swagger_favicon_url}" sizes="32x32" />
+        <link rel="icon" type="image/png" href="{swagger_favicon_url}" sizes="16x16" />
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                margin: 0;
+                background: #fafafa;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            }}
+            
+            /* Loading screen */
+            .loading-screen {{
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(135deg, #2c5aa0 0%, #1e3a5f 100%);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
+                transition: opacity 0.5s ease-out;
+            }}
+            
+            .loading-spinner {{
+                width: 50px;
+                height: 50px;
+                border: 4px solid rgba(255,255,255,0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }}
+            
+            .loading-text {{
+                color: white;
+                font-size: 1.2em;
+                margin-left: 20px;
+                font-weight: 600;
+            }}
+            
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+            
+            /* Hide loading screen when content is ready */
+            .loaded .loading-screen {{
+                opacity: 0;
+                pointer-events: none;
+            }}
+        </style>
+    </head>
+    <body>
+        <!-- Loading Screen -->
+        <div class="loading-screen" id="loading-screen">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Loading Hotel API Documentation...</div>
+        </div>
+        
+        <!-- Swagger UI Container -->
+        <div id="swagger-ui"></div>
+        
+        <script src="{swagger_js_url}"></script>
+        <script>
+            // Initialize Swagger UI
+            const ui = SwaggerUIBundle({{
+                url: '{openapi_url}',
+                {oauth2_redirect_url_html}
+                {json.dumps(current_swagger_ui_parameters)[1:-1]},
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                onComplete: function() {{
+                    // Hide loading screen when Swagger UI is ready
+                    setTimeout(function() {{
+                        document.body.classList.add('loaded');
+                        setTimeout(function() {{
+                            document.getElementById('loading-screen').style.display = 'none';
+                        }}, 500);
+                    }}, 1000);
+                    
+                    // Add custom enhancements
+                    addCustomEnhancements();
+                }}
+            }});
+            
+            {init_oauth_html}
+            
+            // Custom enhancements function
+            function addCustomEnhancements() {{
+                // Add API status indicator
+                const topbar = document.querySelector('.topbar');
+                if (topbar) {{
+                    const statusIndicator = document.createElement('div');
+                    statusIndicator.innerHTML = `
+                        <div style="display: flex; align-items: center; margin-left: auto; margin-right: 20px;">
+                            <div style="width: 8px; height: 8px; background: #28a745; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite;"></div>
+                            <span style="color: white; font-size: 0.9em; font-weight: 500;">API Online</span>
+                        </div>
+                        <style>
+                            @keyframes pulse {{
+                                0% {{ opacity: 1; }}
+                                50% {{ opacity: 0.5; }}
+                                100% {{ opacity: 1; }}
+                            }}
+                        </style>
+                    `;
+                    topbar.appendChild(statusIndicator);
+                }}
+                
+                // Add keyboard shortcuts info
+                const infoSection = document.querySelector('.info');
+                if (infoSection) {{
+                    const shortcutsInfo = document.createElement('div');
+                    shortcutsInfo.innerHTML = `
+                        <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196f3;">
+                            <h4 style="margin: 0 0 10px 0; color: #1976d2;">💡 Quick Tips</h4>
+                            <ul style="margin: 0; padding-left: 20px; color: #424242;">
+                                <li><strong>Ctrl + /</strong> - Focus search filter</li>
+                                <li><strong>Expand All</strong> - Click any tag to expand/collapse all operations</li>
+                                <li><strong>Try It Out</strong> - Test endpoints directly from the documentation</li>
+                                <li><strong>Authentication</strong> - Use the 🔒 Authorize button to set your JWT token</li>
+                            </ul>
+                        </div>
+                    `;
+                    infoSection.appendChild(shortcutsInfo);
+                }}
+                
+                // Add search functionality enhancement
+                setTimeout(function() {{
+                    const filterInput = document.querySelector('.filter input');
+                    if (filterInput) {{
+                        filterInput.placeholder = '🔍 Search endpoints, methods, or descriptions...';
+                        filterInput.style.fontSize = '1em';
+                        filterInput.style.padding = '10px 15px';
+                        filterInput.style.borderRadius = '25px';
+                        filterInput.style.border = '2px solid #e0e0e0';
+                        filterInput.style.transition = 'all 0.3s ease';
+                        
+                        filterInput.addEventListener('focus', function() {{
+                            this.style.borderColor = '#2c5aa0';
+                            this.style.boxShadow = '0 0 0 3px rgba(44, 90, 160, 0.1)';
+                        }});
+                        
+                        filterInput.addEventListener('blur', function() {{
+                            this.style.borderColor = '#e0e0e0';
+                            this.style.boxShadow = 'none';
+                        }});
+                    }}
+                }}, 2000);
+                
+                // Add keyboard shortcut for search
+                document.addEventListener('keydown', function(e) {{
+                    if (e.ctrlKey && e.key === '/') {{
+                        e.preventDefault();
+                        const filterInput = document.querySelector('.filter input');
+                        if (filterInput) {{
+                            filterInput.focus();
+                        }}
+                    }}
+                }});
+            }}
+            
+            // Error handling
+            window.addEventListener('error', function(e) {{
+                console.error('Swagger UI Error:', e);
+                document.body.classList.add('loaded');
+                document.getElementById('loading-screen').style.display = 'none';
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    
+    return html
+
+
+def create_custom_swagger_ui_response(app):
+    """
+    Create a custom Swagger UI HTML response with enhanced features
+    
+    This function generates the complete HTML response for the Swagger UI
+    with all custom styling and interactive features applied.
+    """
+    from fastapi.responses import HTMLResponse
+    
+    return HTMLResponse(
+        content=get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=f"{app.title} - Interactive API Documentation",
+            swagger_ui_parameters=getattr(app, 'swagger_ui_parameters', {}),
+            init_oauth=getattr(app, 'swagger_ui_init_oauth', {}),
+        )
+    ) 
