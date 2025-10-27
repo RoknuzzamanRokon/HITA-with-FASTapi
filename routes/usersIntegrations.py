@@ -53,23 +53,23 @@ async def self_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-        """
-        Get the authenticated user's profile and account details.
+    """
+    Get the authenticated user's profile and account details.
 
-        Returns:
-        - Basic info (ID, username, email, role)
-        - Point balance (available & total points)
-        - Active supplier permissions
-        - Account creation & update timestamps
+    Returns:
+    - Basic info (ID, username, email, role)
+    - Point balance (available & total points)
+    - Active supplier permissions
+    - Account creation & update timestamps
 
-        Notes:
-        - Requires valid JWT authentication
-        - Only returns data for the logged-in user
+    Notes:
+    - Requires valid JWT authentication
+    - Only returns data for the logged-in user
 
-        Raises:
-        - 401: Unauthorized (invalid or missing token)
-        - 500: Database or internal error
-        """
+    Raises:
+    - 401: Unauthorized (invalid or missing token)
+    - 500: Database or internal error
+    """
 
     try:
         # Get user points information
@@ -627,35 +627,34 @@ def give_points(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Allocate points from one user to another based on predefined packages.
-
-    Authorized Roles:
-    - Super User: Can give points to anyone (unlimited balance)
-    - Admin User: Can give points only to General Users (deducts from balance)
-    - General User: Cannot give points
-
-    Point Packages:
-    - ADMIN_USER_PACKAGE → 4,000,000
-    - ONE_YEAR_PACKAGE → 1,000,000
-    - ONE_MONTH_PACKAGE → 80,000
-    - PER_REQUEST_POINT → 10,000
-    - GUEST_POINT → 1,000
-
-    Business Rules:
-    - Admin → General only
-    - Super Users → No point deduction
-    - All transactions logged with audit trail
-
-    Raises:
+    Give points to another user using predefined packages.
+    
+    **Authorized Roles:**
+    - Super User: Unlimited points, can give to anyone
+    - Admin User: Limited points, can give to General Users only
+    
+    **Point Packages:**
+    - ADMIN_USER_PACKAGE → 4,000,000 points
+    - ONE_YEAR_PACKAGE → 1,000,000 points  
+    - ONE_MONTH_PACKAGE → 80,000 points
+    - PER_REQUEST_POINT → 10,000 points
+    - GUEST_POINT → 1,000 points
+    
+    **Business Rules:**
+    - Admin users: Points deducted from balance
+    - Super users: No point deduction (unlimited)
+    - Admin → General User only
+    - All transactions logged for audit
+    
+    **Errors:**
     - 400: Invalid package or insufficient balance
-    - 403: Unauthorized role or permission
+    - 403: Unauthorized role or Admin→Admin/Super restriction
     - 404: Receiver not found
     - 500: Database error
     """
-
-    
-    # Validate giver's role
-    if current_user.role not in [
+    try:
+        # Validate giver's role
+        if current_user.role not in [
             models.UserRole.SUPER_USER,
             models.UserRole.ADMIN_USER,
         ]:
@@ -673,7 +672,6 @@ def give_points(
             )
             .first()
         )
-        
         if not receiver or not receiver.email:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -864,6 +862,7 @@ def check_point_details(
         401 → Unauthorized
         500 → Internal server/database error
     """
+    try:
         # Get user points information
         user_points = (
             db.query(models.UserPoint)
