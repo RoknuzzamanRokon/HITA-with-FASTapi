@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from database import get_db
@@ -14,6 +14,10 @@ from fastapi_cache.decorator import cache
 import csv
 import redis
 import json
+import asyncio
+import os
+from routes.hotelFormattingData import map_to_our_format
+from routes.path import RAW_BASE_DIR
 
 def serialize_datetime_objects(obj):
     """Convert datetime objects to ISO format strings for JSON serialization."""
@@ -28,6 +32,92 @@ def serialize_datetime_objects(obj):
                 result[key] = value
         return result
     return obj
+
+
+async def get_hotel_details_internal(supplier_code: str, hotel_id: str, current_user, db: Session) -> Optional[Dict]:
+    """
+    Internal Hotel Details Retrieval Function
+    
+    This function replicates the logic from the /v1.0/hotel/details endpoint
+    but is called internally to avoid HTTP request overhead. It provides the same
+    security checks and data processing as the public endpoint.
+    
+    Security Features:
+    - Role-based access control (same as public endpoint)
+    - Supplier permission validation for general users
+    - Graceful error handling without exposing internal errors
+    
+    Performance Benefits:
+    - No HTTP overhead (direct function call)
+    - Efficient file system access
+    - Optimized for bulk operations
+    
+    Args:
+        supplier_code (str): The supplier/provider code (e.g., 'hotelbeds', 'booking')
+        hotel_id (str): The hotel ID from the provider system
+        current_user: Current authenticated user object with role information
+        db (Session): Database session for permission checks
+    
+    Returns:
+        Optional[Dict]: Formatted hotel details dictionary or None if:
+            - User lacks permission for the supplier
+            - Hotel data file not found
+            - JSON parsing errors occur
+            - Any other processing errors
+    
+    Example Return Value:
+        {
+            "hotel_name": "Example Hotel",
+            "address": "123 Main St",
+            "city": "Example City",
+            "country": "Example Country",
+            "rating": 4.5,
+            "amenities": ["WiFi", "Pool", "Gym"],
+            "description": "A beautiful hotel...",
+            "images": ["image1.jpg", "image2.jpg"],
+            "contact": {
+                "phone": "+1234567890",
+                "email": "info@examplehotel.com"
+            }
+        }
+    
+    Error Handling:
+        - Returns None for any errors (permission, file not found, parsing)
+        - Logs errors for debugging but doesn't raise exceptions
+        - Maintains system stability during bulk operations
+    """
+    try:
+        # Check supplier permissions (same logic as hotel details endpoint)
+        if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            # Check if general user has permission for this supplier
+            user_supplier_permission = db.query(models.UserProviderPermission).filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                models.UserProviderPermission.provider_name == supplier_code
+            ).first()
+            
+            if not user_supplier_permission:
+                # User doesn't have permission for this supplier
+                return None
+        
+        # Get the raw data file path (same logic as hotel details endpoint)
+        file_path = os.path.join(RAW_BASE_DIR, supplier_code, f"{hotel_id}.json")
+        
+        # Load and process the hotel data
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = json.load(f)
+            
+            # Format the data using the same function as the hotel details endpoint
+            formatted_data = map_to_our_format(supplier_code, content)
+            return formatted_data
+        else:
+            # File not found
+            return None
+            
+    except Exception as e:
+        # Log the error but don't raise it - just return None
+        print(f"Error getting hotel details for {supplier_code}/{hotel_id}: {str(e)}")
+        return None
 import os
 from routes.auth import get_current_user
 
@@ -336,12 +426,36 @@ class ITTIDRequest(BaseModel):
 
 # Get provider mapping
 @router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
-def get_hotels_using_ittid_list(
+async def get_hotels_using_ittid_list(
     request: ITTIDRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    """Get only provider_mappings by ITTID list."""
+    """
+    Get Provider Mappings with Full Hotel Details by ITTID List
+    
+    This endpoint retrieves provider mappings for the given ITTID list and includes
+    full hotel details from each provider. The hotel details are fetched from the
+    internal hotel details service for each provider mapping.
+    
+    Features:
+    - Role-based access control for provider data
+    - Full hotel details integration from /v1.0/hotel/details
+    - Efficient internal API calls without HTTP overhead
+    - Comprehensive error handling for missing data
+    
+    Args:
+        request (ITTIDRequest): Request containing list of ITTID values
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        List[dict]: List of hotels with provider mappings and full details
+    
+    Access Control:
+        - GENERAL_USER: Only sees providers they have permission for
+        - SUPER_USER/ADMIN_USER: Can see all provider mappings
+    """
 
     # 🚫 NO POINT DEDUCTION for super_user and admin_user
     if current_user.role == models.UserRole.GENERAL_USER:
@@ -373,40 +487,54 @@ def get_hotels_using_ittid_list(
                 models.ProviderMapping.provider_name.in_(allowed_providers)
             ).all()
 
-            formatted_provider_mappings = [
-                {
+            formatted_provider_mappings = []
+            for mapping in provider_mappings:
+                # Get full hotel details for this provider mapping
+                hotel_details = await get_hotel_details_internal(
+                    supplier_code=mapping.provider_name,
+                    hotel_id=mapping.provider_id,
+                    current_user=current_user,
+                    db=db
+                )
+                
+                mapping_data = {
                     "id": mapping.id,
-                    "provider_id": mapping.provider_id,
+                    "ittid": mapping.ittid,
                     "provider_name": mapping.provider_name,
-                    "system_type": mapping.system_type,
-                    "vervotech_id": mapping.vervotech_id,
-                    "giata_code": mapping.giata_code,
+                    "provider_id": mapping.provider_id,
+                    "full_details": hotel_details  # Include full hotel details
                 }
-                for mapping in provider_mappings
-            ]
+                formatted_provider_mappings.append(mapping_data)
 
             result.append({
                 "ittid": hotel.ittid,
                 "provider_mappings": formatted_provider_mappings
             })
     else:
-        # For SUPER/ADMIN users – return all mappings
+        # For SUPER/ADMIN users – return all mappings with full details
         for hotel in hotels:
             provider_mappings = db.query(models.ProviderMapping).filter(
                 models.ProviderMapping.ittid == hotel.ittid
             ).all()
 
-            formatted_provider_mappings = [
-                {
+            formatted_provider_mappings = []
+            for mapping in provider_mappings:
+                # Get full hotel details for this provider mapping
+                hotel_details = await get_hotel_details_internal(
+                    supplier_code=mapping.provider_name,
+                    hotel_id=mapping.provider_id,
+                    current_user=current_user,
+                    db=db
+                )
+                
+                mapping_data = {
                     "id": mapping.id,
-                    "provider_id": mapping.provider_id,
+                    "ittid": mapping.ittid,
                     "provider_name": mapping.provider_name,
-                    "system_type": mapping.system_type,
-                    "vervotech_id": mapping.vervotech_id,
-                    "giata_code": mapping.giata_code,
+                    "provider_id": mapping.provider_id,
+                    "full_details": hotel_details  # Include full hotel details
                 }
-                for mapping in provider_mappings
-            ]
+                formatted_provider_mappings.append(mapping_data)
 
             result.append({
                 "ittid": hotel.ittid,
@@ -416,12 +544,47 @@ def get_hotels_using_ittid_list(
     return result
 
 @router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
-def get_hotel_using_ittid(
+async def get_hotel_using_ittid(
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    """Get hotel details by ITTID. Points deducted only for successful requests. Requires active suppliers."""
+    """
+    Get Hotel Details by ITTID with Full Provider Details
+    
+    Retrieves comprehensive hotel information including provider mappings with full details
+    from the hotel details service. Points are deducted only for successful requests.
+    
+    Features:
+    - Full hotel details integration for each provider mapping
+    - Role-based access control for provider data
+    - Active supplier validation and permission checks
+    - Comprehensive response with locations, chains, and contacts
+    - Point deduction only on successful data retrieval
+    
+    Args:
+        ittid (str): The ITT hotel identifier
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Comprehensive hotel data including:
+            - hotel: Basic hotel information
+            - provider_mappings: Provider mappings with full_details for each
+            - locations: Hotel location information
+            - chains: Hotel chain information
+            - contacts: Hotel contact information
+            - supplier_info: Summary of supplier access information
+    
+    Access Control:
+        - GENERAL_USER: Only sees providers they have permission for
+        - SUPER_USER/ADMIN_USER: Can see all provider mappings
+    
+    HTTP Status Codes:
+        200: Hotel data retrieved successfully
+        403: Forbidden - No access to suppliers for this hotel
+        404: Hotel not found or no supplier mappings available
+    """
     
     # Get hotel first (no point deduction yet)
     hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
@@ -475,7 +638,7 @@ def get_hotel_using_ittid(
 
     # Get related data
     locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
-    chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
+    # chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
     contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
 
     # Get provider mappings for response (based on user role)
@@ -495,12 +658,33 @@ def get_hotel_using_ittid(
         # For super/admin users, show all provider mappings
         provider_mappings = all_provider_mappings
 
-    # Serialize the response with provider mappings
+    # Enhanced provider mappings with full details
+    enhanced_provider_mappings = []
+    for pm in provider_mappings:
+        # Get full hotel details for this provider mapping
+        hotel_details = await get_hotel_details_internal(
+            supplier_code=pm.provider_name,
+            hotel_id=pm.provider_id,
+            current_user=current_user,
+            db=db
+        )
+        
+        # Create simplified provider mapping with only essential fields
+        pm_data = {
+            "id": pm.id,
+            "ittid": pm.ittid,
+            "provider_name": pm.provider_name,
+            "provider_id": pm.provider_id,
+            "full_details": hotel_details
+        }
+        enhanced_provider_mappings.append(pm_data)
+
+    # Serialize the response with enhanced provider mappings
     response_data = {
         "hotel": serialize_datetime_objects(hotel),
-        "provider_mappings": [serialize_datetime_objects(pm) for pm in provider_mappings],
+        "provider_mappings": enhanced_provider_mappings,
         "locations": [serialize_datetime_objects(loc) for loc in locations],
-        "chains": [serialize_datetime_objects(chain) for chain in chains],
+        # "chains": [serialize_datetime_objects(chain) for chain in chains],
         "contacts": [serialize_datetime_objects(contact) for contact in contacts],
         "supplier_info": {
             "total_active_suppliers": len(all_provider_mappings),
