@@ -46,3 +46,4 @@ static/*
 
 
 routes/path.py
+utils/mapping_progress.json

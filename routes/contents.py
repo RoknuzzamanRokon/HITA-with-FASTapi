@@ -802,6 +802,8 @@ async def get_hotel_using_ittid(
 
     # Serialize the response with enhanced provider mappings
     response_data = {
+        "total_supplier": len(provider_mappings),
+        "provider_list": [pm.provider_name for pm in provider_mappings],
         "hotel": serialize_datetime_objects(hotel),
         "provider_mappings": enhanced_provider_mappings,
         "locations": [serialize_datetime_objects(loc) for loc in locations],
