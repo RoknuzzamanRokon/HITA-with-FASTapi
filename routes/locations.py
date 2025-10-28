@@ -187,7 +187,24 @@ async def get_all_country_codes(db: Session = Depends(get_db)):
 @router.get("/cities_with_countries", response_model=List[CityWithCountryResponse])
 async def get_cities_with_countries(db: Session = Depends(get_db)):
     """
-    Get all unique cities with their corresponding countries
+    Get all cities paired with their countries.
+    
+    **What it does:**
+    Returns a list of cities along with their corresponding country names.
+    
+    **Response format:**
+    ```json
+    [
+        {"city_name": "New York", "country_name": "United States"},
+        {"city_name": "London", "country_name": "United Kingdom"},
+        {"city_name": "Tokyo", "country_name": "Japan"}
+    ]
+    ```
+    
+    **Use cases:**
+    - Populate city/country dropdowns
+    - Location selection forms
+    - Geographic data analysis
     """
     try:
         cities_countries = db.query(
@@ -218,7 +235,42 @@ async def search_locations(
     db: Session = Depends(get_db)
 ):
     """
-    Search locations with various filters
+    Search and filter locations with multiple criteria.
+    
+    **What it does:**
+    Find locations using flexible search filters with pagination support.
+    
+    **Search filters:**
+    - `city` - Search by city name (partial match)
+    - `country` - Search by country name (partial match)  
+    - `country_code` - Search by country code (e.g., "US", "GB")
+    - `state` - Search by state/province name (partial match)
+    
+    **Pagination:**
+    - `limit` - Max results per page (1-1000, default: 100)
+    - `offset` - Skip number of results (default: 0)
+    
+    **Example usage:**
+    - `/search?city=New York` - Find cities containing "New York"
+    - `/search?country=United&limit=50` - Find countries containing "United"
+    - `/search?country_code=US&state=California` - US locations in California
+    
+    **Response format:**
+    ```json
+    {
+        "total": 1250,
+        "limit": 100,
+        "offset": 0,
+        "locations": [
+            {
+                "id": 1,
+                "city_name": "New York",
+                "country_name": "United States",
+                "country_code": "US"
+            }
+        ]
+    }
+    ```
     """
     try:
         query = db.query(Location)
@@ -252,7 +304,42 @@ async def search_locations(
 @router.get("/{location_id}", response_model=LocationDetailResponse)
 async def get_location_by_id(location_id: int, db: Session = Depends(get_db)):
     """
-    Get a specific location by ID
+    Get detailed information for a specific location.
+    
+    **What it does:**
+    Retrieve complete location details using the location ID.
+    
+    **Parameters:**
+    - `location_id` - The unique ID of the location (required)
+    
+    **Response includes:**
+    - Complete location information
+    - City, state, and country details
+    - Location codes and identifiers
+    - Associated hotel ITTID
+    
+    **Example usage:**
+    - `/123` - Get details for location ID 123
+    
+    **Response format:**
+    ```json
+    {
+        "id": 123,
+        "ittid": "ITT456789",
+        "city_name": "New York",
+        "state_name": "New York",
+        "state_code": "NY",
+        "country_name": "United States",
+        "country_code": "US",
+        "master_city_name": "New York City",
+        "city_code": "NYC",
+        "city_location_id": "NYC001"
+    }
+    ```
+    
+    **Errors:**
+    - `404` - Location not found
+    - `500` - Database error
     """
     try:
         location = db.query(Location).filter(Location.id == location_id).first()
