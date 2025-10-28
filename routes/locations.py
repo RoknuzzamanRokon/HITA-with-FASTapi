@@ -20,14 +20,35 @@ class CityResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class CitiesListResponse(BaseModel):
+    total_city: int
+    city_name: List[str]
+    
+    class Config:
+        from_attributes = True
+
 class CountryResponse(BaseModel):
     country_name: str
     
     class Config:
         from_attributes = True
 
+class CountriesListResponse(BaseModel):
+    total_country: int
+    country_name: List[str]
+    
+    class Config:
+        from_attributes = True
+
 class CountryCodeResponse(BaseModel):
     country_code: str
+    
+    class Config:
+        from_attributes = True
+
+class CountryCodesListResponse(BaseModel):
+    total_country_code: int
+    country_code: List[str]
     
     class Config:
         from_attributes = True
@@ -55,10 +76,24 @@ class LocationDetailResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/cities", response_model=List[CityResponse])
+@router.get("/cities", response_model=CitiesListResponse)
 async def get_all_cities(db: Session = Depends(get_db)):
     """
-    Get all unique cities from locations
+    Get all unique cities from locations in a consolidated format.
+    
+    Returns a single object containing the total count of cities and 
+    an array of all unique city names.
+    
+    Returns:
+        CitiesListResponse: Object containing:
+            - total_city: Total number of unique cities
+            - city_name: Array of all unique city names
+    
+    Example Response:
+        {
+            "total_city": 5465645,
+            "city_name": ["Hong Kong", "Macau", "Medjugorje", "Mostar"]
+        }
     """
     try:
         cities = db.query(distinct(Location.city_name)).filter(
@@ -66,15 +101,35 @@ async def get_all_cities(db: Session = Depends(get_db)):
             Location.city_name != ""
         ).all()
         
-        return [{"city_name": city[0]} for city in cities if city[0]]
+        # Extract city names and filter out None values
+        city_names = [city[0] for city in cities if city[0]]
+        
+        return {
+            "total_city": len(city_names),
+            "city_name": city_names
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching cities: {str(e)}")
 
 
-@router.get("/countries", response_model=List[CountryResponse])
+@router.get("/countries", response_model=CountriesListResponse)
 async def get_all_countries(db: Session = Depends(get_db)):
     """
-    Get all unique countries from locations
+    Get all unique countries from locations in a consolidated format.
+    
+    Returns a single object containing the total count of countries and 
+    an array of all unique country names.
+    
+    Returns:
+        CountriesListResponse: Object containing:
+            - total_country: Total number of unique countries
+            - country_name: Array of all unique country names
+    
+    Example Response:
+        {
+            "total_country": 195,
+            "country_name": ["United States", "Canada", "United Kingdom", "France"]
+        }
     """
     try:
         countries = db.query(distinct(Location.country_name)).filter(
@@ -82,15 +137,35 @@ async def get_all_countries(db: Session = Depends(get_db)):
             Location.country_name != ""
         ).all()
         
-        return [{"country_name": country[0]} for country in countries if country[0]]
+        # Extract country names and filter out None values
+        country_names = [country[0] for country in countries if country[0]]
+        
+        return {
+            "total_country": len(country_names),
+            "country_name": country_names
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching countries: {str(e)}")
 
 
-@router.get("/country_codes", response_model=List[CountryCodeResponse])
+@router.get("/country_codes", response_model=CountryCodesListResponse)
 async def get_all_country_codes(db: Session = Depends(get_db)):
     """
-    Get all unique country codes from locations
+    Get all unique country codes from locations in a consolidated format.
+    
+    Returns a single object containing the total count of country codes and 
+    an array of all unique country codes (ISO format).
+    
+    Returns:
+        CountryCodesListResponse: Object containing:
+            - total_country_code: Total number of unique country codes
+            - country_code: Array of all unique country codes
+    
+    Example Response:
+        {
+            "total_country_code": 195,
+            "country_code": ["US", "CA", "GB", "FR", "DE", "JP"]
+        }
     """
     try:
         country_codes = db.query(distinct(Location.country_code)).filter(
@@ -98,7 +173,13 @@ async def get_all_country_codes(db: Session = Depends(get_db)):
             Location.country_code != ""
         ).all()
         
-        return [{"country_code": code[0]} for code in country_codes if code[0]]
+        # Extract country codes and filter out None values
+        codes = [code[0] for code in country_codes if code[0]]
+        
+        return {
+            "total_country_code": len(codes),
+            "country_code": codes
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching country codes: {str(e)}")
 
