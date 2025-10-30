@@ -26,49 +26,40 @@ async def get_my_activity(
     limit: int = Query(50, description="Maximum number of records")
 ):
     """
-    Get Current User's Activity History
+    Get your own activity history and audit trail.
     
-    Retrieves the activity history for the currently authenticated user. This endpoint
-    allows users to view their own audit trail and activity logs within a specified
-    time period.
+    **What it does:**
+    Shows your personal activity history including logins, API calls, and actions.
     
-    Features:
-    - Personal activity history access
-    - Configurable time period (days lookback)
-    - Configurable result limit for performance
-    - Detailed activity information including IP addresses
-    - ISO formatted timestamps for consistency
+    **Parameters:**
+    - `days` - How many days back to look (default: 30, max: 365)
+    - `limit` - Max number of records (default: 50, max: 1000)
     
-    Args:
-        current_user: Currently authenticated user (injected by dependency)
-        db (Session): Database session (injected by dependency)
-        days (int): Number of days to look back (default: 30, max recommended: 365)
-        limit (int): Maximum number of records to return (default: 50, max recommended: 1000)
+    **Response includes:**
+    - Your activity list with timestamps
+    - Action types and details
+    - IP addresses used
+    - Total activity count
     
-    Returns:
-        dict: User activity data including:
-            - user_id: User's unique identifier
-            - username: User's username
-            - period_days: Number of days covered in the query
-            - total_activities: Count of activities returned
-            - activities: List of activity objects with details
+    **Example usage:**
+    `/my_activity?days=7&limit=20` - Get last 7 days, max 20 records
     
-    Activity Object Structure:
-        - id: Unique activity record ID
-        - action: Type of action performed
-        - details: Additional details about the activity
-        - ip_address: IP address from which the activity originated
-        - created_at: ISO formatted timestamp of the activity
-    
-    Error Handling:
-        - 400: Invalid parameter values (negative days/limit)
-        - 401: User not authenticated
-        - 500: Database or audit logging system errors
-    
-    Security:
-        - Users can only access their own activity history
-        - No sensitive information exposed in activity details
-        - IP addresses logged for security auditing
+    **Example response:**
+    ```json
+    {
+        "user_id": "user123",
+        "username": "john_doe",
+        "total_activities": 15,
+        "activities": [
+            {
+                "action": "LOGIN",
+                "details": "Successful login",
+                "ip_address": "192.168.1.100",
+                "created_at": "2024-01-15T10:30:00"
+            }
+        ]
+    }
+    ```
     """
     try:
         # Validate input parameters
@@ -140,57 +131,44 @@ async def get_security_events(
     limit: int = Query(100, description="Maximum number of records")
 ):
     """
-    Get Security Events (Admin Only)
+    Get security events and threats (Admin only).
     
-    Retrieves security-related events and audit logs for administrative monitoring.
-    This endpoint provides comprehensive security event tracking for system administrators
-    to monitor potential security threats and suspicious activities.
+    **What it does:**
+    Shows security-related events like failed logins, suspicious activities, and threats.
     
-    Features:
-    - Admin-only access for security monitoring
-    - Configurable time period for event retrieval
-    - Security level filtering (LOW, MEDIUM, HIGH, CRITICAL)
-    - Comprehensive event details including user agents
-    - IP address tracking for security analysis
+    **Who can use:**
+    - Admin users only
     
-    Args:
-        admin: Admin user (injected by dependency, requires admin role)
-        db (Session): Database session (injected by dependency)
-        days (int): Number of days to look back (default: 7, max: 90)
-        security_level (Optional[SecurityLevel]): Filter by security level
-        limit (int): Maximum number of records (default: 100, max: 1000)
+    **Parameters:**
+    - `days` - How many days back to look (default: 7, max: 90)
+    - `security_level` - Filter by severity (LOW, MEDIUM, HIGH, CRITICAL)
+    - `limit` - Max number of records (default: 100, max: 1000)
     
-    Returns:
-        dict: Security events data including:
-            - period_days: Number of days covered in the query
-            - security_level_filter: Applied security level filter
-            - total_events: Count of security events returned
-            - events: List of security event objects
+    **Security levels:**
+    - LOW: Normal events (successful logins)
+    - MEDIUM: Notable events (password changes)
+    - HIGH: Concerning events (failed logins)
+    - CRITICAL: Severe events (data breaches)
     
-    Security Event Object Structure:
-        - id: Unique event record ID
-        - action: Type of security action/event
-        - user_id: ID of user associated with the event
-        - details: Detailed information about the security event
-        - ip_address: Source IP address of the event
-        - user_agent: Browser/client user agent string
-        - created_at: ISO formatted timestamp of the event
+    **Example usage:**
+    `/security_events?days=3&security_level=HIGH` - Get high-severity events from last 3 days
     
-    Security Levels:
-        - LOW: Routine security events (successful logins, etc.)
-        - MEDIUM: Noteworthy events (password changes, permission changes)
-        - HIGH: Concerning events (failed login attempts, unauthorized access)
-        - CRITICAL: Severe security events (data breaches, system compromises)
-    
-    Error Handling:
-        - 400: Invalid parameter values
-        - 401: User not authenticated
-        - 403: User not authorized (non-admin)
-        - 500: Database or audit logging system errors
-    
-    Access Control:
-        - Requires admin role for access
-        - Provides system-wide security event visibility
+    **Example response:**
+    ```json
+    {
+        "period_days": 7,
+        "security_level_filter": "HIGH",
+        "total_events": 5,
+        "events": [
+            {
+                "action": "FAILED_LOGIN",
+                "user_id": "user123",
+                "ip_address": "192.168.1.100",
+                "details": "Multiple failed login attempts"
+            }
+        ]
+    }
+    ```
     """
     try:
         # Validate input parameters
@@ -261,48 +239,40 @@ async def get_activity_summary(
     days: int = Query(30, description="Number of days to look back")
 ):
     """
-    Get Activity Summary for Current User
+    Get your activity summary and statistics.
     
-    Provides a statistical summary of the current user's activities over a specified
-    time period. This endpoint offers aggregated insights into user behavior patterns
-    and activity trends.
+    **What it does:**
+    Shows a statistical summary of your activities with breakdowns and trends.
     
-    Features:
-    - Personal activity statistics and trends
-    - Configurable time period for analysis
-    - Activity type breakdown and counts
-    - Time-based activity patterns
-    - Performance metrics and usage statistics
+    **Parameters:**
+    - `days` - How many days to analyze (default: 30, max: 365)
     
-    Args:
-        current_user: Currently authenticated user (injected by dependency)
-        db (Session): Database session (injected by dependency)
-        days (int): Number of days to analyze (default: 30, max: 365)
+    **Response includes:**
+    - Total activity count
+    - Activity breakdown by type (logins, API calls, etc.)
+    - Daily activity trends
+    - Peak activity hours
+    - Number of unique IP addresses used
     
-    Returns:
-        dict: Activity summary data including:
-            - total_activities: Total number of activities in the period
-            - activity_breakdown: Count by activity type
-            - daily_activity_trend: Activity counts by day
-            - most_active_hours: Peak activity time periods
-            - unique_ip_addresses: Number of different IP addresses used
-            - activity_types_used: List of activity types performed
+    **Example usage:**
+    `/activity_summary?days=14` - Get 2-week activity summary
     
-    Summary Metrics:
-        - Activity counts by type (login, API calls, data access, etc.)
-        - Temporal patterns (hourly, daily activity distribution)
-        - Geographic patterns (based on IP addresses)
-        - Usage intensity metrics
-    
-    Error Handling:
-        - 400: Invalid parameter values (negative or excessive days)
-        - 401: User not authenticated
-        - 500: Database or audit logging system errors
-    
-    Privacy:
-        - Users can only access their own activity summary
-        - No sensitive data exposed in aggregated statistics
-        - IP addresses are counted but not exposed individually
+    **Example response:**
+    ```json
+    {
+        "total_activities": 150,
+        "activity_breakdown": {
+            "LOGIN": 25,
+            "API_CALL": 100,
+            "DATA_ACCESS": 25
+        },
+        "daily_activity_trend": [
+            {"date": "2024-01-01", "count": 10}
+        ],
+        "most_active_hours": [9, 14, 16],
+        "unique_ip_addresses": 3
+    }
+    ```
     """
     try:
         # Validate input parameters
@@ -360,59 +330,49 @@ async def get_system_activity_summary(
     days: int = Query(30, description="Number of days to look back")
 ):
     """
-    Get System-Wide Activity Summary (Admin Only)
+    Get system-wide activity summary (Admin only).
     
-    Provides comprehensive statistical analysis of all system activities across all users
-    for administrative monitoring and system health assessment. This endpoint offers
-    system-wide insights for capacity planning and security monitoring.
+    **What it does:**
+    Shows activity statistics across all users for system monitoring and health assessment.
     
-    Features:
-    - System-wide activity analytics across all users
-    - Administrative oversight and monitoring capabilities
-    - Comprehensive activity type breakdown
-    - User activity distribution and patterns
-    - System usage trends and peak periods
-    - Security event correlation and analysis
+    **Who can use:**
+    - Admin users only
     
-    Args:
-        admin: Admin user (injected by dependency, requires admin role)
-        db (Session): Database session (injected by dependency)
-        days (int): Number of days to analyze (default: 30, max: 365)
+    **Parameters:**
+    - `days` - How many days to analyze (default: 30, max: 365)
     
-    Returns:
-        dict: System-wide activity summary including:
-            - total_activities: Total activities across all users
-            - total_users_active: Number of active users in period
-            - activity_breakdown: Activity counts by type
-            - user_activity_distribution: Activity distribution across users
-            - peak_activity_periods: Times of highest system usage
-            - security_events_summary: Security-related activity overview
-            - system_health_metrics: Performance and usage indicators
+    **Response includes:**
+    - Total system activities
+    - Number of active users
+    - Activity breakdown by type
+    - User activity distribution
+    - Peak usage periods
+    - Security events overview
     
-    System Metrics:
-        - Total system activity volume
-        - User engagement and adoption metrics
-        - Activity type distribution (API calls, logins, data access)
-        - Geographic distribution of activities
-        - Security event frequency and severity
-        - System performance indicators
+    **Use cases:**
+    - System capacity planning
+    - Security monitoring
+    - User behavior analysis
+    - Compliance reporting
     
-    Error Handling:
-        - 400: Invalid parameter values
-        - 401: User not authenticated
-        - 403: User not authorized (non-admin)
-        - 500: Database or audit logging system errors
-    
-    Access Control:
-        - Requires admin role for system-wide visibility
-        - Provides comprehensive system oversight capabilities
-        - Aggregated data to protect individual user privacy
-    
-    Use Cases:
-        - System capacity planning and resource allocation
-        - Security monitoring and threat detection
-        - User behavior analysis and system optimization
-        - Compliance reporting and audit trail maintenance
+    **Example response:**
+    ```json
+    {
+        "total_activities": 5000,
+        "total_users_active": 150,
+        "activity_breakdown": {
+            "LOGIN": 500,
+            "API_CALL": 3500,
+            "DATA_ACCESS": 1000
+        },
+        "peak_activity_periods": ["09:00", "14:00", "16:00"],
+        "security_events_summary": {
+            "total": 25,
+            "critical": 2,
+            "high": 8
+        }
+    }
+    ```
     """
     try:
         # Validate input parameters
@@ -474,70 +434,56 @@ async def get_user_activity(
     limit: int = Query(100, description="Maximum number of records")
 ):
     """
-    Get Specific User's Activity History (Admin Only)
+    Get any user's activity history (Admin only).
     
-    Retrieves detailed activity history for a specific user, providing administrators
-    with comprehensive oversight capabilities for user behavior monitoring, security
-    investigations, and compliance auditing.
+    **What it does:**
+    Shows detailed activity history for a specific user for investigations and monitoring.
     
-    Features:
-    - Admin-only access to any user's activity history
-    - Activity type filtering for targeted investigations
-    - Comprehensive activity details including user agents
-    - Configurable time periods and result limits
-    - Support for security investigations and compliance audits
+    **Who can use:**
+    - Admin users only
     
-    Args:
-        user_id (str): Target user's unique identifier
-        admin: Admin user (injected by dependency, requires admin role)
-        db (Session): Database session (injected by dependency)
-        days (int): Number of days to look back (default: 30, max: 365)
-        activity_types (Optional[List[str]]): Filter by specific activity types
-        limit (int): Maximum number of records (default: 100, max: 1000)
+    **Parameters:**
+    - `user_id` - Target user's ID (required)
+    - `days` - How many days back to look (default: 30, max: 365)
+    - `activity_types` - Filter by specific types (LOGIN, API_CALL, etc.)
+    - `limit` - Max number of records (default: 100, max: 1000)
     
-    Returns:
-        dict: User activity data including:
-            - user_id: Target user's identifier
-            - period_days: Number of days covered
-            - activity_type_filter: Applied activity type filters
-            - total_activities: Count of activities returned
-            - activities: Detailed list of user activities
-            - user_info: Basic information about the target user
+    **Activity types:**
+    - LOGIN: User authentication
+    - API_CALL: API endpoint usage
+    - DATA_ACCESS: Data viewing
+    - DATA_MODIFICATION: Data changes
+    - SECURITY_EVENT: Security activities
     
-    Activity Object Structure:
-        - id: Unique activity record ID
-        - action: Type of action performed by the user
-        - details: Comprehensive details about the activity
-        - ip_address: Source IP address of the activity
-        - user_agent: Browser/client user agent string
-        - created_at: ISO formatted timestamp
+    **Use cases:**
+    - Security investigations
+    - User behavior monitoring
+    - Compliance auditing
+    - Troubleshooting issues
     
-    Activity Type Filtering:
-        - LOGIN: User authentication activities
-        - API_CALL: API endpoint access and usage
-        - DATA_ACCESS: Data retrieval and viewing activities
-        - DATA_MODIFICATION: Data creation, update, deletion
-        - SECURITY_EVENT: Security-related activities
-        - SYSTEM_ACCESS: System-level access and operations
+    **Example usage:**
+    `/user/user123/activity?days=7&activity_types=LOGIN&activity_types=SECURITY_EVENT`
     
-    Error Handling:
-        - 400: Invalid parameter values or activity types
-        - 401: User not authenticated
-        - 403: User not authorized (non-admin)
-        - 404: Target user not found
-        - 500: Database or audit logging system errors
-    
-    Access Control:
-        - Requires admin role for access to other users' data
-        - Provides comprehensive user oversight capabilities
-        - Maintains detailed audit trail for administrative actions
-    
-    Use Cases:
-        - Security incident investigation
-        - User behavior analysis and monitoring
-        - Compliance auditing and reporting
-        - Troubleshooting user-reported issues
-        - Performance analysis and optimization
+    **Example response:**
+    ```json
+    {
+        "user_id": "user123",
+        "user_info": {
+            "username": "john_doe",
+            "email": "john@example.com",
+            "role": "GENERAL_USER"
+        },
+        "total_activities": 25,
+        "activities": [
+            {
+                "action": "LOGIN",
+                "details": "Successful login",
+                "ip_address": "192.168.1.100",
+                "created_at": "2024-01-15T10:30:00"
+            }
+        ]
+    }
+    ```
     """
     try:
         # Validate input parameters
@@ -653,50 +599,50 @@ async def get_user_activity(
 @router.get("/activity_types")
 async def get_available_activity_types():
     """
-    Get Available Activity Types and Security Levels
+    Get available activity types and security levels for filtering.
     
-    Provides a comprehensive list of all available activity types and security levels
-    that can be used for filtering and categorizing audit logs and security events.
-    This endpoint serves as a reference for other audit dashboard endpoints.
+    **What it does:**
+    Shows all available activity types and security levels you can use to filter other endpoints.
     
-    Features:
-    - Complete enumeration of activity types
-    - Security level definitions and descriptions
-    - Reference data for filtering other endpoints
-    - System configuration and capability discovery
+    **Response includes:**
+    - All activity types with descriptions
+    - All security levels with descriptions
+    - Usage examples for filtering
     
-    Returns:
-        dict: Available types and levels including:
-            - activity_types: List of all available activity types
-            - security_levels: List of all security levels
-            - activity_type_descriptions: Detailed descriptions of each activity type
-            - security_level_descriptions: Detailed descriptions of each security level
-            - usage_examples: Examples of how to use these types in other endpoints
+    **Activity types:**
+    - LOGIN: User authentication
+    - API_CALL: API endpoint usage
+    - DATA_ACCESS: Data viewing
+    - DATA_MODIFICATION: Data changes
+    - SECURITY_EVENT: Security activities
+    - SYSTEM_ACCESS: System operations
+    - ADMIN_ACTION: Admin operations
+    - USER_MANAGEMENT: User account changes
     
-    Activity Types:
-        - LOGIN: User authentication and session management
-        - API_CALL: API endpoint access and usage
-        - DATA_ACCESS: Data retrieval and viewing operations
-        - DATA_MODIFICATION: Data creation, update, and deletion
-        - SECURITY_EVENT: Security-related activities and alerts
-        - SYSTEM_ACCESS: System-level operations and access
-        - ADMIN_ACTION: Administrative operations and changes
-        - USER_MANAGEMENT: User account and permission changes
+    **Security levels:**
+    - LOW: Routine operations
+    - MEDIUM: Standard operations
+    - HIGH: Sensitive operations
+    - CRITICAL: High-risk operations
     
-    Security Levels:
-        - LOW: Routine operations with minimal security impact
-        - MEDIUM: Standard operations requiring basic monitoring
-        - HIGH: Sensitive operations requiring enhanced monitoring
-        - CRITICAL: High-risk operations requiring immediate attention
+    **Use cases:**
+    - Populate filter dropdowns
+    - API client configuration
+    - Understanding available filters
     
-    Error Handling:
-        - 500: System configuration or enum processing errors
-    
-    Use Cases:
-        - Frontend dropdown population for filtering
-        - API client configuration and validation
-        - Documentation and system capability discovery
-        - Audit log categorization and analysis
+    **Example response:**
+    ```json
+    {
+        "activity_types": ["LOGIN", "API_CALL", "DATA_ACCESS"],
+        "security_levels": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+        "activity_type_descriptions": {
+            "LOGIN": "User authentication and session management"
+        },
+        "usage_examples": {
+            "example_activity_filter": "?activity_types=LOGIN&activity_types=API_CALL"
+        }
+    }
+    ```
     """
     try:
         # Get activity types with descriptions

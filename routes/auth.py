@@ -260,136 +260,26 @@ async def login_for_access_token(
     db: Session = Depends(get_db),
 ):
     """
-    🔐 **User Authentication - Login and Get JWT Tokens**
+    **User Login & Token Generation**
     
-    Authenticates users and returns JWT tokens for secure API access. This endpoint implements
-    OAuth2 password flow for token generation with enhanced security features.
-
-    ---
-
-    ## 🚀 **Quick Start**
-    ```bash
-    # Basic authentication request
-    curl -X POST "https://api.yourdomain.com/v1.0/auth/token" \\
-         -H "Content-Type: application/x-www-form-urlencoded" \\
-         -d "username=john_doe&password=secure_password"
-    ```
-
-    ## 📋 **Request Details**
-
-    ### **Form Data Parameters**
-    | Parameter | Type | Required | Description |
-    |-----------|------|----------|-------------|
-    | `username` | string | ✅ | Username or email address |
-    | `password` | string | ✅ | User's password |
-
-    ### **Content-Type**
-    `application/x-www-form-urlencoded`
-
-    ---
-
-    ## ✅ **Successful Response**
-    ```json
-    {
-        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-        "token_type": "bearer",
-        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
-    ```
-
-    ### **Token Information**
-    | Token Type | Expiration | Usage |
-    |------------|------------|-------|
-    | Access Token | 30,000 minutes | API authentication |
-    | Refresh Token | 7 days | Obtain new access tokens |
-
-    ---
-
-    ## 🔒 **Security Features**
-
-    - 🔑 **Bcrypt Password Hashing** - Secure password verification
-    - ⚡ **Token Blacklisting** - Immediate token revocation support
-    - 📝 **Audit Logging** - Comprehensive authentication tracking
-    - 🛡️ **Rate Limiting** - Brute force protection
-    - 🔄 **Refresh Token Rotation** - Secure token renewal
-    - 💾 **Redis Storage** - Secure refresh token management
-
-    ---
-
-    ## ❌ **Error Responses**
-
-    ### **401 Unauthorized**
-    ```json
-    {
-        "detail": "Incorrect username or password"
-    }
-    ```
-    **Causes:** Invalid credentials, inactive account, or locked account
-
-    ### **400 Bad Request**
-    ```json
-    {
-        "detail": "Invalid request format"
-    }
-    ```
-    **Causes:** Missing parameters, malformed data
-
-    ---
-
-    ## 🛠️ **Usage Examples**
-
-
-    ### **Python**
-    ```python
-    import requests
+    Authenticate with username/password and receive JWT tokens for secure API access.
     
-    response = requests.post(
-        "https://api.yourdomain.com/v1.0/auth/token",
-        data={
-            "username": "john_doe",
-            "password": "secure_password"
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
-    )
+    **Use Cases:**
+    - Web application login
+    - Mobile app authentication  
+    - API client authentication
+    - Session establishment
     
-    tokens = response.json()
-    ```
-
-    ### **Using the Access Token**
-    ```bash
-    # Include in API requests
-    curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
-         "https://api.yourdomain.com/v1.0/protected-endpoint"
-    ```
-
-    ---
-
-    ## 📊 **Audit & Monitoring**
-
-    - ✅ Successful logins are logged with user ID and timestamp
-    - ❌ Failed attempts are recorded with IP address and reason
-    - 📍 Geographic and device information tracking
-    - 🔍 Real-time security monitoring
-
-    ---
-
-    ## ⚠️ **Important Notes**
-
-    - Store tokens securely - never in localStorage for production
-    - Access tokens expire - implement automatic refresh logic
-    - Refresh tokens should be stored securely (httpOnly cookies recommended)
-    - Report suspicious activity immediately to security team
-
-    ---
-
-    ## 🔄 **Token Refresh Flow**
-
-    1. Access token expires → Use refresh token at `/auth/refresh`
-    2. Validate refresh token → Generate new access/refresh tokens
-    3. Old refresh token → Invalidated in Redis
-    4. New tokens → Returned to client
-
-    For more details, see the token refresh endpoint documentation.
+    **Returns:**
+    - Access token (30,000 min expiry) for API calls
+    - Refresh token (7 days) for token renewal
+    - Bearer token type for Authorization header
+    
+    **Security Features:**
+    - Bcrypt password verification
+    - Audit logging for login attempts
+    - Redis-based token storage
+    - Automatic token rotation
     """
     audit_logger = AuditLogger(db)
     
@@ -447,48 +337,26 @@ async def refresh_access_token(
     refresh_request: RefreshTokenRequest, db: Session = Depends(get_db)
 ):
     """
-    Token Refresh - Get New Access Token Using Refresh Token
+    **Token Refresh & Renewal**
     
-    This endpoint allows users to obtain a new access token without re-authenticating
-    by using their valid refresh token.
+    Obtain new access token without re-authentication using valid refresh token.
     
-    **Refresh Flow:**
-    1. Validates the provided refresh token
-    2. Verifies token exists in Redis storage
-    3. Checks user account status
-    4. Generates new access and refresh tokens
-    5. Updates stored refresh token in Redis
+    **Use Cases:**
+    - Automatic token renewal in apps
+    - Maintaining user sessions
+    - Background token refresh
+    - Seamless user experience
     
-    **Request Body:**
-    - `refresh_token`: Valid refresh token from login
+    **Process:**
+    - Validates refresh token against Redis storage
+    - Generates new access & refresh token pair
+    - Invalidates old refresh token (rotation)
+    - Updates token storage with new tokens
     
-    **Response:**
-    - `access_token`: New JWT access token
-    - `token_type`: Always "bearer"
-    - `refresh_token`: New refresh token
-    
-    **Security Features:**
-    - Refresh token validation against Redis storage
-    - Automatic token rotation (new refresh token issued)
+    **Security:**
+    - Token rotation prevents replay attacks
+    - Redis validation ensures token authenticity
     - User account status verification
-    - JWT signature verification
-    
-    **Error Responses:**
-    - `401 Unauthorized`: Invalid or expired refresh token
-    - `401 Unauthorized`: Token not found in storage
-    - `401 Unauthorized`: User account inactive
-    
-    **Usage Example:**
-    ```bash
-    curl -X POST "/v1.0/auth/refresh" \
-         -H "Content-Type: application/json" \
-         -d '{"refresh_token": "your_refresh_token_here"}'
-    ```
-    
-    **Best Practices:**
-    - Store refresh tokens securely
-    - Use new tokens immediately after refresh
-    - Handle token expiration gracefully in client applications
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -595,57 +463,27 @@ async def refresh_access_token(
 @router.post("/register", response_model=UserResponse)
 def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     """
-    User Registration - Create New User Account
+    **User Registration & Account Creation**
     
-    This endpoint allows new users to register for an account. Self-registered users
-    have limited privileges compared to admin-created users.
+    Create new user account with secure password hashing and validation.
     
-    **Registration Process:**
-    1. Validates username and email uniqueness
-    2. Hashes password using bcrypt
-    3. Creates user with GENERAL_USER role by default
-    4. Sets created_by as "own: {email}" for self-registration
-    5. Self-registered users do NOT receive API keys
+    **Use Cases:**
+    - New user signup
+    - Self-service registration
+    - Account creation for web/mobile apps
+    - User onboarding process
     
-    **Request Body:**
-    - `username`: Unique username (required)
-    - `email`: Valid email address (required)
-    - `password`: Password (minimum 8 characters)
-    - `role`: User role (optional, defaults to GENERAL_USER)
+    **Account Details:**
+    - Default role: GENERAL_USER
+    - Password: Bcrypt hashed for security
+    - API Key: Not provided (contact admin for API access)
+    - Status: Active by default
     
-    **Response:**
-    - User object with ID, username, email, role, and timestamps
-    - No API key included for self-registered users
-    
-    **User Roles:**
-    - `GENERAL_USER`: Basic access, self-registered default
-    - `ADMIN_USER`: Can only be created by super users
-    - `SUPER_USER`: Can only be created by existing super users
-    
-    **Security Features:**
-    - Password hashing with bcrypt
-    - Email format validation
-    - Username/email uniqueness check
-    - API key restriction for self-registered users
-    
-    **Error Responses:**
-    - `400 Bad Request`: User already exists
-    - `400 Bad Request`: Invalid input data
-    - `422 Unprocessable Entity`: Validation errors
-    
-    **Usage Example:**
-    ```bash
-    curl -X POST "/v1.0/auth/register" \
-         -H "Content-Type: application/json" \
-         -d '{
-           "username": "john_doe",
-           "email": "john@example.com",
-           "password": "secure_password123"
-         }'
-    ```
-    
-    **Note:** Self-registered users must contact administrators to receive API keys
-    for programmatic access.
+    **Validation:**
+    - Username uniqueness check
+    - Email format and uniqueness validation
+    - Password strength requirements
+    - Duplicate account prevention
     """
 
     existing_user = (
@@ -681,50 +519,26 @@ async def logout(
     token: str = Depends(oauth2_scheme),
 ):
     """
-    User Logout - Invalidate Current Session
+    **Single Device Logout**
     
-    This endpoint logs out the user from the current device/session by invalidating
-    their access token and removing their refresh token.
+    Securely logout from current device/session by invalidating tokens.
     
-    **Logout Process:**
-    1. Blacklists the current access token in Redis
-    2. Removes the refresh token from Redis storage
-    3. Calculates token TTL for efficient blacklist management
-    4. Prevents token reuse until natural expiration
+    **Use Cases:**
+    - User logout from web app
+    - Mobile app logout
+    - Security logout after suspicious activity
+    - Session termination
     
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Active user account
+    **Process:**
+    - Blacklists current access token in Redis
+    - Removes refresh token from storage
+    - Calculates token TTL for efficient cleanup
+    - Prevents token reuse until natural expiration
     
-    **Response:**
-    - Success message confirming logout
-    
-    **Security Features:**
-    - Token blacklisting prevents reuse
-    - Automatic cleanup of expired blacklisted tokens
-    - Refresh token removal prevents token refresh
-    - Immediate session invalidation
-    
-    **Error Responses:**
-    - `401 Unauthorized`: Invalid or missing token
-    - `401 Unauthorized`: Token already blacklisted
-    - `400 Bad Request`: Inactive user account
-    
-    **Usage Example:**
-    ```bash
-    curl -X POST "/v1.0/auth/logout" \
-         -H "Authorization: Bearer your_access_token_here"
-    ```
-    
-    **Post-Logout:**
-    - Access token becomes invalid immediately
-    - User must login again to get new tokens
-    - Other devices/sessions remain active (use /logout_all for all devices)
-    
-    **Best Practices:**
-    - Always call logout when user explicitly logs out
-    - Clear tokens from client-side storage after logout
-    - Handle logout responses in client applications
+    **Impact:**
+    - Current session becomes invalid immediately
+    - Other devices/sessions remain active
+    - User must login again on this device
     """
     # Calculate remaining token lifetime
     try:
@@ -749,55 +563,27 @@ async def logout_all_devices(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ):
     """
-    Global Logout - Invalidate All User Sessions
+    **Global Logout (All Devices)**
     
-    This endpoint logs out the user from ALL devices and sessions by removing
-    all refresh tokens. Access tokens will remain valid until they expire naturally.
-    
-    **Global Logout Process:**
-    1. Removes all refresh tokens for the user from Redis
-    2. Prevents new token generation on any device
-    3. Forces re-authentication on all devices when access tokens expire
-    4. Maintains current session until access token expires
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Active user account
-    
-    **Response:**
-    - Success message confirming global logout
-    
-    **Security Features:**
-    - Comprehensive session invalidation
-    - Prevents token refresh on any device
-    - Useful for security incidents or password changes
-    - Immediate effect on token refresh attempts
+    Logout user from ALL devices and sessions for enhanced security.
     
     **Use Cases:**
-    - User suspects account compromise
+    - Suspected account compromise
     - Password change security measure
-    - Device lost or stolen
+    - Lost/stolen device protection
     - Administrative security action
+    - User-requested global logout
     
-    **Error Responses:**
-    - `401 Unauthorized`: Invalid or missing token
-    - `400 Bad Request`: Inactive user account
+    **Process:**
+    - Removes all refresh tokens from Redis
+    - Prevents new token generation on any device
+    - Forces re-authentication when access tokens expire
+    - Maintains current session until token expires
     
-    **Usage Example:**
-    ```bash
-    curl -X POST "/v1.0/auth/logout_all" \
-         -H "Authorization: Bearer your_access_token_here"
-    ```
-    
-    **Important Notes:**
-    - Current access token remains valid until expiration
-    - All devices will need to re-authenticate when tokens expire
-    - More aggressive than single-device logout
-    - Consider user experience impact before using
-    
-    **Recommendation:**
-    Use this endpoint for security-critical situations or when users
-    explicitly request to log out from all devices.
+    **Security Benefits:**
+    - Comprehensive session invalidation
+    - Immediate effect on token refresh attempts
+    - Useful for security incidents
     """
     redis_client.delete(f"refresh_token:{current_user.id}")
     return {"message": "Successfully logged out from all devices"}
@@ -808,65 +594,27 @@ async def read_users_me(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ):
     """
-    Get Current User Profile - Retrieve Authenticated User Information
+    **Get Current User Profile**
     
-    This endpoint returns detailed information about the currently authenticated user,
-    including their profile data, role, and API key (if available).
-    
-    **Returned Information:**
-    - `id`: Unique user identifier
-    - `username`: User's username
-    - `email`: User's email address
-    - `role`: User role (GENERAL_USER, ADMIN_USER, SUPER_USER)
-    - `is_active`: Account status
-    - `created_at`: Account creation timestamp
-    - `updated_at`: Last profile update timestamp
-    - `api_key`: API key for programmatic access (if assigned)
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Active user account
-    
-    **User Roles Explained:**
-    - `GENERAL_USER`: Basic access, limited permissions
-    - `ADMIN_USER`: Can manage users they created, has API key
-    - `SUPER_USER`: Full system access, can create any user type
-    
-    **API Key Information:**
-    - Self-registered users: `api_key` will be `null`
-    - Admin-created users: `api_key` provided for programmatic access
-    - API keys can be regenerated by admins/super admins
-    
-    **Error Responses:**
-    - `401 Unauthorized`: Invalid or missing token
-    - `401 Unauthorized`: Token blacklisted or expired
-    - `400 Bad Request`: Inactive user account
-    
-    **Usage Example:**
-    ```bash
-    curl -X GET "/v1.0/auth/me" \
-         -H "Authorization: Bearer your_access_token_here"
-    ```
-    
-    **Response Example:**
-    ```json
-    {
-      "id": "abc123def4",
-      "username": "john_doe",
-      "email": "john@example.com",
-      "role": "GENERAL_USER",
-      "is_active": true,
-      "created_at": "2024-01-15T10:30:00Z",
-      "updated_at": "2024-01-15T10:30:00Z",
-      "api_key": null
-    }
-    ```
+    Retrieve authenticated user's profile information and account details.
     
     **Use Cases:**
     - User profile display in applications
     - Role-based UI rendering
-    - API key retrieval for programmatic access
-    - Account status verification
+    - Account information verification
+    - API key retrieval for developers
+    - User dashboard data
+    
+    **Returns:**
+    - User ID, username, email
+    - Role (GENERAL_USER, ADMIN_USER, SUPER_USER)
+    - Account status and timestamps
+    - API key (if assigned by admin)
+    
+    **Authentication:**
+    - Requires valid JWT token in Authorization header
+    - Validates token signature and expiration
+    - Checks user account status
     """
     return UserProfileResponse(
         id=current_user.id,
@@ -886,67 +634,31 @@ async def regenerate_api_key(
     db: Session = Depends(get_db),
 ):
     """
-    Regenerate Personal API Key - Create New API Key for Current User
+    **Regenerate Personal API Key**
     
-    This endpoint allows admin and super admin users to regenerate their own API key.
-    The old API key becomes invalid immediately upon regeneration.
-    
-    **Access Control:**
-    - Only `ADMIN_USER` and `SUPER_USER` roles can regenerate API keys
-    - Users can only regenerate their own API key
-    - `GENERAL_USER` role is denied access
-    
-    **Regeneration Process:**
-    1. Validates user has admin or super admin role
-    2. Generates new unique API key with "ak_" prefix
-    3. Updates user record in database
-    4. Invalidates old API key immediately
-    5. Returns new API key in response
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Admin or Super Admin role
-    - Active user account
-    
-    **Response:**
-    - Success message
-    - New API key for immediate use
-    
-    **Security Features:**
-    - Role-based access control
-    - Immediate old key invalidation
-    - Unique key generation using UUID
-    - Database transaction safety
-    
-    **Error Responses:**
-    - `403 Forbidden`: Insufficient permissions (not admin/super admin)
-    - `401 Unauthorized`: Invalid or missing token
-    - `400 Bad Request`: Inactive user account
-    
-    **Usage Example:**
-    ```bash
-    curl -X POST "/v1.0/auth/regenerate_api_key" \
-         -H "Authorization: Bearer your_access_token_here"
-    ```
-    
-    **Response Example:**
-    ```json
-    {
-      "message": "API key regenerated successfully",
-      "api_key": "ak_1234567890abcdef1234567890abcdef"
-    }
-    ```
-    
-    **Important Notes:**
-    - Old API key stops working immediately
-    - Update all applications using the old API key
-    - Store new API key securely
-    - Consider impact on running applications before regenerating
+    Create new API key for current user (Admin/Super Admin only).
     
     **Use Cases:**
-    - Suspected API key compromise
-    - Regular security key rotation
-    - Application deployment with new keys
+    - API key rotation for security
+    - Compromised key replacement
+    - Regular security maintenance
+    - New application deployment
+    
+    **Access Control:**
+    - ADMIN_USER: Can regenerate own key
+    - SUPER_USER: Can regenerate own key
+    - GENERAL_USER: Access denied
+    
+    **Process:**
+    - Generates new unique API key with 'ak_' prefix
+    - Updates user record in database
+    - Invalidates old API key immediately
+    - Returns new key for immediate use
+    
+    **Security:**
+    - Old key stops working instantly
+    - UUID-based key generation
+    - Database transaction safety
     """
     
     # 🔒 SECURITY CHECK: Only admin and super admin can regenerate API keys
@@ -968,82 +680,33 @@ async def generate_api_key_for_user(
     db: Session = Depends(get_db),
 ):
     """
-    Generate API Key for User - Create API Key for Another User
+    **Generate API Key for User**
     
-    This endpoint allows admin and super admin users to generate API keys for other users.
-    This is typically used to provide programmatic access to users who need it.
-    
-    **Access Control:**
-    - Only `ADMIN_USER` and `SUPER_USER` roles can generate API keys for others
-    - Admins can generate keys for any user
-    - All actions are logged for audit purposes
-    
-    **Generation Process:**
-    1. Validates admin/super admin permissions
-    2. Verifies target user exists
-    3. Generates new unique API key
-    4. Updates target user's record
-    5. Logs action for audit trail
-    6. Returns new API key and user information
-    
-    **Path Parameters:**
-    - `user_id`: ID of the user to generate API key for
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Admin or Super Admin role
-    - Active user account
-    
-    **Response:**
-    - Success message with target user details
-    - New API key for the target user
-    - User ID and username for confirmation
-    
-    **Security Features:**
-    - Role-based access control
-    - User existence validation
-    - Comprehensive audit logging
-    - High security level logging
-    - Request context tracking
-    
-    **Audit Information Logged:**
-    - Action: generate_api_key
-    - Admin user performing action
-    - Target user details
-    - Timestamp and request information
-    
-    **Error Responses:**
-    - `403 Forbidden`: Insufficient permissions
-    - `404 Not Found`: Target user doesn't exist
-    - `401 Unauthorized`: Invalid or missing token
-    
-    **Usage Example:**
-    ```bash
-    curl -X POST "/v1.0/auth/generate_api_key/abc123def4" \
-         -H "Authorization: Bearer your_admin_token_here"
-    ```
-    
-    **Response Example:**
-    ```json
-    {
-      "message": "API key generated successfully for user john_doe",
-      "user_id": "abc123def4",
-      "username": "john_doe",
-      "api_key": "ak_1234567890abcdef1234567890abcdef"
-    }
-    ```
+    Create API key for another user (Admin/Super Admin management function).
     
     **Use Cases:**
-    - Providing API access to existing users
-    - Bulk API key generation for teams
-    - Replacing lost or compromised API keys
-    - Enabling programmatic access for applications
+    - Providing API access to team members
+    - Bulk API key generation for projects
+    - Enabling programmatic access for users
+    - Developer onboarding
     
-    **Best Practices:**
-    - Verify user identity before generating keys
-    - Communicate new API key securely to user
-    - Document API key assignments
-    - Monitor API key usage
+    **Access Control:**
+    - ADMIN_USER: Can generate keys for any user
+    - SUPER_USER: Can generate keys for any user
+    - Comprehensive audit logging
+    
+    **Process:**
+    - Validates target user exists
+    - Generates unique API key
+    - Updates target user's record
+    - Logs action with admin details
+    - Returns key and user confirmation
+    
+    **Audit Trail:**
+    - Records admin performing action
+    - Logs target user details
+    - High security level logging
+    - Request context tracking
     """
     
     # 🔒 SECURITY CHECK: Only admin and super admin can generate API keys for others
@@ -1097,89 +760,34 @@ async def revoke_api_key_for_user(
     db: Session = Depends(get_db),
 ):
     """
-    Revoke User API Key - Remove API Key Access for User
+    **Revoke User API Key**
     
-    This endpoint allows admin and super admin users to revoke API keys from other users,
-    immediately disabling their programmatic access to the API.
-    
-    **Access Control:**
-    - Only `ADMIN_USER` and `SUPER_USER` roles can revoke API keys
-    - Admins can revoke keys from any user
-    - All revocation actions are logged for audit
-    
-    **Revocation Process:**
-    1. Validates admin/super admin permissions
-    2. Verifies target user exists
-    3. Records current API key status for audit
-    4. Sets user's API key to null (revoked)
-    5. Updates user's timestamp
-    6. Logs revocation action with details
-    
-    **Path Parameters:**
-    - `user_id`: ID of the user whose API key should be revoked
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Admin or Super Admin role
-    - Active user account
-    
-    **Response:**
-    - Success message with target user details
-    - User ID and username for confirmation
-    - No API key returned (security measure)
-    
-    **Security Features:**
-    - Immediate API key invalidation
-    - Role-based access control
-    - Comprehensive audit logging
-    - User existence validation
-    - High security level logging
-    
-    **Audit Information Logged:**
-    - Action: revoke_api_key
-    - Admin user performing action
-    - Target user details
-    - Previous API key status
-    - Timestamp and request information
-    
-    **Error Responses:**
-    - `403 Forbidden`: Insufficient permissions
-    - `404 Not Found`: Target user doesn't exist
-    - `401 Unauthorized`: Invalid or missing token
-    
-    **Usage Example:**
-    ```bash
-    curl -X DELETE "/v1.0/auth/revoke_api_key/abc123def4" \
-         -H "Authorization: Bearer your_admin_token_here"
-    ```
-    
-    **Response Example:**
-    ```json
-    {
-      "message": "API key revoked successfully for user john_doe",
-      "user_id": "abc123def4",
-      "username": "john_doe"
-    }
-    ```
+    Remove API key access from user (Admin/Super Admin security function).
     
     **Use Cases:**
     - Security incident response
-    - Employee termination or role change
+    - Employee termination/role change
     - Suspected API key compromise
     - Temporary access suspension
     - Compliance requirements
     
-    **Important Notes:**
-    - API key becomes invalid immediately
-    - User loses all programmatic API access
-    - Action cannot be undone (new key must be generated)
-    - All applications using the key will fail authentication
+    **Access Control:**
+    - ADMIN_USER: Can revoke any user's key
+    - SUPER_USER: Can revoke any user's key
+    - Full audit logging for security
     
-    **Best Practices:**
-    - Notify user before revoking unless security incident
-    - Document reason for revocation
-    - Monitor for failed API requests after revocation
-    - Consider temporary suspension before permanent revocation
+    **Process:**
+    - Validates target user exists
+    - Records current API key status
+    - Sets API key to null (revoked)
+    - Updates user timestamp
+    - Logs revocation with details
+    
+    **Impact:**
+    - API key becomes invalid immediately
+    - User loses programmatic API access
+    - All applications using key will fail
+    - Action cannot be undone (new key needed)
     """
     
     # 🔒 SECURITY CHECK: Only admin and super admin can revoke API keys
@@ -1236,76 +844,35 @@ async def auth_health_check(
     db: Session = Depends(get_db),
 ):
     """
-    Authenticated Health Check - Verify Authentication System Status
+    **Authentication System Health Check**
     
-    This endpoint provides a comprehensive health check for the authentication system,
-    including database connectivity and user session validation.
-    
-    **Health Check Components:**
-    1. API service status verification
-    2. Database connection testing
-    3. User authentication validation
-    4. Token validity confirmation
-    5. System timestamp for synchronization
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Active user account
-    - Non-blacklisted token
-    
-    **Response Information:**
-    - `api_status`: Authentication API status
-    - `database_status`: Database connectivity status
-    - `user`: Current user's username
-    - `user_id`: Current user's ID
-    - `role`: Current user's role
-    - `timestamp`: Current server timestamp (ISO format)
-    
-    **Status Values:**
-    - `ok`: Component is functioning normally
-    - `error: <details>`: Component has issues with error details
+    Verify authentication system status and user session validity.
     
     **Use Cases:**
-    - Application startup health verification
+    - Application startup verification
     - Monitoring system integration
     - User session validation
-    - Database connectivity testing
     - System synchronization checks
+    - Health monitoring dashboards
     
-    **Error Responses:**
-    - `401 Unauthorized`: Invalid or missing token
-    - `401 Unauthorized`: Token blacklisted or expired
-    - `400 Bad Request`: Inactive user account
+    **Health Components:**
+    - API service status verification
+    - Database connection testing
+    - User authentication validation
+    - Token validity confirmation
+    - System timestamp synchronization
     
-    **Usage Example:**
-    ```bash
-    curl -X GET "/v1.0/auth/health" \
-         -H "Authorization: Bearer your_access_token_here"
-    ```
+    **Returns:**
+    - API status (ok/error)
+    - Database connectivity status
+    - Current user details (username, ID, role)
+    - Server timestamp (ISO format)
     
-    **Response Example:**
-    ```json
-    {
-      "api_status": "ok",
-      "database_status": "ok",
-      "user": "john_doe",
-      "user_id": "abc123def4",
-      "role": "GENERAL_USER",
-      "timestamp": "2024-01-15T10:30:00.123456"
-    }
-    ```
-    
-    **Monitoring Integration:**
-    - Use for application health monitoring
-    - Set up alerts for non-"ok" status values
-    - Monitor response times for performance
-    - Track authentication system availability
-    
-    **Security Benefits:**
-    - Validates complete authentication chain
-    - Confirms user account status
-    - Verifies database connectivity
-    - Provides audit trail for health checks
+    **Monitoring:**
+    - Use for automated health checks
+    - Set alerts for non-'ok' status
+    - Track response times
+    - Monitor system availability
     """
     try:
         db.execute(text("SELECT 1"))
@@ -1332,100 +899,37 @@ async def get_all_users(
     limit: int = 100,
 ):
     """
-    Get All Users - Retrieve Complete User List (Super Admin Only)
+    **Get All Users (Super Admin)**
     
-    This endpoint provides super administrators with access to the complete list of
-    all users in the system, including their profiles and API key information.
-    
-    **Access Control:**
-    - Restricted to `SUPER_USER` role only
-    - Admin users cannot access this endpoint
-    - Requires active super admin account
-    
-    **Query Parameters:**
-    - `skip`: Number of records to skip (default: 0)
-    - `limit`: Maximum records to return (default: 100, max: 100)
-    
-    **Pagination Support:**
-    - Use `skip` and `limit` for pagination
-    - Default page size: 100 users
-    - Efficient for large user databases
-    
-    **Returned Information (per user):**
-    - `id`: Unique user identifier
-    - `username`: User's username
-    - `email`: User's email address
-    - `role`: User role (GENERAL_USER, ADMIN_USER, SUPER_USER)
-    - `is_active`: Account status
-    - `created_at`: Account creation timestamp
-    - `updated_at`: Last profile update timestamp
-    - `api_key`: API key (visible to super admins only)
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Super Admin role (SUPER_USER)
-    - Active user account
-    
-    **Security Features:**
-    - Role-based access control
-    - API key visibility for administrative purposes
-    - Pagination to prevent data overload
-    - Complete user audit capability
-    
-    **Error Responses:**
-    - `403 Forbidden`: Insufficient permissions (not super admin)
-    - `401 Unauthorized`: Invalid or missing token
-    - `400 Bad Request`: Inactive user account
-    
-    **Usage Example:**
-    ```bash
-    # Get first 50 users
-    curl -X GET "/v1.0/auth/super/users?skip=0&limit=50" \
-         -H "Authorization: Bearer your_super_admin_token"
-    
-    # Get next 50 users
-    curl -X GET "/v1.0/auth/super/users?skip=50&limit=50" \
-         -H "Authorization: Bearer your_super_admin_token"
-    ```
-    
-    **Response Example:**
-    ```json
-    [
-      {
-        "id": "abc123def4",
-        "username": "john_doe",
-        "email": "john@example.com",
-        "role": "GENERAL_USER",
-        "is_active": true,
-        "created_at": "2024-01-15T10:30:00Z",
-        "updated_at": "2024-01-15T10:30:00Z",
-        "api_key": null
-      },
-      {
-        "id": "def456ghi7",
-        "username": "admin_user",
-        "email": "admin@example.com",
-        "role": "ADMIN_USER",
-        "is_active": true,
-        "created_at": "2024-01-10T08:15:00Z",
-        "updated_at": "2024-01-14T16:45:00Z",
-        "api_key": "ak_1234567890abcdef"
-      }
-    ]
-    ```
+    Retrieve complete user list with pagination for system administration.
     
     **Use Cases:**
-    - User management and administration
+    - User management dashboard
     - System audit and compliance
     - User statistics and reporting
     - API key management oversight
     - Account status monitoring
     
-    **Best Practices:**
-    - Use pagination for large user bases
-    - Implement client-side filtering for better UX
-    - Cache results appropriately
-    - Monitor access to this sensitive endpoint
+    **Access Control:**
+    - SUPER_USER only (highest privilege level)
+    - Admin users cannot access this endpoint
+    - Complete system visibility
+    
+    **Pagination:**
+    - skip: Number of records to skip (default: 0)
+    - limit: Max records returned (default: 100)
+    - Efficient for large user databases
+    
+    **Returns (per user):**
+    - Complete profile information
+    - API keys (visible to super admins)
+    - Account status and timestamps
+    - Role and permission levels
+    
+    **Security:**
+    - Sensitive endpoint with full user data
+    - Comprehensive audit capability
+    - API key visibility for admin purposes
     """
     users = db.query(models.User).offset(skip).limit(limit).all()
     return [
@@ -1450,77 +954,9 @@ async def activate_user(
     db: Session = Depends(get_db),
 ):
     """
-    Toggle User Account Status - Activate/Deactivate User Account
+    **Toggle User Account Status**
     
-    This endpoint allows super administrators to toggle user account status between
-    active and inactive states. This is a non-destructive way to manage user access.
-    
-    **Access Control:**
-    - Restricted to `SUPER_USER` role only
-    - Cannot be used by admin users
-    - Requires active super admin account
-    
-    **Toggle Behavior:**
-    - Active users become inactive
-    - Inactive users become active
-    - Status change is immediate
-    - Updates user's timestamp
-    
-    **Path Parameters:**
-    - `user_id`: ID of the user whose status should be toggled
-    
-    **Authentication Required:**
-    - Valid JWT access token in Authorization header
-    - Super Admin role (SUPER_USER)
-    - Active user account
-    
-    **Account Status Effects:**
-    
-    **When Deactivated:**
-    - User cannot login with credentials
-    - Existing tokens remain valid until expiration
-    - API key access is disabled
-    - User appears as inactive in system
-    
-    **When Activated:**
-    - User can login normally
-    - Can generate new tokens
-    - API key access restored (if key exists)
-    - Full system access restored
-    
-    **Response:**
-    - Success message indicating action taken
-    - Confirms whether user was activated or deactivated
-    
-    **Security Features:**
-    - Non-destructive account management
-    - Immediate effect on authentication
-    - Preserves user data and settings
-    - Reversible action
-    
-    **Error Responses:**
-    - `403 Forbidden`: Insufficient permissions (not super admin)
-    - `404 Not Found`: User doesn't exist
-    - `401 Unauthorized`: Invalid or missing token
-    
-    **Usage Example:**
-    ```bash
-    curl -X PUT "/v1.0/auth/super/users/abc123def4/activate" \
-         -H "Authorization: Bearer your_super_admin_token"
-    ```
-    
-    **Response Examples:**
-    ```json
-    // User was inactive, now activated
-    {
-      "message": "User activated successfully"
-    }
-    
-    // User was active, now deactivated
-    {
-      "message": "User deactivated successfully"
-    }
-    ```
+    Activate or deactivate user account (Super Admin management function).
     
     **Use Cases:**
     - Temporary account suspension
@@ -1529,18 +965,25 @@ async def activate_user(
     - Account recovery processes
     - Compliance requirements
     
-    **Best Practices:**
-    - Document reason for status changes
-    - Notify users of account status changes
-    - Monitor for failed login attempts after deactivation
-    - Use deactivation instead of deletion when possible
-    - Consider impact on user's active sessions
+    **Access Control:**
+    - SUPER_USER only (highest privilege)
+    - Non-destructive account management
+    - Preserves user data and settings
     
-    **Important Notes:**
-    - Existing tokens remain valid until natural expiration
-    - User data and settings are preserved
-    - Action is immediately reversible
-    - API key access follows account status
+    **Toggle Behavior:**
+    - Active users → Inactive (cannot login)
+    - Inactive users → Active (can login normally)
+    - Status change is immediate
+    - Updates user timestamp
+    
+    **Effects:**
+    - **When Deactivated:** No login, existing tokens valid until expiry, API key disabled
+    - **When Activated:** Full login access, can generate tokens, API key restored
+    
+    **Security:**
+    - Reversible action (can be undone)
+    - Immediate authentication impact
+    - Preserves all user data
     """
     user = get_user_by_id(db, user_id)
     if not user:
@@ -1560,7 +1003,7 @@ async def activate_user(
 async def authenticate_api_key(
     request: Request, db: Session = Depends(get_db)
 ) -> models.User:
-    """Authenticate user via API key"""
+    """Authenticate user via X-API-Key header. Returns user if valid and active."""
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         raise HTTPException(
@@ -1586,67 +1029,9 @@ async def read_users_me_api_key(
     current_user: Annotated[models.User, Depends(authenticate_api_key)],
 ):
     """
-    Get User Profile via API Key - Retrieve User Information Using API Key Authentication
+    **Get Profile via API Key**
     
-    This endpoint allows users to retrieve their profile information using API key
-    authentication instead of JWT tokens. This is designed for programmatic access.
-    
-    **Authentication Method:**
-    - Uses API key authentication via `X-API-Key` header
-    - No JWT token required
-    - Direct database lookup by API key
-    - Validates user account status
-    
-    **API Key Requirements:**
-    - Valid API key assigned to user
-    - Active user account
-    - API key must be provided in `X-API-Key` header
-    
-    **Returned Information:**
-    - `id`: Unique user identifier
-    - `username`: User's username
-    - `email`: User's email address
-    - `role`: User role (GENERAL_USER, ADMIN_USER, SUPER_USER)
-    - `is_active`: Account status
-    - `created_at`: Account creation timestamp
-    - `updated_at`: Last profile update timestamp
-    - `api_key`: The API key used for authentication
-    
-    **Authentication Required:**
-    - Valid API key in `X-API-Key` header
-    - Active user account
-    - API key must exist in database
-    
-    **Security Features:**
-    - Direct API key validation
-    - Account status verification
-    - Secure key lookup
-    - No token expiration concerns
-    
-    **Error Responses:**
-    - `401 Unauthorized`: Missing API key header
-    - `401 Unauthorized`: Invalid or revoked API key
-    - `401 Unauthorized`: Inactive user account
-    
-    **Usage Example:**
-    ```bash
-    curl -X GET "/v1.0/auth/apikey/me" \
-         -H "X-API-Key: ak_1234567890abcdef1234567890abcdef"
-    ```
-    
-    **Response Example:**
-    ```json
-    {
-      "id": "abc123def4",
-      "username": "john_doe",
-      "email": "john@example.com",
-      "role": "ADMIN_USER",
-      "is_active": true,
-      "created_at": "2024-01-15T10:30:00Z",
-      "updated_at": "2024-01-15T10:30:00Z",
-      "api_key": "ak_1234567890abcdef1234567890abcdef"
-    }
-    ```
+    Retrieve user profile using API key authentication (alternative to JWT).
     
     **Use Cases:**
     - Server-to-server authentication
@@ -1655,6 +1040,12 @@ async def read_users_me_api_key(
     - Microservice authentication
     - Long-running background processes
     
+    **Authentication Method:**
+    - Uses X-API-Key header (not Authorization Bearer)
+    - Direct database lookup by API key
+    - No JWT token required
+    - Validates user account status
+    
     **Advantages over JWT:**
     - No token expiration management
     - Simpler authentication flow
@@ -1662,18 +1053,16 @@ async def read_users_me_api_key(
     - No refresh token complexity
     - Direct database validation
     
-    **API Key Management:**
-    - API keys can be regenerated by admins
-    - Keys can be revoked immediately
-    - Only admin/super admin users receive API keys
-    - Self-registered users don't get API keys
+    **Returns:**
+    - Complete user profile information
+    - API key used for authentication
+    - Account status and role details
+    - Timestamps and user metadata
     
-    **Best Practices:**
-    - Store API keys securely
-    - Use HTTPS for all API key requests
-    - Rotate API keys regularly
-    - Monitor API key usage
-    - Implement rate limiting for API key endpoints
+    **Security:**
+    - API key must be valid and active
+    - User account must be active
+    - Secure key lookup process
     """
     return UserProfileResponse(
         id=current_user.id,

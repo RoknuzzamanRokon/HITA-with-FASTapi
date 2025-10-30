@@ -23,6 +23,7 @@ def grant_provider_permissions(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
+    """Grant provider permissions to a general user."""
     provider_names = request.provider_activision_list 
 
     # Check if the current user is a super_user or admin_user
@@ -81,6 +82,7 @@ def remove_provider_permissions(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
+    """Remove provider permissions from a general user."""
     provider_names = request.provider_deactivation_list
 
     # Check if the current user is a super_user or admin_user

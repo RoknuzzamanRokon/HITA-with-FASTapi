@@ -5763,7 +5763,77 @@ async def convert_row_to_our_formate(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Get hotel details - accessible to all authenticated users, but data filtered by supplier permissions"""
+    """
+    **Get Hotel Details & Convert to Standard Format**
+    
+    Retrieve and convert raw hotel data from suppliers to standardized format.
+    
+    **Use Cases:**
+    - Get formatted hotel information for display
+    - Convert supplier-specific data to unified format
+    - Retrieve hotel details for booking systems
+    - Data integration and normalization
+    - Hotel comparison across suppliers
+    
+    **Access Control:**
+    - **SUPER_USER**: Access to all suppliers
+    - **ADMIN_USER**: Access to all suppliers  
+    - **GENERAL_USER**: Access only to permitted suppliers
+    
+    **Supported Suppliers:**
+    - `hotelbeds`: HotelBeds API data
+    - `paximum`: Paximum supplier data
+    - `stuba`: Stuba API integration
+    
+    **Request Body:**
+    ```json
+    {
+      "supplier_code": "hotelbeds",
+      "hotel_id": "12345"
+    }
+    ```
+    
+    **Example Usage:**
+    ```bash
+    curl -X POST "/v1.0/hotel/details" \
+         -H "Authorization: Bearer your_token" \
+         -H "Content-Type: application/json" \
+         -d '{
+           "supplier_code": "hotelbeds",
+           "hotel_id": "HTL123456"
+         }'
+    ```
+    
+    **Response Format:**
+    ```json
+    {
+      "created": "2024-01-15T10:30:00",
+      "timestamp": 1705312200,
+      "hotel_id": "HTL123456",
+      "name": "Grand Hotel Example",
+      "star_rating": "5",
+      "address": {
+        "latitude": 40.7128,
+        "longitude": -74.0060,
+        "full_address": "123 Main St, New York, USA"
+      },
+      "room_type": [...],
+      "facilities": [...],
+      "hotel_photo": [...]
+    }
+    ```
+    
+    **Security Features:**
+    - Supplier permission validation
+    - Comprehensive audit logging
+    - Role-based access control
+    - Unauthorized access attempt tracking
+    
+    **Error Responses:**
+    - `403 Forbidden`: No permission for supplier
+    - `404 Not Found`: Hotel data not found
+    - `500 Internal Error`: JSON parsing or file issues
+    """
     
     supplier_code = request_body.supplier_code
     hotel_id = request_body.hotel_id

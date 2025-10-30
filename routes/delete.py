@@ -20,7 +20,32 @@ def delete_user(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Delete a user by ID (only accessible by super_user)."""
+    """
+    **Delete User Account**
+    
+    Permanently remove user account from system. Super Admin only.
+    
+    **Use Cases:**
+    - Remove inactive accounts
+    - Compliance with data deletion requests
+    - Clean up test accounts
+    - Account termination
+    
+    **Example:**
+    ```bash
+    curl -X DELETE "/v1.0/delete/delete_user/abc123def4" \
+         -H "Authorization: Bearer your_super_admin_token"
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "message": "User with ID abc123def4 has been deleted."
+    }
+    ```
+    
+    **⚠️ Warning:** This action is irreversible. All user data will be permanently lost.
+    """
     # Check if the current user is a super_user
     if current_user.role != models.UserRole.SUPER_USER:
         raise HTTPException(
@@ -49,7 +74,32 @@ def delete_supper_user(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)]
 ):
-    """Delete a user by ID (only accessible by super_user)."""
+    """
+    **Delete Super User Account**
+    
+    Permanently remove super user account from system. Super Admin only.
+    
+    **Use Cases:**
+    - Remove former super admin accounts
+    - System cleanup and maintenance
+    - Security incident response
+    - Administrative restructuring
+    
+    **Example:**
+    ```bash
+    curl -X DELETE "/v1.0/delete/delete_super_user/xyz789abc1" \
+         -H "Authorization: Bearer your_super_admin_token"
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "message": "User with ID xyz789abc1 has been deleted."
+    }
+    ```
+    
+    **⚠️ Critical Warning:** Deleting super users affects system administration capabilities.
+    """
     # Check if the current user is a super_user
     if current_user.role != models.UserRole.SUPER_USER:
         raise HTTPException(
@@ -79,8 +129,37 @@ def delete_hotel_by_ittid(
     db: Session = Depends(get_db)
 ):
     """
-    Delete a hotel and all related information by ittid.
-    Only SUPER_USER can access this endpoint.
+    **Delete Hotel & Related Data**
+    
+    Permanently remove hotel and all associated information by ITT ID. Super Admin only.
+    
+    **Use Cases:**
+    - Remove outdated hotel listings
+    - Clean up duplicate entries
+    - Data quality maintenance
+    - Compliance with removal requests
+    
+    **Deletes:**
+    - Hotel record
+    - Provider mappings
+    - Location data
+    - Contact information
+    - Chain associations
+    
+    **Example:**
+    ```bash
+    curl -X DELETE "/v1.0/delete/delete_hotel_by_ittid/HTL123456" \
+         -H "Authorization: Bearer your_super_admin_token"
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "message": "Hotel with ittid 'HTL123456' and all related data deleted successfully."
+    }
+    ```
+    
+    **⚠️ Warning:** This cascades to delete ALL related hotel data permanently.
     """
     if current_user.role != UserRole.SUPER_USER:
         raise HTTPException(
@@ -115,8 +194,34 @@ def delete_a_hotel_mapping(
     db: Session = Depends(get_db)
 ):
     """
-    Delete a specific provider mapping for a hotel by ittid, provider_name, and provider_id.
-    Only SUPER_USER can access this endpoint.
+    **Delete Hotel Provider Mapping**
+    
+    Remove specific provider mapping for a hotel. Super Admin only.
+    
+    **Use Cases:**
+    - Remove incorrect provider mappings
+    - Clean up duplicate mappings
+    - Update provider relationships
+    - Data quality maintenance
+    
+    **Parameters:**
+    - provider_name: Name of the provider (e.g., "Booking.com")
+    - provider_id: Provider's unique ID for the hotel
+    
+    **Example:**
+    ```bash
+    curl -X DELETE "/v1.0/delete/delete_a_hotel_mapping?provider_name=Booking.com&provider_id=12345" \
+         -H "Authorization: Bearer your_super_admin_token"
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "message": "Mapping for provider 'Booking.com', provider_id '12345' deleted successfully."
+    }
+    ```
+    
+    **Note:** Only removes the specific mapping, hotel data remains intact.
     """
     if current_user.role != UserRole.SUPER_USER:
         raise HTTPException(
