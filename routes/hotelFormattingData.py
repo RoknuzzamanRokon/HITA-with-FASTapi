@@ -8,7 +8,12 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import re
 import ast
-from routes.path import RAW_BASE_DIR, IRIX_STATIC_DIR, DOTW_STATIC_DIR, INSTANTTRAVEL_STATIC_DIR
+from routes.path import (
+    RAW_BASE_DIR,
+    IRIX_STATIC_DIR,
+    DOTW_STATIC_DIR,
+    INSTANTTRAVEL_STATIC_DIR,
+)
 import csv
 from database import get_db
 from routes.auth import get_current_user
@@ -2117,8 +2122,12 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                 "nationality_restrictions": None,
             },
             "address": {
-                "latitude": safe_get(hotel, ["location", "coordinates", "latitude"], None),
-                "longitude": safe_get(hotel, ["location", "coordinates", "longitude"], None),
+                "latitude": safe_get(
+                    hotel, ["location", "coordinates", "latitude"], None
+                ),
+                "longitude": safe_get(
+                    hotel, ["location", "coordinates", "longitude"], None
+                ),
                 "address_line_1": address1,
                 "address_line_2": None,
                 "city": safe_get(hotel, ["location", "city"], None),
@@ -2129,8 +2138,12 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                 "full_address": full_address,
                 "google_map_site_link": google_map_site_link,
                 "local_lang": {
-                    "latitude": safe_get(hotel, ["location", "coordinates", "latitude"], None),
-                    "longitude": safe_get(hotel, ["location", "coordinates", "longitude"], None),
+                    "latitude": safe_get(
+                        hotel, ["location", "coordinates", "latitude"], None
+                    ),
+                    "longitude": safe_get(
+                        hotel, ["location", "coordinates", "longitude"], None
+                    ),
                     "address_line_1": address1,
                     "address_line_2": None,
                     "city": safe_get(hotel, ["location", "city"], None),
@@ -3065,7 +3078,11 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                     return [obj["#text"]]
                 return []
             elif isinstance(obj, list):
-                return [item.get("#text") for item in obj if isinstance(item, dict) and item.get("#text")]
+                return [
+                    item.get("#text")
+                    for item in obj
+                    if isinstance(item, dict) and item.get("#text")
+                ]
             elif isinstance(obj, str):
                 return [obj]
             return []
@@ -3073,10 +3090,14 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
         # --- Contacts section ---
         contact_info = safe_get(hotel, ["ContactInfo"], {})
 
-        phone_numbers = extract_text_list(safe_get(contact_info, ["PhoneNumbers", "PhoneNumber"], []))
+        phone_numbers = extract_text_list(
+            safe_get(contact_info, ["PhoneNumbers", "PhoneNumber"], [])
+        )
         fax_numbers = extract_text_list(safe_get(contact_info, ["Faxes", "Fax"], []))
         emails = extract_text_list(safe_get(contact_info, ["Emails", "Email"], []))
-        websites = extract_text_list(safe_get(contact_info, ["Websites", "Website"], []))
+        websites = extract_text_list(
+            safe_get(contact_info, ["Websites", "Website"], [])
+        )
 
         return {
             "created": createdAt_str,
@@ -3426,7 +3447,7 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
         hotel_data = parametros.get("hotel", {}) if isinstance(parametros, dict) else {}
 
         # Address and Google Map Link
-        address1 = hotel_data.get('direccion') if isinstance(hotel_data, dict) else None
+        address1 = hotel_data.get("direccion") if isinstance(hotel_data, dict) else None
         full_address = address1 if isinstance(address1, str) else None
         google_map_site_link = (
             f"http://maps.google.com/maps?q={full_address.replace(' ', '+')}"
@@ -3567,7 +3588,7 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
             "nearest_airports": [],
             "train_stations": [],
             "connected_locations": [],
-            "stadiums": []
+            "stadiums": [],
         }
 
     elif supplier_code == "ratehawkhotel":
@@ -5171,18 +5192,18 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
             # Bed details
             beds = []
             for bed in safe_get(room, ["beds"], []):
-                beds.append({
-                    "description": safe_get(bed, ["type"], None),
-                    "configuration": [safe_get(bed, ["size"], None)],
-                    "quantity": safe_get(bed, ["quantity"], None),
-                })
+                beds.append(
+                    {
+                        "description": safe_get(bed, ["type"], None),
+                        "configuration": [safe_get(bed, ["size"], None)],
+                        "quantity": safe_get(bed, ["quantity"], None),
+                    }
+                )
 
             # Facilities
             facilities = []
             for fac in safe_get(room, ["facilities"], []):
-                facilities.append(
-                   safe_get(fac, ["name"], None)
-              )
+                facilities.append(safe_get(fac, ["name"], None))
 
             room_obj = {
                 "room_id": room_id,
@@ -5191,7 +5212,7 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                 "room_pic": images,
                 "description": description,
                 "max_allowed": max_allowed,
-                "no_of_room": None,  
+                "no_of_room": None,
                 "room_size": safe_get(settings, ["roomSize"], None),
                 "bed_type": beds,
                 "amenities": facilities,
@@ -5751,6 +5772,244 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
             "stadiums": None,
         }
 
+    elif supplier_code == "kiwihotel":
+        createdAt = datetime.now()
+        createdAt_str = createdAt.strftime("%Y-%m-%dT%H:%M:%S")
+        created_at_dt = datetime.strptime(createdAt_str, "%Y-%m-%dT%H:%M:%S")
+        timeStamp = int(created_at_dt.timestamp())
+
+        def safe_get(d, keys, default=None):
+            """Safely access nested dictionary keys."""
+            for key in keys:
+                if isinstance(d, dict):
+                    d = d.get(key, default)
+                else:
+                    return default
+            return d
+
+        # Base hotel
+        hotel = safe_get(data, ["PropertyDetailResponse", "PropertyInfo"], {})
+
+        hotel_code = safe_get(hotel, ["@Code"], None)
+
+        hotel_provider_details = safe_get(
+            data, ["PropertyDetailResponse", "PropertyInfo", "PropertyDetails"], {}
+        )
+        hotel_name = safe_get(hotel_provider_details, ["@Title"], None)
+        website = safe_get(hotel_provider_details, ["@WebsiteURL"], None)
+        logo = safe_get(hotel_provider_details, ["@PropertyLogoURL"], None)
+        brand = safe_get(hotel_provider_details, ["@Brand"], None)
+        description = safe_get(hotel_provider_details, ["Description"], None)
+
+        star_rating = safe_get(hotel_provider_details, ["Rating", "StarRating"], None)
+
+        location_info = safe_get(hotel_provider_details, ["LocationInfo"], None)
+
+        longitude = safe_get(location_info, ["@Longitude"], None)
+        latitude = safe_get(location_info, ["@Latitude"], None)
+
+        location_info_address = safe_get(
+            hotel_provider_details, ["LocationInfo", "Address"], None
+        )
+        addressLine1 = safe_get(location_info_address, ["@AddressLine1"], None)
+        addressLine2 = safe_get(location_info_address, ["@AddressLine2"], None)
+        addressLine3 = safe_get(location_info_address, ["@AddressLine3"], None)
+        city = safe_get(location_info_address, ["@City"], None)
+        region = safe_get(location_info_address, ["@Region"], None)
+        regionCode = safe_get(location_info_address, ["@RegionIsoCode"], None)
+        country = safe_get(location_info_address, ["@Country"], None)
+        country_code = safe_get(location_info_address, ["@CountryIsoCode"], None)
+        area = safe_get(location_info_address, ["@Area"], None)
+        zone = safe_get(location_info_address, ["@Zone"], None)
+        zip_code = safe_get(location_info_address, ["@ZipCode"], None)
+
+        address_line_1 = addressLine1
+        hotel_name = hotel_name
+        address_query = f"{address_line_1}, {hotel_name}"
+        google_map_site_link = (
+            f"http://maps.google.com/maps?q={address_query.replace(' ', '+')}"
+            if address_line_1
+            else None
+        )
+
+        airport_info = safe_get(
+            hotel_provider_details,
+            ["LocationInfo", "NearbyAirports", "NearbyAirport"],
+            None,
+        )
+
+        # This is nearest airport section.
+        nearest_airport = []
+        if airport_info:
+            # Normalize to list (because xmltodict may return dict if only one airport exists)
+            if isinstance(airport_info, dict):
+                airport_info = [airport_info]
+
+            for a in airport_info:
+                code = a.get("@Code")
+                name = a.get("@Name")
+                if code and name:
+                    nearest_airport.append({"code": code, "name": name})
+
+        # This is contacts section.
+        phone_info = safe_get(
+            hotel_provider_details, ["PhoneNumbers", "PhoneNumber"], None
+        )
+
+        phone_number = []
+        if phone_info:
+            if isinstance(phone_info, dict):
+                phone_info = [phone_info]
+
+            for p in phone_info:
+                num = p.get("@Number")
+                if num and num.strip():
+                    phone_number.append(num.strip())
+
+        # This is all photo section.
+        image_info = safe_get(hotel_provider_details, ["ImageUrls", "ImageURL"], None)
+
+        hotel_photo = []
+        primary_photo = None
+
+        if image_info:
+            if isinstance(image_info, dict):
+                image_info = [image_info]
+
+            for img in image_info:
+                img_size = img.get("@Size")
+                img_url = img.get("#text")
+
+                if img_size == "xxl" and img_url and img_url.strip():
+                    hotel_photo.append(
+                        {"picture_id": None, "title": None, "url": img_url.strip()}
+                    )
+
+            if hotel_photo:
+                primary_photo = hotel_photo[0]["url"]
+
+        amenities_info = safe_get(
+            hotel_provider_details, ["Features", "Amenities", "Amenity"], None
+        )
+
+        amenities = []
+        if amenities_info:
+            # Normalize to list (xmltodict returns str if only one item)
+            if isinstance(amenities_info, str):
+                amenities_info = [amenities_info]
+
+            for a in amenities_info:
+                if a and isinstance(a, str):
+                    amenities.append(
+                        {
+                            "type": a.strip(),
+                            "title": a.strip(),
+                            "icon": "mdi mdi-translate-variant",
+                        }
+                    )
+
+        return {
+            "created": createdAt_str,
+            "timestamp": timeStamp,
+            "hotel_id": hotel_code,
+            "name": hotel_name,
+            "name_local": hotel_name,
+            "hotel_formerly_name": hotel_name,
+            "destination_code": None,
+            "country_code": country_code,
+            "brand_text": None,
+            "property_type": None,
+            "star_rating": star_rating,
+            "chain": None,
+            "brand": brand,
+            "logo": logo,
+            "primary_photo": primary_photo,
+            "review_rating": {
+                "source": None,
+                "number_of_reviews": None,
+                "rating_average": None,
+                "popularity_score": None,
+            },
+            "policies": {
+                "check_in": {
+                    "begin_time": None,
+                    "end_time": None,
+                    "instructions": None,
+                    "min_age": None,
+                },
+                "checkout": {"time": None},
+                "fees": {"optional": None},
+                "know_before_you_go": None,
+                "pets": [],
+                "remark": None,
+                "child_and_extra_bed_policy": {
+                    "infant_age": None,
+                    "children_age_from": None,
+                    "children_age_to": None,
+                    "children_stay_free": None,
+                    "min_guest_age": None,
+                },
+                "nationality_restrictions": None,
+            },
+            "address": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "address_line_1": addressLine1,
+                "address_line_2": addressLine2,
+                "city": city,
+                "state": zone,
+                "country": country,
+                "country_code": country_code,
+                "postal_code": zip_code,
+                "full_address": f"{addressLine1},{addressLine2},{city},{country}",
+                "google_map_site_link": google_map_site_link,
+                "local_lang": {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "address_line_1": addressLine1,
+                    "address_line_2": addressLine2,
+                    "city": city,
+                    "state": zone,
+                    "country": country,
+                    "country_code": country_code,
+                    "postal_code": zip_code,
+                    "full_address": f"{addressLine1},{addressLine2},{city},{country}",
+                    "google_map_site_link": google_map_site_link,
+                },
+                "mapping": {
+                    "continent_id": None,
+                    "country_id": None,
+                    "province_id": None,
+                    "state_id": None,
+                    "city_id": None,
+                    "area_id": None,
+                },
+            },
+            "contacts": {
+                "phone_numbers": phone_number,
+                "fax": [safe_get(hotel, ["Contact", "Fax"], None)],
+                "email_address": [safe_get(hotel, ["Contact", "Email"], None)],
+                "website": [website],
+            },
+            "descriptions": [{"title": None, "text": description}],
+            "room_type": None,
+            "spoken_languages": [
+                {
+                    "type": "spoken_languages",
+                    "title": "English",
+                    "icon": "mdi mdi-translate-variant",
+                }
+            ],
+            "amenities": amenities,
+            "facilities": None,
+            "hotel_photo": hotel_photo,
+            "point_of_interests": None,
+            "nearest_airports": nearest_airport,
+            "train_stations": None,
+            "connected_locations": None,
+            "stadiums": None,
+        }
+
     # Add more mappings for other suppliers as needed
     else:
         raise HTTPException(status_code=400, detail="Unknown provider mapping")
@@ -5761,7 +6020,7 @@ async def convert_row_to_our_formate(
     request_body: ConvertRequest,
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     **Get Hotel Details & Convert to Standard Format**
@@ -5834,19 +6093,26 @@ async def convert_row_to_our_formate(
     - `404 Not Found`: Hotel data not found
     - `500 Internal Error`: JSON parsing or file issues
     """
-    
+
     supplier_code = request_body.supplier_code
     hotel_id = request_body.hotel_id
-    
+
     # 🔒 SUPPLIER PERMISSION CHECK: Verify user has access to this supplier
     # Super users and admin users have access to all suppliers
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         # Check if general user has permission for this supplier
-        user_supplier_permission = db.query(models.UserProviderPermission).filter(
-            models.UserProviderPermission.user_id == current_user.id,
-            models.UserProviderPermission.provider_name == supplier_code
-        ).first()
-        
+        user_supplier_permission = (
+            db.query(models.UserProviderPermission)
+            .filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                models.UserProviderPermission.provider_name == supplier_code,
+            )
+            .first()
+        )
+
         if not user_supplier_permission:
             # 📝 AUDIT LOG: Record unauthorized supplier access attempt
             audit_logger = AuditLogger(db)
@@ -5859,16 +6125,16 @@ async def convert_row_to_our_formate(
                     "action": "access_denied_supplier_not_active",
                     "supplier_code": supplier_code,
                     "hotel_id": hotel_id,
-                    "reason": "User does not have permission for this supplier"
+                    "reason": "User does not have permission for this supplier",
                 },
-                security_level=SecurityLevel.HIGH
+                security_level=SecurityLevel.HIGH,
             )
-            
+
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. You do not have permission to access data from supplier '{supplier_code}'. Please contact your administrator to activate this supplier."
+                detail=f"Access denied. You do not have permission to access data from supplier '{supplier_code}'. Please contact your administrator to activate this supplier.",
             )
-    
+
     # 📝 AUDIT LOG: Record successful hotel details access
     audit_logger = AuditLogger(db)
     audit_logger.log_activity(
@@ -5879,13 +6145,13 @@ async def convert_row_to_our_formate(
             "action": "access_hotel_details",
             "supplier_code": supplier_code,
             "hotel_id": hotel_id,
-            "user_role": current_user.role
+            "user_role": current_user.role,
         },
         request=request,
         security_level=SecurityLevel.MEDIUM,
-        success=True
+        success=True,
     )
-    
+
     # Process the hotel data
     file_path = os.path.join(RAW_BASE_DIR, supplier_code, f"{hotel_id}.json")
     try:
@@ -5894,7 +6160,10 @@ async def convert_row_to_our_formate(
         formatted = map_to_our_format(supplier_code, content)
         return formatted
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Hotel data not found for supplier '{supplier_code}' and hotel ID '{hotel_id}'")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Hotel data not found for supplier '{supplier_code}' and hotel ID '{hotel_id}'",
+        )
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON file")
     except Exception as e:

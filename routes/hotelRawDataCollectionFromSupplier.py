@@ -30,7 +30,7 @@ from routes.path import RAW_BASE_DIR
 from database import get_db
 from routes.auth import get_current_user
 import models
-from security.audit_logging import AuditLogger, ActivityType, SecurityLevel 
+from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 
 load_dotenv()
 
@@ -182,11 +182,15 @@ def fetch_hotelbeds_raw(hotel_id: str) -> Union[dict, None]:
                 data = resp.json()
                 # Check if the response contains actual hotel content
                 if "hotel" not in data and "hotels" not in data:
-                    logging.warning(f"No hotel data found for Hotelbeds hotel {hotel_id}")
+                    logging.warning(
+                        f"No hotel data found for Hotelbeds hotel {hotel_id}"
+                    )
                     return {"status": "no_data_found"}
                 return data
             except Exception:
-                logging.exception(f"Failed to parse JSON for Hotelbeds hotel {hotel_id}")
+                logging.exception(
+                    f"Failed to parse JSON for Hotelbeds hotel {hotel_id}"
+                )
                 return None
         else:
             logging.error(
@@ -318,9 +322,7 @@ def fetch_ean_raw(hotel_id: str) -> Union[dict, None]:
                 logging.exception(f"Failed to parse JSON for EAN hotel {hotel_id}")
                 return None
         else:
-            logging.error(
-                f"EAN fetch failed for {hotel_id}: {resp.status_code}"
-            )
+            logging.error(f"EAN fetch failed for {hotel_id}: {resp.status_code}")
             return None
 
     except Exception:
@@ -339,12 +341,12 @@ def fetch_grnconnect_raw(hotel_id: str) -> Union[dict, None]:
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Accept-Encoding": "application/gzip",
-        "api-key": API_KEY
+        "api-key": API_KEY,
     }
     CITY_HEADERS = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "API-key": API_KEY
+        "API-key": API_KEY,
     }
 
     try:
@@ -353,13 +355,15 @@ def fetch_grnconnect_raw(hotel_id: str) -> Union[dict, None]:
         resp = requests.get(hotel_url, headers=HEADERS, timeout=30)
         resp.raise_for_status()
         hotel_payload = resp.json()
-        hotel = hotel_payload['hotels'][0]
+        hotel = hotel_payload["hotels"][0]
 
         # 2) country info
         country_code = hotel.get("country")
         country = {}
         if country_code:
-            country_url = f"https://api-sandbox.grnconnect.com/api/v3/countries/{country_code}"
+            country_url = (
+                f"https://api-sandbox.grnconnect.com/api/v3/countries/{country_code}"
+            )
             resp = requests.get(country_url, headers=HEADERS, timeout=30)
             resp.raise_for_status()
             country = resp.json().get("country", {})
@@ -385,7 +389,7 @@ def fetch_grnconnect_raw(hotel_id: str) -> Union[dict, None]:
             "hotel": hotel,
             "country": country,
             "city": city,
-            "images": images
+            "images": images,
         }
         return data
 
@@ -549,8 +553,8 @@ def fetch_juniperhotel_raw(hotel_id: str) -> Union[dict, None]:
     """
 
     headers = {
-        'Content-Type': 'text/xml;charset=UTF-8',
-        'SOAPAction': '"http://www.juniper.es/webservice/2007/HotelContent"'
+        "Content-Type": "text/xml;charset=UTF-8",
+        "SOAPAction": '"http://www.juniper.es/webservice/2007/HotelContent"',
     }
 
     try:
@@ -564,7 +568,9 @@ def fetch_juniperhotel_raw(hotel_id: str) -> Union[dict, None]:
                 print(f"Error parsing XML for hotel ID {hotel_id}: {e}")
                 return None
         else:
-            print(f"Failed to fetch data for hotel ID {hotel_id}. Status code: {response.status_code}, Response: {response.text}")
+            print(
+                f"Failed to fetch data for hotel ID {hotel_id}. Status code: {response.status_code}, Response: {response.text}"
+            )
             return None
     except requests.exceptions.RequestException as e:
         print(f"Request error for hotel ID {hotel_id}: {e}")
@@ -576,14 +582,9 @@ def fetch_oryxhotel_raw(hotel_id: str) -> Union[dict, None]:
 
     url = "https://api.giinfotech.ae/api/Hotel/HotelInfo"
 
-    payload = json.dumps({
-        "hotelCode": f"{hotel_id}"
-    })
+    payload = json.dumps({"hotelCode": f"{hotel_id}"})
 
-    headers = {
-    'ApiKey': GILL_API_KEY,
-    'Content-Type': 'application/json'
-    }
+    headers = {"ApiKey": GILL_API_KEY, "Content-Type": "application/json"}
     try:
         response = requests.post(url, headers=headers, data=payload, timeout=20)
 
@@ -613,7 +614,7 @@ def fetch_hyperguestdirect_raw(hotel_id: str) -> Union[dict, str, None]:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            if not data:  
+            if not data:
                 return "no_data_found"
             return data
         else:
@@ -641,7 +642,9 @@ def fetch_innstant_raw(hotel_id):
                 return "no_data_found"
             return data
         else:
-            print(f"Failed to fetch data for hotel ID {hotel_id}. Status code: {response.status_code}")
+            print(
+                f"Failed to fetch data for hotel ID {hotel_id}. Status code: {response.status_code}"
+            )
             return None
     except requests.RequestException as e:
         print(f"Request error for hotel ID {hotel_id}: {e}")
@@ -732,11 +735,50 @@ def fetch_amadeushotel_raw(hotel_id: str) -> Union[Dict[str, Any], str, None]:
             root = ET.fromstring(response.content)
             response_dict = remove_namespace(xml_to_dict(root))
 
-            if response_dict.get("status") == "error" and response_dict.get("error") == "hotel_not_found":
+            if (
+                response_dict.get("status") == "error"
+                and response_dict.get("error") == "hotel_not_found"
+            ):
                 return "no_data_found"
             return response_dict
     except Exception as e:
         print(f"Exception {hotel_id}: {e}")
+        return None
+
+
+def fetch_kiwi_hotel_raw(hotel_id: str) -> Union[Dict[str, Any], str, None]:
+    USER_NAME = os.getenv("KIWI_USER_NAME")
+    PASSWORD = os.getenv("KIWI_USER_PASSWORD")
+    url = "https://api.uat.kiwicollection.net/v1/propertyDetails"
+
+    payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <PropertyDetailsRequest PropertyCode="{hotel_id}" DetailLevel="full" />"""
+
+    headers = {
+        "Accept-Encoding": "gzip,deflate",
+        "Content-Type": "text/xml",
+        "username": USER_NAME,
+        "password": PASSWORD,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=20)
+        if response.status_code == 200:
+            try:
+                data_dict = xmltodict.parse(response.content)
+                print(f"Data fetched successfully for {hotel_id}")
+                return data_dict
+            except Exception as parse_error:
+                print(f"XML parse error for hotel {hotel_id}: {parse_error}")
+                return None
+        else:
+            print(
+                f"Failed to fetch data for {hotel_id}. Status code: {response.status_code}"
+            )
+            return None
+
+    except Exception as e:
+        print(f"Error fetching data for {hotel_id}: {e}")
         return None
 
 
@@ -745,17 +787,20 @@ async def raw_data_push_our_system(
     request_body: ConvertRequest,
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ):
     """Push hotel raw data to system (Super User and Admin User only)"""
-    
+
     # 🔒 SECURITY CHECK: Only super users and admin users can push hotel data
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only super users and admin users can push hotel data."
+            detail="Access denied. Only super users and admin users can push hotel data.",
         )
-    
+
     # 📝 AUDIT LOG: Record hotel data push attempt
     audit_logger = AuditLogger(db)
     audit_logger.log_activity(
@@ -765,11 +810,15 @@ async def raw_data_push_our_system(
             "endpoint": "/v1.0/hotel/pushhotel",
             "action": "push_hotel_data",
             "supplier_code": request_body.supplier_code,
-            "hotel_ids": request_body.hotel_id if isinstance(request_body.hotel_id, list) else [request_body.hotel_id]
+            "hotel_ids": (
+                request_body.hotel_id
+                if isinstance(request_body.hotel_id, list)
+                else [request_body.hotel_id]
+            ),
         },
         request=request,
         security_level=SecurityLevel.HIGH,
-        success=True
+        success=True,
     )
     # normalize supplier (accept Hotelbeds, HotelBeds, hotelbeds, etc.)
     supplier = request_body.supplier_code.strip().lower()
@@ -795,16 +844,16 @@ async def raw_data_push_our_system(
                 item_result["reason"] = "fetch_failed_or_missing_credentials"
                 logging.warning(f"Fetch failed for hotel {hid} (hotelbeds)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (hotelbeds)")
 
             else:
                 saved = save_json_file(
-                    base_dir, 
-                    hid, 
-                    json.dumps(raw_data, indent=2, ensure_ascii=False)
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
                 if saved:
                     item_result["status"] = "saved"
@@ -827,16 +876,16 @@ async def raw_data_push_our_system(
                 item_result["reason"] = "fetch_failed_or_missing_credentials"
                 logging.warning(f"Fetch failed for hotel {hid} (agoda)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (agoda)")
 
             else:
                 saved = save_json_file(
-                    base_dir,
-                    hid,
-                    json.dumps(raw_data, indent=2, ensure_ascii=False)
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
                 if saved:
                     item_result["status"] = "saved"
@@ -859,16 +908,16 @@ async def raw_data_push_our_system(
                 item_result["reason"] = "fetch_failed_or_missing_credentials"
                 logging.warning(f"Fetch failed for hotel {hid} (tbohotel)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (tbohotel)")
 
             else:
                 saved = save_json_file(
-                    base_dir,
-                    hid,
-                    json.dumps(raw_data, indent=2, ensure_ascii=False)
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
                 if saved:
                     item_result["status"] = "saved"
@@ -881,7 +930,7 @@ async def raw_data_push_our_system(
 
         return {"supplier": supplier, "results": results}
 
-    elif supplier == "ean": 
+    elif supplier == "ean":
         for hid in hotel_ids:
             item_result: dict = {"hotel_id": hid}
             raw_data = fetch_ean_raw(hid)
@@ -892,9 +941,9 @@ async def raw_data_push_our_system(
                 item_result["reason"] = "fetch_failed_or_missing_credentials"
                 logging.warning(f"Fetch failed for hotel {hid} (ean)")
 
-            elif (
-                isinstance(raw_data, dict)
-                and (raw_data.get("status") == "no_data_found" or raw_data.get("status") == "invalid_response")
+            elif isinstance(raw_data, dict) and (
+                raw_data.get("status") == "no_data_found"
+                or raw_data.get("status") == "invalid_response"
             ):
                 item_result["status"] = "failed"
                 item_result["reason"] = raw_data.get("status")
@@ -902,13 +951,15 @@ async def raw_data_push_our_system(
 
             else:
                 # ✅ unwrap if supplier wraps like {"10000003": {...}}
-                if isinstance(raw_data, dict) and len(raw_data) == 1 and hid in raw_data:
+                if (
+                    isinstance(raw_data, dict)
+                    and len(raw_data) == 1
+                    and hid in raw_data
+                ):
                     raw_data = raw_data[hid]
 
                 saved = save_json_file(
-                    base_dir,
-                    hid,
-                    json.dumps(raw_data, indent=2, ensure_ascii=False)
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
                 if saved:
                     item_result["status"] = "saved"
@@ -931,16 +982,16 @@ async def raw_data_push_our_system(
                 item_result["reason"] = "fetch_failed_or_missing_credentials"
                 logging.warning(f"Fetch failed for hotel {hid} (grnconnect)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (grnconnect)")
 
             else:
                 saved = save_json_file(
-                    base_dir,
-                    hid,
-                    json.dumps(raw_data, indent=2, ensure_ascii=False)
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
                 if saved:
                     item_result["status"] = "saved"
@@ -963,16 +1014,16 @@ async def raw_data_push_our_system(
                 item_result["reason"] = "fetch_failed_or_missing_credentials"
                 logging.warning(f"Fetch failed for hotel {hid} (restel)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (restel)")
 
             else:
                 saved = save_json_file(
-                    base_dir,
-                    hid,
-                    json.dumps(raw_data, indent=2, ensure_ascii=False)
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
                 if saved:
                     item_result["status"] = "saved"
@@ -1126,9 +1177,8 @@ async def raw_data_push_our_system(
                 logging.warning(f"Fetch failed for hotel {hid} (innstant)")
 
             elif (
-                (isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found")
-                or raw_data == "no_data_found"
-            ):
+                isinstance(raw_data, dict) and raw_data.get("status") == "no_data_found"
+            ) or raw_data == "no_data_found":
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (innstant)")
@@ -1157,12 +1207,14 @@ async def raw_data_push_our_system(
                 item_result["status"] = "error"
                 logging.info(f"No data found for hotel {hid} (ratehawk_new)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("reason") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("reason") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (ratehawk_new)")
 
-            elif isinstance(raw_data, dict):  
+            elif isinstance(raw_data, dict):
                 saved = save_json_file(
                     base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
@@ -1173,10 +1225,12 @@ async def raw_data_push_our_system(
                     item_result["status"] = "failed"
                     item_result["reason"] = "save_failed"
 
-            else:  
+            else:
                 item_result["status"] = "failed"
                 item_result["reason"] = "invalid_response"
-                logging.warning(f"Invalid response for hotel '{hid}' (ratehawk_new): {raw_data}")
+                logging.warning(
+                    f"Invalid response for hotel '{hid}' (ratehawk_new): {raw_data}"
+                )
 
             results.append(item_result)
 
@@ -1191,12 +1245,14 @@ async def raw_data_push_our_system(
                 item_result["status"] = "error"
                 logging.info(f"No data found for hotel {hid} (amadeushotel)")
 
-            elif isinstance(raw_data, dict) and raw_data.get("reason") == "no_data_found":
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("reason") == "no_data_found"
+            ):
                 item_result["status"] = "failed"
                 item_result["reason"] = "no_data_found"
                 logging.info(f"No data found for hotel {hid} (amadeushotel)")
 
-            elif isinstance(raw_data, dict):  
+            elif isinstance(raw_data, dict):
                 saved = save_json_file(
                     base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
                 )
@@ -1207,10 +1263,74 @@ async def raw_data_push_our_system(
                     item_result["status"] = "failed"
                     item_result["reason"] = "save_failed"
 
-            else:  
+            else:
                 item_result["status"] = "failed"
                 item_result["reason"] = "invalid_response"
-                logging.warning(f"Invalid response for hotel '{hid}' (ratehawk_new): {raw_data}")
+                logging.warning(
+                    f"Invalid response for hotel '{hid}' (ratehawk_new): {raw_data}"
+                )
+
+            results.append(item_result)
+
+        return {"supplier": supplier, "results": results}
+
+    elif supplier == "kiwihotel":
+        for hid in hotel_ids:
+            item_result: dict = {"hotel_id": hid}
+            raw_data = fetch_kiwi_hotel_raw(hid)
+
+            if raw_data is None:
+                item_result["status"] = "error"
+                item_result["reason"] = "no_response"
+                logging.info(f"No data found for hotel {hid} (kiwihotel)")
+
+            elif (
+                isinstance(raw_data, dict) and raw_data.get("reason") == "no_data_found"
+            ):
+                item_result["status"] = "failed"
+                item_result["reason"] = "no_data_found"
+                logging.info(f"No data found for hotel {hid} (kiwihotel)")
+
+            elif isinstance(raw_data, dict):
+                property_response = raw_data.get("PropertyDetailResponse")
+                if property_response and "Errors" in property_response:
+                    errors = property_response["Errors"]
+                    error_items = errors.get("Error", [])
+
+                    if isinstance(error_items, dict):
+                        error_items = [error_items]
+
+                    error_messages = []
+                    for err in error_items:
+                        code = err.get("@Code", "UNKNOWN")
+                        msg = err.get("#text", "No message")
+                        error_messages.append(f"{code}: {msg}")
+
+                    item_result["status"] = "failed"
+                    item_result["reason"] = "api_error"
+                    item_result["errors"] = error_messages
+                    logging.warning(
+                        f"Skipping hotel {hid} (kiwihotel) due to API error(s): {error_messages}"
+                    )
+                    results.append(item_result)
+                    continue
+
+                saved = save_json_file(
+                    base_dir, hid, json.dumps(raw_data, indent=2, ensure_ascii=False)
+                )
+                if saved:
+                    item_result["status"] = "saved"
+                    item_result["path"] = os.path.join(base_dir, f"{hid}.json")
+                else:
+                    item_result["status"] = "failed"
+                    item_result["reason"] = "save_failed"
+
+            else:
+                item_result["status"] = "failed"
+                item_result["reason"] = "invalid_response"
+                logging.warning(
+                    f"Invalid response for hotel '{hid}' (kiwihotel): {raw_data}"
+                )
 
             results.append(item_result)
 
