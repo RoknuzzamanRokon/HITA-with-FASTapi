@@ -596,18 +596,34 @@ async def get_hotels_using_ittid_list(
 
     result = []
 
-    # For General Users: only allowed providers
+    # For General Users: only allowed providers (excluding temp deactivated)
     if current_user.role == models.UserRole.GENERAL_USER:
-        allowed_providers = [
+        # Get all user permissions (including temp deactivated ones)
+        all_permissions = [
             permission.provider_name
             for permission in db.query(UserProviderPermission)
             .filter(UserProviderPermission.user_id == current_user.id)
             .all()
         ]
+        
+        # Separate active and temporarily deactivated suppliers
+        temp_deactivated_suppliers = []
+        allowed_providers = []
+        
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+            else:
+                allowed_providers.append(perm)
+        
+        # Remove temporarily deactivated suppliers from allowed providers
+        final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+        
         for hotel in hotels:
             provider_mappings = db.query(models.ProviderMapping).filter(
                 models.ProviderMapping.ittid == hotel.ittid,
-                models.ProviderMapping.provider_name.in_(allowed_providers)
+                models.ProviderMapping.provider_name.in_(final_allowed_providers)
             ).all()
 
             formatted_provider_mappings = []
@@ -634,11 +650,31 @@ async def get_hotels_using_ittid_list(
                 "provider_mappings": formatted_provider_mappings
             })
     else:
-        # For SUPER/ADMIN users – return all mappings with full details
+        # For SUPER/ADMIN users – return all mappings with full details (excluding temp deactivated)
+        # Get temporarily deactivated suppliers for super/admin users
+        all_permissions = [
+            permission.provider_name
+            for permission in db.query(UserProviderPermission)
+            .filter(UserProviderPermission.user_id == current_user.id)
+            .all()
+        ]
+        
+        temp_deactivated_suppliers = []
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+        
         for hotel in hotels:
-            provider_mappings = db.query(models.ProviderMapping).filter(
+            all_provider_mappings = db.query(models.ProviderMapping).filter(
                 models.ProviderMapping.ittid == hotel.ittid
             ).all()
+            
+            # Filter out temporarily deactivated suppliers
+            if temp_deactivated_suppliers:
+                provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
+            else:
+                provider_mappings = all_provider_mappings
 
             formatted_provider_mappings = []
             for mapping in provider_mappings:
@@ -731,13 +767,30 @@ async def get_hotel_using_ittid(
 
     # Check user-specific permissions for general users
     if current_user.role == models.UserRole.GENERAL_USER:
-        allowed_providers = [
+        # Get all user permissions (including temp deactivated ones)
+        all_permissions = [
             permission.provider_name
             for permission in db.query(UserProviderPermission)
             .filter(UserProviderPermission.user_id == current_user.id)
             .all()
         ]
-        if not allowed_providers:
+        
+        # Separate active and temporarily deactivated suppliers
+        temp_deactivated_suppliers = []
+        allowed_providers = []
+        
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                # Extract original supplier name
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+            else:
+                allowed_providers.append(perm)
+        
+        # Remove temporarily deactivated suppliers from allowed providers
+        final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+        
+        if not final_allowed_providers:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Do not have permission or not active"
@@ -746,7 +799,7 @@ async def get_hotel_using_ittid(
         # Check if user has access to any of the suppliers for this hotel
         accessible_provider_mappings = db.query(models.ProviderMapping).filter(
             models.ProviderMapping.ittid == ittid,
-            models.ProviderMapping.provider_name.in_(allowed_providers)
+            models.ProviderMapping.provider_name.in_(final_allowed_providers)
         ).all()
         
         if not accessible_provider_mappings:
@@ -766,20 +819,54 @@ async def get_hotel_using_ittid(
 
     # Get provider mappings for response (based on user role)
     if current_user.role == models.UserRole.GENERAL_USER:
-        # For general users, only show accessible provider mappings
-        allowed_providers = [
+        # For general users, only show accessible provider mappings (excluding temp deactivated)
+        # Use the same logic as above to get final allowed providers
+        all_permissions = [
             permission.provider_name
             for permission in db.query(UserProviderPermission)
             .filter(UserProviderPermission.user_id == current_user.id)
             .all()
         ]
+        
+        # Separate active and temporarily deactivated suppliers
+        temp_deactivated_suppliers = []
+        allowed_providers = []
+        
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+            else:
+                allowed_providers.append(perm)
+        
+        # Remove temporarily deactivated suppliers from allowed providers
+        final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+        
         provider_mappings = db.query(models.ProviderMapping).filter(
             models.ProviderMapping.ittid == ittid,
-            models.ProviderMapping.provider_name.in_(allowed_providers)
+            models.ProviderMapping.provider_name.in_(final_allowed_providers)
         ).all()
     else:
-        # For super/admin users, show all provider mappings
-        provider_mappings = all_provider_mappings
+        # For super/admin users, check for temporarily deactivated suppliers
+        all_permissions = [
+            permission.provider_name
+            for permission in db.query(UserProviderPermission)
+            .filter(UserProviderPermission.user_id == current_user.id)
+            .all()
+        ]
+        
+        # Get temporarily deactivated suppliers for super/admin users
+        temp_deactivated_suppliers = []
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+        
+        # Filter out temporarily deactivated suppliers from all provider mappings
+        if temp_deactivated_suppliers:
+            provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
+        else:
+            provider_mappings = all_provider_mappings
 
     # Enhanced provider mappings with full details
     enhanced_provider_mappings = []

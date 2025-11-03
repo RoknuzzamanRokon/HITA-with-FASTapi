@@ -59,12 +59,19 @@ async def self_info(
     Returns:
     - Basic info (ID, username, email, role)
     - Point balance (available & total points)
-    - Active supplier permissions
+    - Supplier info (nested object with supplier statistics and lists)
     - Account creation & update timestamps
+
+    Supplier Info Structure:
+    - total_active: Total number of suppliers user has access to
+    - active_list: List of all suppliers user has access to (including temp deactivated)
+    - temporary_of: Number of temporarily deactivated suppliers
+    - temporary_of_supplier: List of temporarily deactivated supplier names
 
     Notes:
     - Requires valid JWT authentication
     - Only returns data for the logged-in user
+    - Supplier information is grouped in supplier_info object
 
     Raises:
     - 401: Unauthorized (invalid or missing token)
@@ -81,16 +88,49 @@ async def self_info(
         available_points = user_points.current_points if user_points else 0
         total_points = user_points.total_points if user_points else 0
 
-        # Get active supplier permissions
-        suppliers = [
+        # Get all supplier permissions
+        all_permissions = [
             perm.provider_name
             for perm in db.query(models.UserProviderPermission)
             .filter(models.UserProviderPermission.user_id == current_user.id)
             .all()
         ]
-        active_supplier = list(set(suppliers))
+        
+        # Separate active suppliers and temporary deactivated suppliers
+        active_suppliers = []
+        temp_deactivated_suppliers = []
+        
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                # Extract original supplier name
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+            else:
+                active_suppliers.append(perm)
+        
+        # Remove duplicates and filter out deactivated suppliers from active list
+        active_suppliers = list(set(active_suppliers))
+        temp_deactivated_suppliers = list(set(temp_deactivated_suppliers))
+        
+        # Remove temporarily deactivated suppliers from active list
+        final_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
+        
+        # For super users and admin users, get all system suppliers
+        if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+            # Get all unique supplier names from provider mappings
+            all_system_suppliers = [
+                row.provider_name
+                for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+            ]
+            # Filter out temporarily deactivated suppliers
+            final_active_suppliers = [supplier for supplier in all_system_suppliers if supplier not in temp_deactivated_suppliers]
+            # For super/admin users, show all suppliers they have access to (including temp deactivated)
+            all_accessible_suppliers = list(set(all_system_suppliers + temp_deactivated_suppliers))
+        else:
+            # For general users, show all suppliers they have access to (including temp deactivated)
+            all_accessible_suppliers = list(set(active_suppliers + temp_deactivated_suppliers))
 
-        # Return the user's details
+        # Return the user's details with new supplier_info structure
         return {
             "id": current_user.id,
             "username": current_user.username,
@@ -98,7 +138,12 @@ async def self_info(
             "user_status": current_user.role,
             "available_points": available_points,
             "total_points": total_points,
-            "active_supplier": active_supplier,
+            "supplier_info": {
+                "total_active": len(all_accessible_suppliers),
+                "active_list": all_accessible_suppliers,
+                "temporary_of": len(temp_deactivated_suppliers),
+                "temporary_of_supplier": temp_deactivated_suppliers
+            },
             "created_at": current_user.created_at,
             "updated_at": current_user.updated_at,
             "need_to_next_upgrade": "It function is not implemented yet",
@@ -1309,23 +1354,36 @@ def active_my_supplier(
     """
     Retrieve the list of active suppliers accessible to the current user.
 
-    - Admin/Super Users have access to all suppliers.
-    - General Users get only their assigned suppliers.
+    - Admin/Super Users have access to all suppliers (excluding temporarily deactivated).
+    - General Users get only their assigned suppliers (excluding temporarily deactivated).
 
     Returns:
-    - Admin/Super Users: {"my_supplier": ["supplier1", "supplier2", ...]} (all suppliers)
-    - General Users: {"my_supplier": ["supplier1", "supplier2", ...]} (assigned suppliers only)
+    - Admin/Super Users: {"my_supplier": ["supplier1", "supplier2", ...]} (all suppliers minus deactivated)
+    - General Users: {"my_supplier": ["supplier1", "supplier2", ...]} (assigned suppliers minus deactivated)
 
     Raises:
     - 404: If no suppliers are found or General User has no suppliers assigned
     - 500: On unexpected errors (e.g., database issues)
 
     Role-Based Access:
-    - SUPER_USER / ADMIN_USER: All suppliers from the system
-    - General User: Only assigned suppliers
+    - SUPER_USER / ADMIN_USER: All suppliers from the system (minus temporarily deactivated)
+    - General User: Only assigned suppliers (minus temporarily deactivated)
+    
+    Note: Temporarily deactivated suppliers can be reactivated using /v1.0/permissions/on_info_supplier
     """
 
     try:
+        # Get temporarily deactivated suppliers for this user
+        temp_deactivated = [
+            perm.provider_name.replace("TEMP_DEACTIVATED_", "")
+            for perm in db.query(models.UserProviderPermission)
+            .filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                models.UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+            )
+            .all()
+        ]
+        
         # Admin and super users have access to all suppliers
         if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
             # Get all unique supplier names from provider mappings
@@ -1340,24 +1398,33 @@ def active_my_supplier(
                     detail="No suppliers found in the system.",
                 )
             
-            return {"my_supplier": all_suppliers}
+            # Filter out temporarily deactivated suppliers
+            active_suppliers = [supplier for supplier in all_suppliers if supplier not in temp_deactivated]
+            
+            return {"my_supplier": active_suppliers}
         
         # Regular users get their specific supplier permissions
         suppliers = [
             perm.provider_name
             for perm in db.query(models.UserProviderPermission)
-            .filter(models.UserProviderPermission.user_id == current_user.id)
+            .filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                ~models.UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+            )
             .all()
         ]
         unique_suppliers = list(set(suppliers))
         
-        if not unique_suppliers:
+        # Filter out temporarily deactivated suppliers
+        active_suppliers = [supplier for supplier in unique_suppliers if supplier not in temp_deactivated]
+        
+        if not active_suppliers:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No active suppliers found. Please contact your admin.",
             )
             
-        return {"my_supplier": unique_suppliers}
+        return {"my_supplier": active_suppliers}
         
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
@@ -1367,6 +1434,115 @@ def active_my_supplier(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while retrieving supplier information: {str(e)}"
+        )
+
+
+@router.get("/check_active_my_supplier")
+def check_active_my_supplier(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Get detailed statistics about the user's supplier access and status.
+
+    Returns comprehensive information about:
+    - Total suppliers the user has access to
+    - Currently active/visible suppliers for the user
+    - Temporarily deactivated suppliers count
+    - List of active suppliers
+
+    Returns:
+    - active_supplier: Total number of suppliers the user has access to (assigned + temp deactivated)
+    - total_on_supplier: Number of currently active/visible suppliers for the user
+    - total_of_supplier: Number of temporarily deactivated suppliers
+    - my_supplier: List of currently active supplier names
+
+    Role-Based Access:
+    - SUPER_USER / ADMIN_USER: Statistics for all system suppliers
+    - General User: Statistics for assigned suppliers only
+
+    Raises:
+    - 404: If no suppliers are found
+    - 500: On unexpected errors (e.g., database issues)
+    """
+    try:
+        # Get all supplier permissions (same logic as /me endpoint)
+        all_permissions = [
+            perm.provider_name
+            for perm in db.query(models.UserProviderPermission)
+            .filter(models.UserProviderPermission.user_id == current_user.id)
+            .all()
+        ]
+        
+        # Separate active suppliers and temporary deactivated suppliers
+        active_suppliers = []
+        temp_deactivated_suppliers = []
+        
+        for perm in all_permissions:
+            if perm.startswith("TEMP_DEACTIVATED_"):
+                # Extract original supplier name
+                original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_suppliers.append(original_name)
+            else:
+                active_suppliers.append(perm)
+        
+        # Remove duplicates
+        active_suppliers = list(set(active_suppliers))
+        temp_deactivated_suppliers = list(set(temp_deactivated_suppliers))
+        
+        # Remove temporarily deactivated suppliers from active list
+        currently_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
+        
+        # For super users and admin users, get all system suppliers
+        if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+            # Get all unique supplier names from provider mappings
+            all_system_suppliers = [
+                row.provider_name
+                for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+            ]
+            
+            if not all_system_suppliers:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No suppliers found in the system.",
+                )
+            
+            # Filter out temporarily deactivated suppliers
+            currently_active_suppliers = [supplier for supplier in all_system_suppliers if supplier not in temp_deactivated_suppliers]
+            # For super/admin users, total accessible suppliers (including temp deactivated)
+            all_accessible_suppliers = list(set(all_system_suppliers + temp_deactivated_suppliers))
+            
+            return {
+                "active_supplier": len(all_accessible_suppliers),           # Total suppliers user has access to
+                "total_on_supplier": len(currently_active_suppliers),       # Currently active for user
+                "total_of_supplier": len(temp_deactivated_suppliers),       # Temporarily deactivated
+                "my_supplier": currently_active_suppliers
+            }
+        
+        # For general users, total accessible suppliers (including temp deactivated)
+        all_accessible_suppliers = list(set(active_suppliers + temp_deactivated_suppliers))
+        
+        if len(all_accessible_suppliers) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suppliers found. Please contact your admin.",
+            )
+        
+        return {
+            "active_supplier": len(all_accessible_suppliers),           # Total suppliers user has access to
+            "total_on_supplier": len(currently_active_suppliers),       # Currently active for user
+            "total_of_supplier": len(temp_deactivated_suppliers),       # Temporarily deactivated
+            "my_supplier": currently_active_suppliers
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        # Handle any unexpected database or other errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving supplier statistics: {str(e)}"
         )
 
 

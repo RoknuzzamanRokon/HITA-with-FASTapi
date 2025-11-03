@@ -5,6 +5,7 @@ from models import User, UserRole, UserProviderPermission
 from typing import List, Annotated
 from routes.auth import get_current_user
 from pydantic import BaseModel
+import models
 
 router = APIRouter(
     prefix="/v1.0/permissions",
@@ -16,7 +17,7 @@ class ProviderPermissionRequest(BaseModel):
     provider_activision_list: List[str]
 
 
-@router.post("/admin/activate_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)
+@router.post("/admin/check_activate_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)
 def grant_provider_permissions(
     user_id: str,
     request: ProviderPermissionRequest, 
@@ -122,3 +123,141 @@ def remove_provider_permissions(
     return {
         "message": f"Successfully removed permissions for user {user_id} for providers: {removed}"
     }
+
+
+class SupplierToggleRequest(BaseModel):
+    supplier_name: List[str]
+
+
+@router.post("/off_info_supplier", status_code=status.HTTP_200_OK)
+def deactivate_suppliers_temporarily(
+    request: SupplierToggleRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Temporarily deactivate suppliers for the current user.
+    
+    This endpoint allows any authenticated user to temporarily hide specific suppliers
+    from their active supplier list. The suppliers remain in their permissions but
+    are marked as temporarily inactive.
+    
+    Body:
+    - supplier_name: List of supplier names to deactivate
+    
+    Returns:
+    - Success message with deactivated suppliers
+    
+    Raises:
+    - 400: Invalid supplier names or user doesn't have access to suppliers
+    - 500: Database error
+    """
+    try:
+        supplier_names = request.supplier_name
+        
+        if not supplier_names:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one supplier name is required."
+            )
+        
+        # For super users and admin users, we'll create a temporary deactivation record
+        # For general users, we need to check if they have permission for these suppliers
+        if current_user.role not in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+            # Check if general user has permissions for these suppliers
+            user_suppliers = [
+                perm.provider_name
+                for perm in db.query(models.UserProviderPermission)
+                .filter(models.UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            invalid_suppliers = [name for name in supplier_names if name not in user_suppliers]
+            if invalid_suppliers:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"You don't have access to these suppliers: {invalid_suppliers}"
+                )
+        
+        # Store temporarily deactivated suppliers in user session/cache
+        # Since we can't modify the database schema, we'll use a simple approach
+        # by creating temporary deactivation records
+        
+        deactivated = []
+        for supplier_name in supplier_names:
+            # Check if already deactivated
+            existing = db.query(models.UserProviderPermission).filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                models.UserProviderPermission.provider_name == f"TEMP_DEACTIVATED_{supplier_name}"
+            ).first()
+            
+            if not existing:
+                # Create a temporary deactivation record
+                temp_deactivation = models.UserProviderPermission(
+                    user_id=current_user.id,
+                    provider_name=f"TEMP_DEACTIVATED_{supplier_name}"
+                )
+                db.add(temp_deactivation)
+                deactivated.append(supplier_name)
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully deactivated suppliers: {deactivated}",
+            "deactivated_suppliers": deactivated
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while deactivating suppliers: {str(e)}"
+        )
+
+
+@router.post("/on_info_supplier", status_code=status.HTTP_200_OK)
+def activate_all_suppliers(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Reactivate all temporarily deactivated suppliers for the current user.
+    
+    This endpoint removes all temporary deactivations, making all suppliers
+    that the user has permissions for visible again.
+    
+    Returns:
+    - Success message with reactivated suppliers
+    
+    Raises:
+    - 500: Database error
+    """
+    try:
+        # Find all temporary deactivation records for this user
+        temp_deactivations = db.query(models.UserProviderPermission).filter(
+            models.UserProviderPermission.user_id == current_user.id,
+            models.UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+        ).all()
+        
+        reactivated = []
+        for deactivation in temp_deactivations:
+            # Extract original supplier name
+            original_name = deactivation.provider_name.replace("TEMP_DEACTIVATED_", "")
+            reactivated.append(original_name)
+            db.delete(deactivation)
+        
+        db.commit()
+        
+        return {
+            "message": f"Successfully reactivated all suppliers: {reactivated}",
+            "reactivated_suppliers": reactivated
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while reactivating suppliers: {str(e)}"
+        )

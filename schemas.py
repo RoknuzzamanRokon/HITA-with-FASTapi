@@ -49,6 +49,12 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+class SupplierInfo(BaseModel):
+    total_active: int
+    active_list: List[str]
+    temporary_of: int
+    temporary_of_supplier: List[str]
+
 class UserResponse(BaseModel):
     id: str
     username: str
@@ -56,7 +62,7 @@ class UserResponse(BaseModel):
     user_status: str
     available_points: int
     total_points: int
-    active_supplier: List[str]
+    supplier_info: SupplierInfo
     created_at: datetime
     updated_at: Optional[datetime]
     need_to_next_upgrade: str
