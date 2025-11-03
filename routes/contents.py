@@ -18,6 +18,21 @@ import asyncio
 import os
 from routes.hotelFormattingData import map_to_our_format
 from routes.path import RAW_BASE_DIR
+import os
+from routes.auth import get_current_user
+
+from schemas import ProviderProperty, GetAllHotelResponse
+
+router = APIRouter()
+
+
+router = APIRouter(
+    prefix="/v1.0/content",
+    tags=["Hotel Content"],
+    responses={404: {"description": "Not found"}},
+)
+
+
 
 def serialize_datetime_objects(obj):
     """Convert datetime objects to ISO format strings for JSON serialization."""
@@ -118,19 +133,6 @@ async def get_hotel_details_internal(supplier_code: str, hotel_id: str, current_
         # Log the error but don't raise it - just return None
         print(f"Error getting hotel details for {supplier_code}/{hotel_id}: {str(e)}")
         return None
-import os
-from routes.auth import get_current_user
-
-from schemas import ProviderProperty, GetAllHotelResponse
-
-router = APIRouter()
-
-
-router = APIRouter(
-    prefix="/v1.0/content",
-    tags=["Hotel Content"],
-    responses={404: {"description": "Not found"}},
-)
 
 
 class ProviderHotelIdentity(BaseModel):
@@ -809,11 +811,6 @@ async def get_hotel_using_ittid(
         "locations": [serialize_datetime_objects(loc) for loc in locations],
         # "chains": [serialize_datetime_objects(chain) for chain in chains],
         "contacts": [serialize_datetime_objects(contact) for contact in contacts],
-        "supplier_info": {
-            "total_active_suppliers": len(all_provider_mappings),
-            "accessible_suppliers": len(provider_mappings),
-            "supplier_names": [pm.provider_name for pm in provider_mappings]
-        }
     }
 
     # 💸 POINT DEDUCTION ONLY ON SUCCESSFUL REQUEST
@@ -1094,6 +1091,115 @@ class ProviderProperty(BaseModel):
 
 class ProviderPropertyRequest(BaseModel):
     provider_property: List[ProviderProperty]
+
+
+@router.get("/get_all_ittid", status_code=status.HTTP_200_OK)
+def get_all_ittid(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Get All Hotel ITTIDs Based on User Permissions
+    
+    Retrieves a list of all hotel ITTIDs that the current user has access to,
+    based on their role and provider permissions. This endpoint provides a
+    simple way to get hotel identifiers for further processing.
+    
+    Features:
+    - Role-based access control for provider permissions
+    - Point deduction only for general users
+    - Comprehensive supplier and hotel count statistics
+    - Efficient ITTID-only response for performance
+    
+    Access Control:
+        - GENERAL_USER: Only sees ITTIDs from permitted providers, points deducted
+        - SUPER_USER/ADMIN_USER: Can see all hotel ITTIDs, no point deduction
+    
+    Args:
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Hotel ITTID data including:
+            - total_supplier: Number of unique suppliers/providers
+            - total_ittid: Total count of accessible hotel ITTIDs
+            - ittid_list: List of hotel ITTID strings
+    
+    Error Handling:
+        - 403: User has no provider permissions (general users only)
+        - 500: Database or internal server errors
+    
+    Example Response:
+        {
+            "total_supplier": 2,
+            "total_ittid": 1213213,
+            "ittid_list": ["1221", "454", "789", ...]
+        }
+    """
+    
+    try:
+        # 🚫 NO POINT DEDUCTION for super_user and admin_user
+        # Only deduct points for general_user
+        if current_user.role == UserRole.GENERAL_USER:
+            deduct_points_for_general_user(current_user, db)
+            allowed_providers = [
+                p.provider_name
+                for p in db.query(UserProviderPermission)
+                          .filter(UserProviderPermission.user_id == current_user.id)
+                          .all()
+            ]
+            if not allowed_providers:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have any permission for this request. Please contact your administrator."
+                )
+        elif current_user.role in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+            allowed_providers = None
+        else:
+            allowed_providers = None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing user permissions: {str(e)}"
+        )
+
+    try:
+        # Get hotel ITTIDs based on user permissions
+        if allowed_providers is not None:
+            # General user - filter by allowed providers
+            hotel_ittids = db.query(ProviderMapping.ittid).filter(
+                ProviderMapping.provider_name.in_(allowed_providers)
+            ).distinct().all()
+            
+            # Get supplier count for this user
+            supplier_count = len(allowed_providers)
+            
+        else:
+            # Super/admin users - get all hotel ITTIDs
+            hotel_ittids = db.query(Hotel.ittid).distinct().all()
+            
+            # Get total supplier count
+            supplier_count = db.query(ProviderMapping.provider_name).distinct().count()
+
+        # Extract ITTID strings from query result
+        ittid_list = [ittid[0] for ittid in hotel_ittids if ittid[0]]
+        
+        print(f"📊 Returning {len(ittid_list)} ITTIDs from {supplier_count} suppliers for user {current_user.id}")
+
+        return {
+            "total_supplier": supplier_count,
+            "total_ittid": len(ittid_list),
+            "ittid_list": ittid_list
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving hotel ITTIDs: {str(e)}"
+        )
 
 
 @router.get(

@@ -883,7 +883,7 @@ def get_user_accessible_suppliers(
                             "total_hotels": hotel_count,
                             "access_type": "permission_granted",
                             "system_types": system_types_list,
-                            "permission_granted_at": permission.created_at.isoformat() if permission.created_at else None,
+                            "permission_granted_at": None,  # UserProviderPermission doesn't have created_at
                             "last_updated": last_updated[0].isoformat() if last_updated and last_updated[0] else None,
                             "availability_status": "active" if hotel_count > 0 else "inactive"
                         })
@@ -896,7 +896,7 @@ def get_user_accessible_suppliers(
                             "total_hotels": 0,
                             "access_type": "permission_granted",
                             "system_types": [],
-                            "permission_granted_at": permission.created_at.isoformat() if permission.created_at else None,
+                            "permission_granted_at": None,  # UserProviderPermission doesn't have created_at
                             "last_updated": None,
                             "availability_status": "unknown"
                         })

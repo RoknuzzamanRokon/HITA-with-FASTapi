@@ -49,7 +49,6 @@ redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=T
 class Token(BaseModel):
     access_token: str
     token_type: str
-    refresh_token: Optional[str] = None
 
 
 class TokenData(BaseModel):
@@ -76,7 +75,8 @@ class UserResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    access_token: str
+    token_type: str
 
 
 class UserProfileResponse(BaseModel):
@@ -252,83 +252,84 @@ async def require_admin(
     return current_user
 
 
-# Routes
+# # Routes
+# @router.post("/token", response_model=Token)
+# async def login_for_access_token(
+#     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+#     db: Session = Depends(get_db),
+# ):
+#     """Ultra-fast token generation - maximum speed optimization."""
+    
+#     # Direct database query - bypass helper functions
+#     user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    
+#     if not user or not verify_password(form_data.password, user.hashed_password):
+#         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+#     # Direct JWT creation - no helper functions
+#     now = datetime.utcnow()
+#     access_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+#     refresh_exp = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    
+#     # Create tokens directly
+#     access_payload = {
+#         "sub": user.username,
+#         "user_id": user.id,
+#         "role": user.role,
+#         "exp": access_exp,
+#         "type": "access",
+#         "iat": now
+#     }
+    
+#     refresh_payload = {
+#         "sub": user.username,
+#         "user_id": user.id,
+#         "exp": refresh_exp,
+#         "type": "refresh",
+#         "iat": now
+#     }
+    
+#     access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
+#     refresh_token = jwt.encode(refresh_payload, SECRET_KEY, algorithm=ALGORITHM)
+    
+#     return {
+#         "access_token": access_token,
+#         "token_type": "bearer",
+#         "refresh_token": refresh_token,
+#     }
+
+
 @router.post("/token", response_model=Token)
-async def login_for_access_token(
+async def ultra_fast_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    request: Request,
     db: Session = Depends(get_db),
 ):
-    """
-    **User Login & Token Generation**
+    """Ultra-fast token generation - minimal overhead."""
     
-    Authenticate with username/password and receive JWT tokens for secure API access.
+    # Direct database query - no extra functions
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
     
-    **Use Cases:**
-    - Web application login
-    - Mobile app authentication  
-    - API client authentication
-    - Session establishment
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    **Returns:**
-    - Access token (30,000 min expiry) for API calls
-    - Refresh token (7 days) for token renewal
-    - Bearer token type for Authorization header
+    # Minimal token creation
+    now = datetime.utcnow()
+    access_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    **Security Features:**
-    - Bcrypt password verification
-    - Audit logging for login attempts
-    - Redis-based token storage
-    - Automatic token rotation
-    """
-    audit_logger = AuditLogger(db)
+    access_payload = {
+        "sub": user.username,
+        "user_id": user.id,
+        "role": user.role,
+        "exp": access_exp,
+        "type": "access",
+        "iat": now
+    }
     
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        # Log failed login attempt
-        audit_logger.log_authentication_event(
-            activity_type=ActivityType.LOGIN_FAILED,
-            user_id=None,
-            email=form_data.username,  # Username might be email
-            request=request,
-            success=False,
-            failure_reason="Invalid credentials"
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-
-    access_token = create_access_token(
-        data={"sub": user.username, "user_id": user.id, "role": user.role},
-        expires_delta=access_token_expires,
-    )
-    refresh_token = create_refresh_token(
-        data={"sub": user.username, "user_id": user.id},
-        expires_delta=refresh_token_expires,
-    )
-
-    # Store refresh token in Redis with expiration
-    redis_client.setex(f"refresh_token:{user.id}", refresh_token_expires, refresh_token)
-
-    # Log successful login
-    audit_logger.log_authentication_event(
-        activity_type=ActivityType.LOGIN_SUCCESS,
-        user_id=user.id,
-        email=user.email,
-        request=request,
-        success=True
-    )
-
+    access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
+    
     return {
         "access_token": access_token,
-        "token_type": "bearer",
-        "refresh_token": refresh_token,
+        "token_type": "bearer"
     }
 
 
@@ -336,76 +337,53 @@ async def login_for_access_token(
 async def refresh_access_token(
     refresh_request: RefreshTokenRequest, db: Session = Depends(get_db)
 ):
-    """
-    **Token Refresh & Renewal**
+    """Fast token refresh using access token validation."""
     
-    Obtain new access token without re-authentication using valid refresh token.
-    
-    **Use Cases:**
-    - Automatic token renewal in apps
-    - Maintaining user sessions
-    - Background token refresh
-    - Seamless user experience
-    
-    **Process:**
-    - Validates refresh token against Redis storage
-    - Generates new access & refresh token pair
-    - Invalidates old refresh token (rotation)
-    - Updates token storage with new tokens
-    
-    **Security:**
-    - Token rotation prevents replay attacks
-    - Redis validation ensures token authenticity
-    - User account status verification
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate refresh token",
-    )
-
     try:
+        # Decode the provided access token to get user info
         payload = jwt.decode(
-            refresh_request.refresh_token, SECRET_KEY, algorithms=[ALGORITHM]
+            refresh_request.access_token, SECRET_KEY, algorithms=[ALGORITHM]
         )
         username: str = payload.get("sub")
         user_id: str = payload.get("user_id")
         token_type: str = payload.get("type")
 
-        if username is None or user_id is None or token_type != "refresh":
-            raise credentials_exception
-
-        # Verify refresh token is still valid in storage
-        stored_refresh_token = redis_client.get(f"refresh_token:{user_id}")
-        if (
-            not stored_refresh_token
-            or stored_refresh_token != refresh_request.refresh_token
-        ):
-            raise credentials_exception
+        if username is None or user_id is None or token_type != "access":
+            raise HTTPException(status_code=401, detail="Invalid access token")
 
     except JWTError:
-        raise credentials_exception
+        raise HTTPException(status_code=401, detail="Invalid access token")
 
-    user = get_user_by_id(db, user_id=user_id)
-    if user is None or not user.is_active:
-        raise credentials_exception
+    # Get user from database
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Generate new tokens directly
+    now = datetime.utcnow()
+    access_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_exp = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    
     # Create new tokens
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-
-    new_access_token = create_access_token(
-        data={"sub": user.username, "user_id": user.id, "role": user.role},
-        expires_delta=access_token_expires,
-    )
-    new_refresh_token = create_refresh_token(
-        data={"sub": user.username, "user_id": user.id},
-        expires_delta=refresh_token_expires,
-    )
-
-    # Update stored refresh token
-    redis_client.setex(
-        f"refresh_token:{user.id}", refresh_token_expires, new_refresh_token
-    )
+    access_payload = {
+        "sub": user.username,
+        "user_id": user.id,
+        "role": user.role,
+        "exp": access_exp,
+        "type": "access",
+        "iat": now
+    }
+    
+    refresh_payload = {
+        "sub": user.username,
+        "user_id": user.id,
+        "exp": refresh_exp,
+        "type": "refresh",
+        "iat": now
+    }
+    
+    new_access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
+    new_refresh_token = jwt.encode(refresh_payload, SECRET_KEY, algorithm=ALGORITHM)
 
     return {
         "access_token": new_access_token,
@@ -915,17 +893,7 @@ async def get_all_users(
     - Admin users cannot access this endpoint
     - Complete system visibility
     
-    **Pagination:**
-    - skip: Number of records to skip (default: 0)
-    - limit: Max records returned (default: 100)
-    - Efficient for large user databases
-    
-    **Returns (per user):**
-    - Complete profile information
-    - API keys (visible to super admins)
-    - Account status and timestamps
-    - Role and permission levels
-    
+
     **Security:**
     - Sensitive endpoint with full user data
     - Comprehensive audit capability
@@ -979,11 +947,6 @@ async def activate_user(
     **Effects:**
     - **When Deactivated:** No login, existing tokens valid until expiry, API key disabled
     - **When Activated:** Full login access, can generate tokens, API key restored
-    
-    **Security:**
-    - Reversible action (can be undone)
-    - Immediate authentication impact
-    - Preserves all user data
     """
     user = get_user_by_id(db, user_id)
     if not user:
@@ -1024,53 +987,115 @@ async def authenticate_api_key(
     return user
 
 
+async def get_user_by_api_key_or_token(
+    request: Request, db: Session = Depends(get_db)
+) -> Optional[models.User]:
+    """
+    Flexible authentication: Try API key first, then JWT token.
+    Returns user if either authentication method succeeds, None if both fail.
+    """
+    # Try API key authentication first
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        user = (
+            db.query(models.User)
+            .filter(models.User.api_key == api_key, models.User.is_active == True)
+            .first()
+        )
+        if user:
+            return user
+    
+    # Try JWT token authentication
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            # Check if token is blacklisted
+            if not redis_client.get(f"blacklist:{token}"):
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                user_id: str = payload.get("user_id")
+                token_type: str = payload.get("type")
+
+                if username and user_id and token_type == "access":
+                    user = get_user_by_id(db, user_id)
+                    if user and user.is_active:
+                        return user
+        except JWTError:
+            pass
+    
+    return None
+
+
 @router.get("/apikey/me", response_model=UserProfileResponse)
 async def read_users_me_api_key(
-    current_user: Annotated[models.User, Depends(authenticate_api_key)],
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """
-    **Get Profile via API Key**
+    **Get Profile via API Key or JWT Token**
     
-    Retrieve user profile using API key authentication (alternative to JWT).
+    Retrieve user profile using flexible authentication (API key or JWT token).
     
     **Use Cases:**
-    - Server-to-server authentication
-    - Automated scripts and applications
-    - CI/CD pipeline integration
-    - Microservice authentication
-    - Long-running background processes
+    - Server-to-server authentication with API keys
+    - Web application authentication with JWT tokens
+    - Mixed authentication environments
+    - API access validation
+    - User profile verification
     
-    **Authentication Method:**
-    - Uses X-API-Key header (not Authorization Bearer)
-    - Direct database lookup by API key
-    - No JWT token required
-    - Validates user account status
+    **Authentication Methods (in order of priority):**
+    1. **X-API-Key header**: Direct API key authentication
+    2. **Authorization Bearer**: JWT token authentication
+    3. **No valid auth**: Returns contact admin message
     
-    **Advantages over JWT:**
+    **Response Scenarios:**
+    - **Valid API Key**: Returns complete user profile with API key
+    - **Valid JWT Token but no API Key**: Returns profile with contact admin message
+    - **No valid authentication**: Returns 401 Unauthorized
+    
+    **API Key Benefits:**
     - No token expiration management
-    - Simpler authentication flow
     - Better for automated systems
-    - No refresh token complexity
     - Direct database validation
+    - Simpler integration
     
-    **Returns:**
-    - Complete user profile information
-    - API key used for authentication
-    - Account status and role details
-    - Timestamps and user metadata
-    
-    **Security:**
-    - API key must be valid and active
+    **Access Control:**
+    - All user roles can access this endpoint
+    - Requires either valid API key or JWT token
     - User account must be active
-    - Secure key lookup process
     """
-    return UserProfileResponse(
-        id=current_user.id,
-        username=current_user.username,
-        email=current_user.email,
-        role=current_user.role,
-        is_active=current_user.is_active,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at,
-        api_key=current_user.api_key,
-    )
+    # Try flexible authentication
+    current_user = await get_user_by_api_key_or_token(request, db)
+    
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Provide either X-API-Key header or Authorization Bearer token."
+        )
+    
+    # Check if user has API key
+    if current_user.api_key:
+        # User has API key - return full profile
+        return UserProfileResponse(
+            id=current_user.id,
+            username=current_user.username,
+            email=current_user.email,
+            role=current_user.role,
+            is_active=current_user.is_active,
+            created_at=current_user.created_at,
+            updated_at=current_user.updated_at,
+            api_key=current_user.api_key,
+        )
+    else:
+        # User doesn't have API key - return profile with contact admin message
+        return UserProfileResponse(
+            id=current_user.id,
+            username=current_user.username,
+            email=current_user.email,
+            role=current_user.role,
+            is_active=current_user.is_active,
+            created_at=current_user.created_at,
+            updated_at=current_user.updated_at,
+            api_key="Contact your admin to get API key access",
+        )

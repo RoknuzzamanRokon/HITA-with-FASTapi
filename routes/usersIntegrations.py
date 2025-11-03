@@ -1313,22 +1313,34 @@ def active_my_supplier(
     - General Users get only their assigned suppliers.
 
     Returns:
-    - Admin/Super Users: {"my_supplier": "Active all supplier."}
-    - General Users: {"my_supplier": ["supplier1", "supplier2", ...]}
+    - Admin/Super Users: {"my_supplier": ["supplier1", "supplier2", ...]} (all suppliers)
+    - General Users: {"my_supplier": ["supplier1", "supplier2", ...]} (assigned suppliers only)
 
     Raises:
-    - 404: If a General User has no suppliers assigned
+    - 404: If no suppliers are found or General User has no suppliers assigned
     - 500: On unexpected errors (e.g., database issues)
 
     Role-Based Access:
-    - SUPER_USER / ADMIN_USER: All suppliers
+    - SUPER_USER / ADMIN_USER: All suppliers from the system
     - General User: Only assigned suppliers
     """
 
     try:
         # Admin and super users have access to all suppliers
         if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
-            return {"my_supplier": "Active all supplier."}
+            # Get all unique supplier names from provider mappings
+            all_suppliers = [
+                row.provider_name
+                for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+            ]
+            
+            if not all_suppliers:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No suppliers found in the system.",
+                )
+            
+            return {"my_supplier": all_suppliers}
         
         # Regular users get their specific supplier permissions
         suppliers = [
