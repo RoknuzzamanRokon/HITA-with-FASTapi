@@ -152,9 +152,93 @@ class CountryInfoRequest(BaseModel):
 def get_basic_country_info(
     request: CountryInfoRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
+    """
+    Get Basic Country Information for Specific Supplier
+    
+    Fast endpoint to retrieve country-specific hotel data for a supplier.
+    Only returns data for suppliers the user has active permissions for.
+    
+    Features:
+    - Fast file-based data retrieval
+    - Role-based access control with supplier permission validation
+    - Temporary deactivation support
+    - Optimized for speed with minimal database queries
+    
+    Args:
+        request: CountryInfoRequest containing supplier and country_iso
+        current_user: Currently authenticated user
+        db: Database session for permission checks
+    
+    Returns:
+        dict: Country hotel data for the specified supplier
+    
+    Raises:
+        403: User doesn't have permission for the requested supplier
+        404: Country data not found for supplier
+        500: File reading or JSON parsing errors
+    """
     try:
-        # Construct the file path
+        # FAST PERMISSION CHECK - Check user permissions for the requested supplier
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            # Get user permissions efficiently (single query)
+            user_permissions = db.query(UserProviderPermission.provider_name).filter(
+                UserProviderPermission.user_id == current_user.id
+            ).all()
+            
+            if not user_permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to access any suppliers. Please contact your administrator."
+                )
+            
+            # Extract permission names and check for temporary deactivations
+            permission_names = [perm.provider_name for perm in user_permissions]
+            temp_deactivated_suppliers = []
+            active_suppliers = []
+            
+            for perm_name in permission_names:
+                if perm_name.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm_name.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    active_suppliers.append(perm_name)
+            
+            # Remove temporarily deactivated suppliers from active list
+            final_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
+            
+            # Check if user has permission for the requested supplier
+            if request.supplier not in final_active_suppliers:
+                if request.supplier in temp_deactivated_suppliers:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Supplier '{request.supplier}' is temporarily deactivated. Please reactivate it to access data."
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"You do not have permission to access supplier '{request.supplier}'. Available suppliers: {', '.join(final_active_suppliers)}"
+                    )
+        else:
+            # For super/admin users, check for temporary deactivations
+            user_permissions = db.query(UserProviderPermission.provider_name).filter(
+                UserProviderPermission.user_id == current_user.id,
+                UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+            ).all()
+            
+            temp_deactivated_suppliers = [
+                perm.provider_name.replace("TEMP_DEACTIVATED_", "") 
+                for perm in user_permissions
+            ]
+            
+            if request.supplier in temp_deactivated_suppliers:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Supplier '{request.supplier}' is temporarily deactivated. Please reactivate it to access data."
+                )
+        
+        # FAST FILE ACCESS - Construct the file path
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up to backend directory
         file_path = os.path.join(
             base_dir, 
@@ -171,7 +255,7 @@ def get_basic_country_info(
                 detail=f"Country data not found for supplier '{request.supplier}' and country '{request.country_iso}'"
             )
         
-        # Read and parse JSON file
+        # Read and parse JSON file efficiently
         with open(file_path, 'r', encoding='utf-8') as file:
             country_data = json.load(file)
         
@@ -186,6 +270,9 @@ def get_basic_country_info(
             "data": country_data
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
