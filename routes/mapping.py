@@ -370,5 +370,182 @@ def get_basic_mapping_with_info(
         )
 
 
+class ITTIDMappingRequest(BaseModel):
+    ittid: str
+
+
+@router.post("/get_mapping_with_ittid", status_code=status.HTTP_200_OK)
+def get_mapping_with_ittid(
+    request: ITTIDMappingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get Provider Mappings for Specific ITTID
+    
+    Retrieves all provider mappings for a specific hotel ITTID with permission validation.
+    Only returns mappings for suppliers the user has active access to.
+    
+    Features:
+    - Fast ITTID-based mapping retrieval
+    - Role-based access control with supplier permission validation
+    - Temporary deactivation support
+    - Comprehensive mapping information with timestamps
+    
+    Args:
+        request: ITTIDMappingRequest containing the hotel ITTID
+        current_user: Currently authenticated user
+        db: Database session
+    
+    Returns:
+        dict: Mapping data including:
+            - ittid: The hotel ITTID
+            - total_supplier: Number of accessible suppliers for this hotel
+            - provider_list: List of accessible provider names
+            - provider_mappings: List of mapping objects with details
+    
+    Raises:
+        400: Invalid ITTID format
+        403: User doesn't have permission for any suppliers of this hotel
+        404: Hotel not found or no accessible mappings
+        500: Database or processing errors
+    """
+    try:
+        # Validate ITTID
+        if not request.ittid or not request.ittid.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ITTID cannot be empty"
+            )
+        
+        # Check if hotel exists
+        hotel_exists = db.query(models.Hotel).filter(
+            models.Hotel.ittid == request.ittid
+        ).first()
+        
+        if not hotel_exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Hotel with ITTID '{request.ittid}' not found"
+            )
+        
+        # Get all provider mappings for this ITTID
+        all_mappings = db.query(models.ProviderMapping).filter(
+            models.ProviderMapping.ittid == request.ittid
+        ).all()
+        
+        if not all_mappings:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No provider mappings found for ITTID '{request.ittid}'"
+            )
+        
+        # FAST PERMISSION CHECK - Check user permissions for suppliers
+        if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            # Get user permissions efficiently
+            user_permissions = db.query(models.UserProviderPermission.provider_name).filter(
+                models.UserProviderPermission.user_id == current_user.id
+            ).all()
+            
+            if not user_permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to access any suppliers."
+                )
+            
+            # Fast set operations for permission checking
+            permission_names = {perm[0] for perm in user_permissions}
+            temp_deactivated = {
+                name.replace("TEMP_DEACTIVATED_", "") 
+                for name in permission_names 
+                if name.startswith("TEMP_DEACTIVATED_")
+            }
+            active_suppliers = {
+                name for name in permission_names 
+                if not name.startswith("TEMP_DEACTIVATED_")
+            }
+            final_active = active_suppliers - temp_deactivated
+            
+            # Filter mappings to only include accessible suppliers
+            accessible_mappings = [
+                mapping for mapping in all_mappings 
+                if mapping.provider_name in final_active
+            ]
+            
+            if not accessible_mappings:
+                available_suppliers = [mapping.provider_name for mapping in all_mappings]
+                temp_deactivated_for_hotel = [
+                    supplier for supplier in available_suppliers 
+                    if supplier in temp_deactivated
+                ]
+                
+                if temp_deactivated_for_hotel:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"All suppliers for this hotel are temporarily deactivated: {', '.join(temp_deactivated_for_hotel)}"
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"You don't have permission for any suppliers of this hotel. Available: {', '.join(available_suppliers)}"
+                    )
+        else:
+            # For super/admin users, check for temporary deactivations
+            user_permissions = db.query(models.UserProviderPermission.provider_name).filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                models.UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+            ).all()
+            
+            temp_deactivated = {
+                perm[0].replace("TEMP_DEACTIVATED_", "") 
+                for perm in user_permissions
+            }
+            
+            # Filter out temporarily deactivated suppliers
+            accessible_mappings = [
+                mapping for mapping in all_mappings 
+                if mapping.provider_name not in temp_deactivated
+            ]
+            
+            if not accessible_mappings:
+                temp_deactivated_for_hotel = [
+                    mapping.provider_name for mapping in all_mappings 
+                    if mapping.provider_name in temp_deactivated
+                ]
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"All suppliers for this hotel are temporarily deactivated: {', '.join(temp_deactivated_for_hotel)}"
+                )
+        
+        # Build response with accessible mappings
+        provider_mappings = []
+        provider_list = []
+        
+        for mapping in accessible_mappings:
+            provider_mappings.append({
+                "provider_name": mapping.provider_name,
+                "provider_id": mapping.provider_id,
+                "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None
+            })
+            
+            if mapping.provider_name not in provider_list:
+                provider_list.append(mapping.provider_name)
+        
+        return {
+            "ittid": request.ittid,
+            "total_supplier": len(provider_list),
+            "provider_list": provider_list,
+            "provider_mappings": provider_mappings
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving mapping data: {str(e)}"
+        )
+
+
 
 

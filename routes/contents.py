@@ -653,6 +653,7 @@ async def get_hotels_using_ittid_list(
     - Full hotel details integration from /v1.0/hotel/details
     - Efficient internal API calls without HTTP overhead
     - Comprehensive error handling for missing data
+    - Automatic filtering of mappings with null full_details
     
     Args:
         request (ITTIDRequest): Request containing list of ITTID values
@@ -661,10 +662,15 @@ async def get_hotels_using_ittid_list(
     
     Returns:
         List[dict]: List of hotels with provider mappings and full details
+                   (only includes mappings where full_details is not null)
     
     Access Control:
         - GENERAL_USER: Only sees providers they have permission for
         - SUPER_USER/ADMIN_USER: Can see all provider mappings
+    
+    Filtering:
+        - Provider mappings with null full_details are automatically excluded
+        - Hotels with no valid provider mappings are excluded from results
     """
 
     # 🚫 NO POINT DEDUCTION for super_user and admin_user
@@ -723,19 +729,23 @@ async def get_hotels_using_ittid_list(
                     db=db
                 )
                 
-                mapping_data = {
-                    "id": mapping.id,
-                    "ittid": mapping.ittid,
-                    "provider_name": mapping.provider_name,
-                    "provider_id": mapping.provider_id,
-                    "full_details": hotel_details  # Include full hotel details
-                }
-                formatted_provider_mappings.append(mapping_data)
+                # FILTER: Only include mappings with non-null full_details
+                if hotel_details is not None:
+                    mapping_data = {
+                        "id": mapping.id,
+                        "ittid": mapping.ittid,
+                        "provider_name": mapping.provider_name,
+                        "provider_id": mapping.provider_id,
+                        "full_details": hotel_details  # Include full hotel details
+                    }
+                    formatted_provider_mappings.append(mapping_data)
 
-            result.append({
-                "ittid": hotel.ittid,
-                "provider_mappings": formatted_provider_mappings
-            })
+            # Only include hotel in result if it has valid provider mappings
+            if formatted_provider_mappings:
+                result.append({
+                    "ittid": hotel.ittid,
+                    "provider_mappings": formatted_provider_mappings
+                })
     else:
         # For SUPER/ADMIN users – return all mappings with full details (excluding temp deactivated)
         # Get temporarily deactivated suppliers for super/admin users
@@ -773,19 +783,23 @@ async def get_hotels_using_ittid_list(
                     db=db
                 )
                 
-                mapping_data = {
-                    "id": mapping.id,
-                    "ittid": mapping.ittid,
-                    "provider_name": mapping.provider_name,
-                    "provider_id": mapping.provider_id,
-                    "full_details": hotel_details  # Include full hotel details
-                }
-                formatted_provider_mappings.append(mapping_data)
+                # FILTER: Only include mappings with non-null full_details
+                if hotel_details is not None:
+                    mapping_data = {
+                        "id": mapping.id,
+                        "ittid": mapping.ittid,
+                        "provider_name": mapping.provider_name,
+                        "provider_id": mapping.provider_id,
+                        "full_details": hotel_details  # Include full hotel details
+                    }
+                    formatted_provider_mappings.append(mapping_data)
 
-            result.append({
-                "ittid": hotel.ittid,
-                "provider_mappings": formatted_provider_mappings
-            })
+            # Only include hotel in result if it has valid provider mappings
+            if formatted_provider_mappings:
+                result.append({
+                    "ittid": hotel.ittid,
+                    "provider_mappings": formatted_provider_mappings
+                })
 
     return result
 
@@ -2076,4 +2090,268 @@ def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel n
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected error during autocomplete search: {str(e)}"
+        )
+
+
+class SupplierHotelRequest(BaseModel):
+    supplier_name: List[str]
+
+
+@router.post("/get_all_hotel_with_supplier", status_code=status.HTTP_200_OK)
+def get_all_hotel_with_supplier(
+    request: SupplierHotelRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    limit_per_page: int = Query(50, ge=1, le=500, description="Number of records per page"),
+    resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
+    page: Optional[int] = Query(None, ge=1, description="Page number to jump to (overrides resume_key)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get All Hotels with Supplier Information
+    
+    Retrieves paginated hotel data with comprehensive information including provider mappings
+    for specified suppliers. Only returns data for suppliers the user has active permissions for.
+    
+    Features:
+    - Fast paginated hotel retrieval with supplier filtering
+    - Role-based access control with supplier permission validation
+    - Temporary deactivation support
+    - Resume key and direct page navigation
+    - Comprehensive hotel information with geocoding and mappings
+    
+    Args:
+        request: SupplierHotelRequest containing list of supplier names
+        current_user: Currently authenticated user
+        limit_per_page: Number of records per page (1-500, default 50)
+        resume_key: Resume key for pagination continuation
+        page: Page number to jump to (overrides resume_key if provided)
+        db: Database session
+    
+    Returns:
+        dict: Paginated hotel data including:
+            - resume_key: Key for next page (null if last page)
+            - total_hotel: Total hotels for specified suppliers
+            - total_supplier: Number of suppliers in request
+            - supplier_name: List of requested supplier names
+            - show_hotels_this_page: Number of hotels in current response
+            - total_page: Total number of pages
+            - current_page: Current page number
+            - hotels: List of hotel objects with full details
+    
+    Raises:
+        400: Invalid supplier names or pagination parameters
+        403: User doesn't have permission for requested suppliers
+        500: Database or processing errors
+    """
+    try:
+        # Validate request
+        if not request.supplier_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one supplier name is required"
+            )
+        
+        # ULTRA-FAST PERMISSION CHECK - Single query with set operations
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            # Single query to get all permissions as a set for O(1) lookups
+            permission_names = {
+                perm[0] for perm in db.query(UserProviderPermission.provider_name)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            }
+            
+            if not permission_names:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to access any suppliers."
+                )
+            
+            # Fast set operations for temp deactivated suppliers
+            temp_deactivated = {
+                name.replace("TEMP_DEACTIVATED_", "") 
+                for name in permission_names 
+                if name.startswith("TEMP_DEACTIVATED_")
+            }
+            active_suppliers = {
+                name for name in permission_names 
+                if not name.startswith("TEMP_DEACTIVATED_")
+            }
+            final_active = active_suppliers - temp_deactivated
+            
+            # Fast set intersection checks
+            requested_set = set(request.supplier_name)
+            unauthorized = requested_set - final_active
+            temp_deactivated_requested = requested_set & temp_deactivated
+            
+            if unauthorized:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"No permission for: {', '.join(unauthorized)}"
+                )
+            
+            if temp_deactivated_requested:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Temporarily deactivated: {', '.join(temp_deactivated_requested)}"
+                )
+            
+            allowed_suppliers = list(final_active & requested_set)
+        else:
+            # Super/admin users - only check temp deactivations
+            temp_deactivated = {
+                perm[0].replace("TEMP_DEACTIVATED_", "") 
+                for perm in db.query(UserProviderPermission.provider_name)
+                .filter(
+                    UserProviderPermission.user_id == current_user.id,
+                    UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+                ).all()
+            }
+            
+            temp_deactivated_requested = set(request.supplier_name) & temp_deactivated
+            if temp_deactivated_requested:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Temporarily deactivated: {', '.join(temp_deactivated_requested)}"
+                )
+            
+            allowed_suppliers = request.supplier_name
+        
+        # ULTRA-FAST: Direct query with minimal data transfer
+        # Use tuple unpacking for faster iteration
+        ittid_results = db.query(models.ProviderMapping.ittid).filter(
+            models.ProviderMapping.provider_name.in_(allowed_suppliers)
+        ).all()
+        
+        # Lightning-fast deduplication with set comprehension
+        unique_ittids = list({ittid for ittid, in ittid_results})
+        
+        if not unique_ittids:
+            # No hotels found - return empty result immediately
+            return {
+                "resume_key": None,
+                "total_hotel": 0,
+                "total_supplier": len(request.supplier_name),
+                "supplier_name": request.supplier_name,
+                "show_hotels_this_page": 0,
+                "total_page": 1,
+                "current_page": 1,
+                "hotels": []
+            }
+        
+        # Direct query with IN clause - much faster than subquery
+        base_query = db.query(models.Hotel).filter(
+            models.Hotel.ittid.in_(unique_ittids)
+        ).order_by(models.Hotel.id)
+        
+        # INSTANT COUNT: We already know the count from unique_ittids
+        total = len(unique_ittids)
+        
+        # Handle pagination efficiently
+        current_page_num = 1
+        if page is not None:
+            # Direct page navigation
+            current_page_num = page
+            offset = (page - 1) * limit_per_page
+            hotels = base_query.offset(offset).limit(limit_per_page).all()
+        elif resume_key:
+            # Resume key pagination
+            try:
+                parts = resume_key.split("_", 1)
+                if len(parts) != 2:
+                    raise ValueError("Invalid resume key format")
+                last_id = int(parts[0])
+                    
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Invalid resume_key: {str(e)}"
+                )
+            
+            # Apply resume key filter
+            hotels = base_query.filter(models.Hotel.id > last_id).limit(limit_per_page).all()
+            
+            # Simplified current page calculation
+            current_page_num = 1  # For resume key, we don't need exact page calculation for speed
+        else:
+            # First page
+            hotels = base_query.limit(limit_per_page).all()
+        
+        # Prepare next resume_key
+        if hotels and len(hotels) == limit_per_page:
+            last_hotel_id = hotels[-1].id
+            rand_str = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(50))
+            next_resume_key = f"{last_hotel_id}_{rand_str}"
+        else:
+            next_resume_key = None
+        
+        # ULTRA-FAST: Get mappings with minimal data transfer
+        hotel_ittids = [hotel.ittid for hotel in hotels]
+        if hotel_ittids:
+            # Only select needed columns to reduce data transfer
+            all_mappings = db.query(
+                models.ProviderMapping.ittid,
+                models.ProviderMapping.provider_name,
+                models.ProviderMapping.provider_id,
+                models.ProviderMapping.created_at,
+                models.ProviderMapping.updated_at
+            ).filter(
+                models.ProviderMapping.ittid.in_(hotel_ittids),
+                models.ProviderMapping.provider_name.in_(allowed_suppliers)
+            ).all()
+            
+            # Ultra-fast grouping with defaultdict
+            from collections import defaultdict
+            mappings_by_ittid = defaultdict(list)
+            
+            for mapping in all_mappings:
+                mappings_by_ittid[mapping.ittid].append({
+                    "provider_name": mapping.provider_name,
+                    "provider_id": mapping.provider_id,
+                    "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
+                    "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None
+                })
+        else:
+            mappings_by_ittid = {}
+        
+        # ULTRA-FAST: List comprehension with minimal attribute access
+        hotel_results = [
+            {
+                "ittid": hotel.ittid,
+                "name": hotel.name or "",
+                "property_type": hotel.property_type or "",
+                "rating": hotel.rating or "",
+                "address_line1": hotel.address_line1 or "",
+                "address_line2": hotel.address_line2 or "",
+                "postal_code": hotel.postal_code or "",
+                "map_status": getattr(hotel, 'map_status', 'pending'),
+                "geocode": {
+                    "latitude": hotel.latitude or "",
+                    "longitude": hotel.longitude or ""
+                },
+                "mapping_info": mappings_by_ittid.get(hotel.ittid, [])
+            }
+            for hotel in hotels
+        ]
+        
+        # Calculate pagination info
+        import math
+        total_pages = math.ceil(total / limit_per_page) if total > 0 else 1
+        
+        return {
+            "resume_key": next_resume_key,
+            "total_hotel": total,
+            "total_supplier": len(request.supplier_name),
+            "supplier_name": request.supplier_name,
+            "show_hotels_this_page": len(hotel_results),
+            "total_page": total_pages,
+            "current_page": current_page_num,
+            "hotels": hotel_results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving hotel data: {str(e)}"
         )

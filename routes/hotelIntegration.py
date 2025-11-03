@@ -497,13 +497,9 @@ def get_supplier_info(
         current_user (User): Currently authenticated user (injected by dependency)
     
     Returns:
-        Dict[str, Any]: Supplier information including:
-            - supplier_name: Name of the supplier
-            - total_hotel: Number of hotels available from this supplier
-            - user_role: Current user's role
-            - access_granted: Whether access was granted
-            - access_type: Type of access (full_access, permission_granted)
-            - supplier_metadata: Additional supplier information
+        Dict[str, Any]: Response containing:
+            - supplier_info: Supplier information and statistics
+            - user_info: User information and access details
     
     Access Control:
         - SUPER_USER: Can access any supplier information
@@ -534,11 +530,18 @@ def get_supplier_info(
         
     Example Response:
         {
-            "supplier_name": "booking",
-            "total_hotel": 15420,
-            "user_role": "general_user",
-            "access_granted": true,
-            "access_type": "permission_granted"
+            "supplier_info": {
+                "supplier_name": "hotelbeds",
+                "total_hotel": 148878,
+                "has_hotels": true,
+                "last_checked": "2025-11-03T10:43:45.493170"
+            },
+            "user_info": {
+                "user_id": "5779356081",
+                "username": "roman",
+                "user_role": "general_user",
+                "access_level": "permission_granted"
+            }
         }
     """
     try:
@@ -654,19 +657,16 @@ def get_supplier_info(
         logger.info(f"Supplier info successfully retrieved for '{supplier}' - {total_hotel} hotels found")
         
         return {
-            "supplier_name": supplier,
-            "total_hotel": total_hotel,
-            "user_role": current_user.role,
-            "access_granted": True,
-            "access_type": access_type,
-            "supplier_metadata": {
-                "system_types": system_types_list,
+            "supplier_info": {
+                "supplier_name": supplier,
+                "total_hotel": total_hotel,
                 "has_hotels": total_hotel > 0,
                 "last_checked": datetime.utcnow().isoformat()
             },
             "user_info": {
                 "user_id": current_user.id,
                 "username": getattr(current_user, 'username', 'unknown'),
+                "user_role": current_user.role,
                 "access_level": access_type
             }
         }
