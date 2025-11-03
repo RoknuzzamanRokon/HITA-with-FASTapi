@@ -1522,6 +1522,7 @@ def get_update_provider_info(
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(..., description="End date (YYYY-MM-DD)"),
     resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
+    page: Optional[int] = Query(None, ge=1, description="Page number to jump to (overrides resume_key)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -1534,6 +1535,7 @@ def get_update_provider_info(
     - Date range filtering for updated records
     - Role-based access control (Super users see all, others see permitted providers)
     - Resume key pagination for large datasets
+    - Direct page navigation with page parameter
     - Comprehensive provider mapping information
     
     Args:
@@ -1542,6 +1544,7 @@ def get_update_provider_info(
         from_date (str): Start date in YYYY-MM-DD format (required)
         to_date (str): End date in YYYY-MM-DD format (required)
         resume_key (Optional[str]): Resume key for pagination continuation
+        page (Optional[int]): Page number to jump to (overrides resume_key if provided)
         db (Session): Database session (injected by dependency)
     
     Returns:
@@ -1549,6 +1552,8 @@ def get_update_provider_info(
             - resume_key: Key for next page (null if last page)
             - total_hotel: Total mappings in date range
             - show_hotels_this_page: Number of mappings in current response
+            - total_page: Total number of pages
+            - current_page: Current page number
             - provider_mappings: List of provider mapping objects
     
     Access Control:
@@ -1564,8 +1569,9 @@ def get_update_provider_info(
         - Both from_date and to_date must be in YYYY-MM-DD format
         - Example: "2023-01-01" to "2023-12-31"
         
-    Example Request:
+    Example Requests:
         GET /get_update_provider_info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=100
+        GET /get_update_provider_info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=500&page=200
     """
     try:
         # Validate and parse dates
@@ -1585,16 +1591,56 @@ def get_update_provider_info(
                 detail="Invalid date format. Use YYYY-MM-DD format (e.g., '2023-01-01')."
             )
 
-        # Super users see all, others see only their allowed providers
+        # Super users see all, others see only their allowed providers (excluding temp deactivated)
         if current_user.role == UserRole.SUPER_USER:
-            allowed_providers = None
-        else:
-            allowed_providers = [
+            # For super users, check for temporarily deactivated suppliers
+            all_permissions = [
                 perm.provider_name
                 for perm in db.query(UserProviderPermission)
-                              .filter(UserProviderPermission.user_id == current_user.id)
-                              .all()
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
             ]
+            
+            # Get temporarily deactivated suppliers
+            temp_deactivated_suppliers = []
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+            
+            # Super users see all providers except temporarily deactivated ones
+            if temp_deactivated_suppliers:
+                # Get all provider names and exclude temp deactivated ones
+                all_provider_names = [
+                    row.provider_name
+                    for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+                ]
+                allowed_providers = [provider for provider in all_provider_names if provider not in temp_deactivated_suppliers]
+            else:
+                allowed_providers = None  # No restrictions for super users with no temp deactivations
+        else:
+            # Get all user permissions (including temp deactivated ones)
+            all_permissions = [
+                perm.provider_name
+                for perm in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            # Separate active and temporarily deactivated suppliers
+            temp_deactivated_suppliers = []
+            active_providers = []
+            
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    active_providers.append(perm)
+            
+            # Remove temporarily deactivated suppliers from allowed providers
+            allowed_providers = [provider for provider in active_providers if provider not in temp_deactivated_suppliers]
+            
             if not allowed_providers:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -1621,9 +1667,18 @@ def get_update_provider_info(
         # Count total BEFORE applying resume_key/pagination
         total = base_query.count()
 
-        # Apply ordering and resume_key filter
-        last_id = 0
-        if resume_key:
+        # Apply ordering
+        base_query = base_query.order_by(ProviderMapping.id)
+        
+        # Handle pagination - page parameter takes precedence over resume_key
+        current_page_num = 1
+        if page is not None:
+            # Direct page navigation
+            current_page_num = page
+            offset = (page - 1) * limit_per_page
+            mappings = base_query.offset(offset).limit(limit_per_page).all()
+        elif resume_key:
+            # Resume key pagination
             try:
                 parts = resume_key.split("_", 1)
                 if len(parts) != 2:
@@ -1642,12 +1697,25 @@ def get_update_provider_info(
                     status_code=status.HTTP_400_BAD_REQUEST, 
                     detail=f"Invalid resume_key: {str(e)}. Please use a valid resume_key from a previous response."
                 )
-            base_query = base_query.filter(ProviderMapping.id > last_id)
-
-        base_query = base_query.order_by(ProviderMapping.id)
-
-        # Apply pagination
-        mappings = base_query.limit(limit_per_page).all()
+            
+            # Apply resume key filter and get results
+            filtered_query = base_query.filter(ProviderMapping.id > last_id)
+            mappings = filtered_query.limit(limit_per_page).all()
+            
+            # Calculate current page for resume key
+            records_before = db.query(ProviderMapping).filter(
+                ProviderMapping.updated_at >= from_dt,
+                ProviderMapping.updated_at <= to_dt,
+                ProviderMapping.id <= last_id
+            )
+            if allowed_providers is not None:
+                records_before = records_before.filter(ProviderMapping.provider_name.in_(allowed_providers))
+            
+            records_before_count = records_before.count()
+            current_page_num = (records_before_count // limit_per_page) + 1
+        else:
+            # First page (no resume_key, no page)
+            mappings = base_query.limit(limit_per_page).all()
 
         # Prepare next resume_key (random string + last id)
         if mappings and len(mappings) == limit_per_page:
@@ -1662,15 +1730,20 @@ def get_update_provider_info(
                 "ittid": m.ittid,
                 "provider_name": m.provider_name,
                 "provider_id": m.provider_id,
-                "system_type": m.system_type,
             }
             for m in mappings
         ]
+
+        # Calculate pagination info
+        import math
+        total_pages = math.ceil(total / limit_per_page) if total > 0 else 1
 
         return {
             "resume_key": next_resume_key,
             "total_hotel": total, 
             "show_hotels_this_page": len(result),
+            "total_page": total_pages,
+            "current_page": current_page_num,
             "provider_mappings": result
         }
     

@@ -52,8 +52,8 @@ class Token(BaseModel):
 class SupplierInfo(BaseModel):
     total_active: int
     active_list: List[str]
-    temporary_of: int
-    temporary_of_supplier: List[str]
+    temporary_off: int
+    temporary_off_supplier: List[str]
 
 class UserResponse(BaseModel):
     id: str

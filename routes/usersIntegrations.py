@@ -65,8 +65,8 @@ async def self_info(
     Supplier Info Structure:
     - total_active: Total number of suppliers user has access to
     - active_list: List of all suppliers user has access to (including temp deactivated)
-    - temporary_of: Number of temporarily deactivated suppliers
-    - temporary_of_supplier: List of temporarily deactivated supplier names
+    - temporary_off: Number of temporarily deactivated suppliers
+    - temporary_off_supplier: List of temporarily deactivated supplier names
 
     Notes:
     - Requires valid JWT authentication
@@ -141,8 +141,8 @@ async def self_info(
             "supplier_info": {
                 "total_active": len(all_accessible_suppliers),
                 "active_list": all_accessible_suppliers,
-                "temporary_of": len(temp_deactivated_suppliers),
-                "temporary_of_supplier": temp_deactivated_suppliers
+                "temporary_off": len(temp_deactivated_suppliers),
+                "temporary_off_supplier": temp_deactivated_suppliers
             },
             "created_at": current_user.created_at,
             "updated_at": current_user.updated_at,
