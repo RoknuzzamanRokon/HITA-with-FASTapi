@@ -148,7 +148,7 @@ class CountryInfoRequest(BaseModel):
     country_iso: str
 
 
-@router.post("/get_basic_country_info", status_code=status.HTTP_200_OK)
+@router.post("/get-basic-info-follow-countryCode", status_code=status.HTTP_200_OK)
 def get_basic_country_info(
     request: CountryInfoRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -635,7 +635,7 @@ class ITTIDRequest(BaseModel):
     ittid: List[str]
 
 # Get provider mapping
-@router.post("/get_hotel_with_ittid", status_code=status.HTTP_200_OK)
+@router.post("/get-hotel-with-ittid", status_code=status.HTTP_200_OK)
 async def get_hotels_using_ittid_list(
     request: ITTIDRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -803,7 +803,7 @@ async def get_hotels_using_ittid_list(
 
     return result
 
-@router.get("/get_hotel_with_ittid/{ittid}", status_code=status.HTTP_200_OK)
+@router.get("/get-hotel-with-ittid/{ittid}", status_code=status.HTTP_200_OK)
 async def get_hotel_using_ittid(
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -1281,7 +1281,7 @@ class ProviderPropertyRequest(BaseModel):
     provider_property: List[ProviderProperty]
 
 
-@router.get("/get_all_ittid", status_code=status.HTTP_200_OK)
+@router.get("/get-all-ittid", status_code=status.HTTP_200_OK)
 def get_all_ittid(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -1616,7 +1616,7 @@ async def get_all_hotel_only_supplier(
     }
 
 
-@router.get("/get_update_provider_info")
+@router.get("/get-update-provider-info")
 def get_update_provider_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
     limit_per_page: int = Query(50, ge=1, le=500, description="Number of records per page"),
@@ -1671,8 +1671,8 @@ def get_update_provider_info(
         - Example: "2023-01-01" to "2023-12-31"
         
     Example Requests:
-        GET /get_update_provider_info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=100
-        GET /get_update_provider_info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=500&page=200
+        GET /get-update-provider-info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=100
+        GET /get-update-provider-info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=500&page=200
     """
     try:
         # Validate and parse dates
@@ -2097,7 +2097,7 @@ class SupplierHotelRequest(BaseModel):
     supplier_name: List[str]
 
 
-@router.post("/get_all_hotel_with_supplier", status_code=status.HTTP_200_OK)
+@router.post("/get-all-hotel-basic-info-with-supplier", status_code=status.HTTP_200_OK)
 def get_all_hotel_with_supplier(
     request: SupplierHotelRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -2107,41 +2107,27 @@ def get_all_hotel_with_supplier(
     db: Session = Depends(get_db)
 ):
     """
-    Get All Hotels with Supplier Information
+    Get Hotels by Supplier
     
-    Retrieves paginated hotel data with comprehensive information including provider mappings
-    for specified suppliers. Only returns data for suppliers the user has active permissions for.
+    Retrieves paginated hotel data for specified suppliers with provider mappings.
+    Ultra-fast performance with role-based access control.
     
-    Features:
-    - Fast paginated hotel retrieval with supplier filtering
-    - Role-based access control with supplier permission validation
-    - Temporary deactivation support
-    - Resume key and direct page navigation
-    - Comprehensive hotel information with geocoding and mappings
+    Request Body:
+    - supplier_name: List of supplier names (required)
     
-    Args:
-        request: SupplierHotelRequest containing list of supplier names
-        current_user: Currently authenticated user
-        limit_per_page: Number of records per page (1-500, default 50)
-        resume_key: Resume key for pagination continuation
-        page: Page number to jump to (overrides resume_key if provided)
-        db: Database session
+    Query Parameters:
+    - limit_per_page: Records per page (1-500, default 50)
+    - resume_key: Pagination continuation key
+    - page: Direct page navigation (overrides resume_key)
+    
+    Access Control:
+    - Super/Admin: All suppliers (except temp deactivated)
+    - General users: Only permitted suppliers
     
     Returns:
-        dict: Paginated hotel data including:
-            - resume_key: Key for next page (null if last page)
-            - total_hotel: Total hotels for specified suppliers
-            - total_supplier: Number of suppliers in request
-            - supplier_name: List of requested supplier names
-            - show_hotels_this_page: Number of hotels in current response
-            - total_page: Total number of pages
-            - current_page: Current page number
-            - hotels: List of hotel objects with full details
-    
-    Raises:
-        400: Invalid supplier names or pagination parameters
-        403: User doesn't have permission for requested suppliers
-        500: Database or processing errors
+    - Paginated hotel list with geocoding and provider mappings
+    - Pagination metadata (total, current page, resume key)
+    - Supplier analytics and counts
     """
     try:
         # Validate request

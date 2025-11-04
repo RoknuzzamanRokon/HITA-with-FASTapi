@@ -464,7 +464,7 @@ def add_provider(
         )
 
 # Get supplier information
-@router.get("/get_supplier_info")
+@router.get("/get-supplier-info")
 def get_supplier_info(
     supplier: str = None,
     db: Session = Depends(get_db),
@@ -526,7 +526,7 @@ def get_supplier_info(
         - Integration validation and troubleshooting
     
     Example Request:
-        GET /get_supplier_info?supplier=booking
+        GET /get-supplier-info?supplier=booking
         
     Example Response:
         {
@@ -683,91 +683,26 @@ def get_supplier_info(
         )
 
 # Get user accessible suppliers
-@router.get("/get_user_accessible_suppliers")
+@router.get("/check-my-active-suppliers")
 def get_user_accessible_suppliers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Get User's Accessible Suppliers List
+    Check My Active Suppliers
     
-    Retrieves a comprehensive list of suppliers/providers that the current user has
-    access to, along with hotel counts and access type information. This endpoint
-    provides role-based supplier access management and detailed supplier analytics.
+    Returns user's accessible hotel suppliers with analytics and permissions.
     
-    Features:
-    - Role-based supplier access listing
-    - Comprehensive supplier information with hotel counts
-    - Access type classification and permissions tracking
-    - Supplier availability and system status information
-    - User-specific supplier analytics and insights
-    
-    Access Levels:
-        - SUPER_USER: Access to all suppliers in the system
-        - ADMIN_USER: Access to all suppliers in the system
-        - GENERAL_USER: Access only to explicitly permitted suppliers
-    
-    Supplier Information Provided:
-        - Supplier name and identification
-        - Total hotel count per supplier
-        - Access type (full_access vs permission_granted)
-        - Supplier system types and capabilities
-        - Last activity and availability status
-    
-    Args:
-        db (Session): Database session (injected by dependency)
-        current_user (User): Currently authenticated user (injected by dependency)
+    Access Control:
+    - Super/Admin users: Access to all suppliers
+    - General users: Only permitted suppliers
     
     Returns:
-        Dict[str, Any]: User's accessible suppliers including:
-            - user_id: Current user's identifier
-            - user_role: User's role in the system
-            - accessible_suppliers: List of supplier objects with details
-            - total_accessible_suppliers: Count of accessible suppliers
-            - access_summary: Summary of access permissions
-            - supplier_analytics: Aggregated supplier statistics
-    
-    Supplier Object Structure:
-        - supplier_name: Name of the supplier/provider
-        - total_hotels: Number of hotels available from this supplier
-        - access_type: Type of access granted (full_access, permission_granted)
-        - system_types: List of system types supported by supplier
-        - last_updated: When supplier data was last updated
-        - availability_status: Current supplier availability
-    
-    Error Handling:
-        - 401: User not authenticated
-        - 403: User role not recognized or insufficient permissions
-        - 500: Database errors or system failures
-    
-    Performance Considerations:
-        - Optimized queries with proper indexing
-        - Efficient supplier counting and aggregation
-        - Minimal database calls for large supplier lists
-        - Caching-friendly response structure
-    
-    Use Cases:
-        - Supplier selection interfaces and dropdowns
-        - User permission validation and access control
-        - Administrative supplier management dashboards
-        - Integration capability discovery and validation
-        - User onboarding and permission setup
-    
-    Example Response:
-        {
-            "user_id": "user123",
-            "user_role": "general_user",
-            "accessible_suppliers": [
-                {
-                    "supplier_name": "booking",
-                    "total_hotels": 15420,
-                    "access_type": "permission_granted",
-                    "system_types": ["OTA"],
-                    "availability_status": "active"
-                }
-            ],
-            "total_accessible_suppliers": 1
-        }
+    - User info and role
+    - Access summary with total/accessible supplier counts
+    - Supplier analytics (hotels, active/inactive counts, coverage %)
+    - List of accessible suppliers with hotel counts and status
+    - Response metadata with timestamp
     """
     try:
         # Validate user authentication
@@ -780,44 +715,29 @@ def get_user_accessible_suppliers(
         # Log supplier access request
         logger.info(f"Accessible suppliers requested by user {current_user.id} (role: {current_user.role})")
         
-        supplier_info = []
-        access_summary = {
-            "total_suppliers_in_system": 0,
-            "accessible_suppliers": 0,
-            "access_type": "unknown",
-            "permission_based": False
-        }
+        accessible_suppliers = []
         
         try:
             # Get total suppliers in system for reference
             total_suppliers_query = db.query(models.ProviderMapping.provider_name).distinct()
-            access_summary["total_suppliers_in_system"] = total_suppliers_query.count()
+            total_suppliers_in_system = total_suppliers_query.count()
             
             if current_user.role in ["super_user", "admin_user"]:
                 # Super users and admin users can access all suppliers
                 logger.info(f"Providing full supplier access to {current_user.role}")
                 
                 suppliers = total_suppliers_query.all()
-                accessible_suppliers = [supplier[0] for supplier in suppliers if supplier[0]]
+                supplier_names = [supplier[0] for supplier in suppliers if supplier[0]]
                 
-                access_summary["access_type"] = "full_access"
-                access_summary["permission_based"] = False
+                permission_based = False
                 
                 # Get detailed information for each supplier
-                for supplier_name in accessible_suppliers:
+                for supplier_name in supplier_names:
                     try:
                         # Get hotel count
                         hotel_count = db.query(models.ProviderMapping).filter(
                             models.ProviderMapping.provider_name == supplier_name
                         ).count()
-                        
-                        # Get system types
-                        system_types = db.query(models.ProviderMapping.system_type).filter(
-                            models.ProviderMapping.provider_name == supplier_name,
-                            models.ProviderMapping.system_type.isnot(None)
-                        ).distinct().all()
-                        
-                        system_types_list = [st[0] for st in system_types if st[0]]
                         
                         # Get last update timestamp
                         last_updated = db.query(models.ProviderMapping.updated_at).filter(
@@ -825,25 +745,25 @@ def get_user_accessible_suppliers(
                             models.ProviderMapping.updated_at.isnot(None)
                         ).order_by(models.ProviderMapping.updated_at.desc()).first()
                         
-                        supplier_info.append({
-                            "supplier_name": supplier_name,
-                            "total_hotels": hotel_count,
-                            "access_type": "full_access",
-                            "system_types": system_types_list,
-                            "last_updated": last_updated[0].isoformat() if last_updated and last_updated[0] else None,
-                            "availability_status": "active" if hotel_count > 0 else "inactive"
+                        accessible_suppliers.append({
+                            "supplierName": supplier_name,
+                            "totalHotels": hotel_count,
+                            "accessType": "fullAccess",
+                            "permissionGrantedAt": None,
+                            "lastUpdated": last_updated[0].isoformat() if last_updated and last_updated[0] else None,
+                            "availabilityStatus": "active" if hotel_count > 0 else "inactive"
                         })
                         
                     except SQLAlchemyError as supplier_error:
                         logger.warning(f"Error getting details for supplier {supplier_name}: {supplier_error}")
                         # Add basic info even if detailed info fails
-                        supplier_info.append({
-                            "supplier_name": supplier_name,
-                            "total_hotels": 0,
-                            "access_type": "full_access",
-                            "system_types": [],
-                            "last_updated": None,
-                            "availability_status": "unknown"
+                        accessible_suppliers.append({
+                            "supplierName": supplier_name,
+                            "totalHotels": 0,
+                            "accessType": "fullAccess",
+                            "permissionGrantedAt": None,
+                            "lastUpdated": None,
+                            "availabilityStatus": "unknown"
                         })
                 
             elif current_user.role == "general_user":
@@ -854,8 +774,7 @@ def get_user_accessible_suppliers(
                     models.UserProviderPermission.user_id == current_user.id
                 ).all()
                 
-                access_summary["access_type"] = "permission_granted"
-                access_summary["permission_based"] = True
+                permission_based = True
                 
                 for permission in user_permissions:
                     try:
@@ -864,41 +783,31 @@ def get_user_accessible_suppliers(
                             models.ProviderMapping.provider_name == permission.provider_name
                         ).count()
                         
-                        # Get system types
-                        system_types = db.query(models.ProviderMapping.system_type).filter(
-                            models.ProviderMapping.provider_name == permission.provider_name,
-                            models.ProviderMapping.system_type.isnot(None)
-                        ).distinct().all()
-                        
-                        system_types_list = [st[0] for st in system_types if st[0]]
-                        
                         # Get last update timestamp
                         last_updated = db.query(models.ProviderMapping.updated_at).filter(
                             models.ProviderMapping.provider_name == permission.provider_name,
                             models.ProviderMapping.updated_at.isnot(None)
                         ).order_by(models.ProviderMapping.updated_at.desc()).first()
                         
-                        supplier_info.append({
-                            "supplier_name": permission.provider_name,
-                            "total_hotels": hotel_count,
-                            "access_type": "permission_granted",
-                            "system_types": system_types_list,
-                            "permission_granted_at": None,  # UserProviderPermission doesn't have created_at
-                            "last_updated": last_updated[0].isoformat() if last_updated and last_updated[0] else None,
-                            "availability_status": "active" if hotel_count > 0 else "inactive"
+                        accessible_suppliers.append({
+                            "supplierName": permission.provider_name,
+                            "totalHotels": hotel_count,
+                            "accessType": "permissionGranted",
+                            "permissionGrantedAt": None,  # UserProviderPermission doesn't have created_at
+                            "lastUpdated": last_updated[0].isoformat() if last_updated and last_updated[0] else None,
+                            "availabilityStatus": "active" if hotel_count > 0 else "inactive"
                         })
                         
                     except SQLAlchemyError as permission_error:
                         logger.warning(f"Error getting details for permitted supplier {permission.provider_name}: {permission_error}")
                         # Add basic info even if detailed info fails
-                        supplier_info.append({
-                            "supplier_name": permission.provider_name,
-                            "total_hotels": 0,
-                            "access_type": "permission_granted",
-                            "system_types": [],
-                            "permission_granted_at": None,  # UserProviderPermission doesn't have created_at
-                            "last_updated": None,
-                            "availability_status": "unknown"
+                        accessible_suppliers.append({
+                            "supplierName": permission.provider_name,
+                            "totalHotels": 0,
+                            "accessType": "permissionGranted",
+                            "permissionGrantedAt": None,
+                            "lastUpdated": None,
+                            "availabilityStatus": "unknown"
                         })
                 
             else:
@@ -909,8 +818,6 @@ def get_user_accessible_suppliers(
                     detail=f"User role '{current_user.role}' is not recognized. Please contact administrator."
                 )
             
-            access_summary["accessible_suppliers"] = len(supplier_info)
-            
         except SQLAlchemyError as db_error:
             logger.error(f"Database error getting accessible suppliers: {db_error}")
             raise HTTPException(
@@ -918,35 +825,34 @@ def get_user_accessible_suppliers(
                 detail="Error retrieving accessible suppliers"
             )
         
-        # Generate supplier analytics
-        supplier_analytics = {
-            "total_hotels_accessible": sum(s["total_hotels"] for s in supplier_info),
-            "active_suppliers": len([s for s in supplier_info if s["availability_status"] == "active"]),
-            "inactive_suppliers": len([s for s in supplier_info if s["availability_status"] == "inactive"]),
-            "system_types_available": list(set(
-                st for s in supplier_info for st in s.get("system_types", [])
-            )),
-            "access_coverage_percentage": round(
-                (access_summary["accessible_suppliers"] / access_summary["total_suppliers_in_system"] * 100), 2
-            ) if access_summary["total_suppliers_in_system"] > 0 else 0
-        }
+        # Calculate analytics
+        total_hotels_accessible = sum(s["totalHotels"] for s in accessible_suppliers)
+        active_suppliers = len([s for s in accessible_suppliers if s["availabilityStatus"] == "active"])
+        inactive_suppliers = len([s for s in accessible_suppliers if s["availabilityStatus"] == "inactive"])
+        access_coverage_percentage = round(
+            (len(accessible_suppliers) / total_suppliers_in_system * 100), 2
+        ) if total_suppliers_in_system > 0 else 0
         
         # Log successful response
-        logger.info(f"Successfully retrieved {len(supplier_info)} accessible suppliers for user {current_user.id}")
+        logger.info(f"Successfully retrieved {len(accessible_suppliers)} accessible suppliers for user {current_user.id}")
         
         return {
-            "user_id": current_user.id,
-            "user_role": current_user.role,
-            "accessible_suppliers": supplier_info,
-            "total_accessible_suppliers": len(supplier_info),
-            "access_summary": access_summary,
-            "supplier_analytics": supplier_analytics,
-            "response_metadata": {
-                "generated_at": datetime.utcnow().isoformat(),
-                "user_info": {
-                    "username": getattr(current_user, 'username', 'unknown'),
-                    "user_id": current_user.id
-                }
+            "userId": str(current_user.id),
+            "role": current_user.role,
+            "accessSummary": {
+                "totalSuppliersInSystem": total_suppliers_in_system,
+                "accessibleSuppliersCount": len(accessible_suppliers),
+                "permissionBased": permission_based
+            },
+            "supplierAnalytics": {
+                "totalHotelsAccessible": total_hotels_accessible,
+                "activeSuppliers": active_suppliers,
+                "inactiveSuppliers": inactive_suppliers,
+                "accessCoveragePercentage": access_coverage_percentage
+            },
+            "accessibleSuppliers": accessible_suppliers,
+            "responseMetadata": {
+                "generatedAt": datetime.utcnow().isoformat()
             }
         }
         

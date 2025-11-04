@@ -36,7 +36,7 @@ def get_headers():
 
 # --- EXISTENCE CHECK --- #
 def check_if_ittid_exists(ittid, headers):
-    url = f"http://127.0.0.1:8000/v1.0/content/get_hotel_with_ittid/{ittid}"
+    url = f"http://127.0.0.1:8000/v1.0/content/get-hotel-with-ittid/{ittid}"
     r = requests.get(url, headers=headers)
     return (r.status_code == 200) and bool(r.json().get("hotel"))
 

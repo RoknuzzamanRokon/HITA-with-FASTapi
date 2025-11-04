@@ -90,6 +90,20 @@ class UserProfileResponse(BaseModel):
     api_key: Optional[str] = None
 
 
+class ResetPasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
+class ApiKeyCheckResponse(BaseModel):
+    id: str
+    identity: dict
+    status: dict
+    security: dict
+    timestamps: dict
+
+
 # Utility functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
@@ -491,6 +505,139 @@ def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_
         )
 
 
+@router.post("/reset-password")
+async def reset_password(
+    reset_data: ResetPasswordRequest,
+    request: Request,
+    current_user: Annotated[models.User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    **Reset User Password**
+    
+    Allow authenticated users to change their password with proper validation.
+    
+    **Use Cases:**
+    - User-initiated password change
+    - Security compliance requirements
+    - Regular password rotation
+    - Account security enhancement
+    
+    **Security Features:**
+    - Current password verification
+    - New password confirmation matching
+    - Password strength validation
+    - Audit logging for security tracking
+    - Rate limiting protection
+    
+    **Process:**
+    - Validates current password against stored hash
+    - Ensures new password matches confirmation
+    - Applies password strength requirements
+    - Updates password hash in database
+    - Logs security event for audit trail
+    
+    **Requirements:**
+    - Must be authenticated (valid JWT token)
+    - Current password must be correct
+    - New password must match confirmation
+    - New password must meet security standards
+    """
+    
+    # Validate current password
+    if not verify_password(reset_data.current_password, current_user.hashed_password):
+        # Log failed password reset attempt
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.UNAUTHORIZED_ACCESS_ATTEMPT,
+            user_id=current_user.id,
+            details={
+                "action": "password_reset_failed",
+                "reason": "invalid_current_password",
+                "username": current_user.username
+            },
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=False
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    
+    # Validate new password matches confirmation
+    if reset_data.new_password != reset_data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password and confirmation do not match"
+        )
+    
+    # Validate new password is different from current
+    if verify_password(reset_data.new_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from current password"
+        )
+    
+    # Basic password strength validation
+    if len(reset_data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long"
+        )
+    
+    try:
+        # Update password
+        new_hashed_password = get_password_hash(reset_data.new_password)
+        current_user.hashed_password = new_hashed_password
+        current_user.updated_at = datetime.utcnow()
+        db.commit()
+        
+        # Log successful password reset
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.USER_UPDATED,
+            user_id=current_user.id,
+            details={
+                "action": "password_reset_success",
+                "username": current_user.username,
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=True
+        )
+        
+        return {
+            "message": "Password reset successfully",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        db.rollback()
+        
+        # Log password reset error
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.API_ERROR,
+            user_id=current_user.id,
+            details={
+                "action": "password_reset_error",
+                "error": str(e),
+                "username": current_user.username
+            },
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=False
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset password. Please try again."
+        )
+
+
 @router.post("/logout")
 async def logout(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
@@ -567,7 +714,7 @@ async def logout_all_devices(
     return {"message": "Successfully logged out from all devices"}
 
 
-@router.get("/me", response_model=UserProfileResponse)
+@router.get("/check-me", response_model=UserProfileResponse)
 async def read_users_me(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ):
@@ -1027,43 +1174,65 @@ async def get_user_by_api_key_or_token(
     return None
 
 
-@router.get("/apikey/me", response_model=UserProfileResponse)
-async def read_users_me_api_key(
+@router.get("/check-api-key", response_model=ApiKeyCheckResponse)
+async def check_api_key_status(
     request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    **Get Profile via API Key or JWT Token**
+    **Check API Key Status and User Profile**
     
-    Retrieve user profile using flexible authentication (API key or JWT token).
+    Validate API key and retrieve structured user profile information.
     
     **Use Cases:**
-    - Server-to-server authentication with API keys
-    - Web application authentication with JWT tokens
-    - Mixed authentication environments
-    - API access validation
-    - User profile verification
+    - API key validation for external services
+    - User profile verification for integrations
+    - Authentication status checking
+    - System integration validation
+    - Service-to-service authentication
     
     **Authentication Methods (in order of priority):**
     1. **X-API-Key header**: Direct API key authentication
     2. **Authorization Bearer**: JWT token authentication
-    3. **No valid auth**: Returns contact admin message
     
-    **Response Scenarios:**
-    - **Valid API Key**: Returns complete user profile with API key
-    - **Valid JWT Token but no API Key**: Returns profile with contact admin message
-    - **No valid authentication**: Returns 401 Unauthorized
+    **Response Format:**
+    ```json
+    {
+        "id": "5779356081",
+        "identity": {
+            "username": "roman",
+            "email": "roman@gmail.com"
+        },
+        "status": {
+            "role": "general_user",
+            "isActive": true
+        },
+        "security": {
+            "apiKey": "ak_272bc8a2facf49abb9597080cb355ba2"
+        },
+        "timestamps": {
+            "createdAt": "2025-05-16T18:26:31Z",
+            "updatedAt": "2025-10-09T11:46:39Z"
+        }
+    }
+    ```
     
-    **API Key Benefits:**
-    - No token expiration management
-    - Better for automated systems
-    - Direct database validation
-    - Simpler integration
+    **Example Usage:**
+    ```bash
+    # Using API Key
+    curl -H "X-API-Key: ak_272bc8a2facf49abb9597080cb355ba2" \\
+         https://api.example.com/v1.0/auth/check-api-key
+    
+    # Using JWT Token
+    curl -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..." \\
+         https://api.example.com/v1.0/auth/check-api-key
+    ```
     
     **Access Control:**
     - All user roles can access this endpoint
     - Requires either valid API key or JWT token
     - User account must be active
+    - Returns structured profile data
     """
     # Try flexible authentication
     current_user = await get_user_by_api_key_or_token(request, db)
@@ -1074,28 +1243,26 @@ async def read_users_me_api_key(
             detail="Authentication required. Provide either X-API-Key header or Authorization Bearer token."
         )
     
-    # Check if user has API key
-    if current_user.api_key:
-        # User has API key - return full profile
-        return UserProfileResponse(
-            id=current_user.id,
-            username=current_user.username,
-            email=current_user.email,
-            role=current_user.role,
-            is_active=current_user.is_active,
-            created_at=current_user.created_at,
-            updated_at=current_user.updated_at,
-            api_key=current_user.api_key,
-        )
-    else:
-        # User doesn't have API key - return profile with contact admin message
-        return UserProfileResponse(
-            id=current_user.id,
-            username=current_user.username,
-            email=current_user.email,
-            role=current_user.role,
-            is_active=current_user.is_active,
-            created_at=current_user.created_at,
-            updated_at=current_user.updated_at,
-            api_key="Contact your admin to get API key access",
-        )
+    # Format timestamps in ISO format with Z suffix
+    created_at_iso = current_user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    updated_at_iso = current_user.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Return structured response
+    return ApiKeyCheckResponse(
+        id=current_user.id,
+        identity={
+            "username": current_user.username,
+            "email": current_user.email
+        },
+        status={
+            "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role),
+            "isActive": current_user.is_active
+        },
+        security={
+            "apiKey": current_user.api_key if current_user.api_key else "Contact your admin to get API key access"
+        },
+        timestamps={
+            "createdAt": created_at_iso,
+            "updatedAt": updated_at_iso
+        }
+    )

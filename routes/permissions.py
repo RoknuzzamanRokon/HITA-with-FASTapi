@@ -16,6 +16,9 @@ router = APIRouter(
 class ProviderPermissionRequest(BaseModel):
     provider_activision_list: List[str]
 
+class SupplierActivationRequest(BaseModel):
+    supplier_name: List[str]
+
 
 @router.post("/admin/check_activate_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)
 def grant_provider_permissions(
@@ -218,46 +221,90 @@ def deactivate_suppliers_temporarily(
 
 
 @router.post("/turn-on-supplier", status_code=status.HTTP_200_OK)
-def activate_all_suppliers(
+def activate_suppliers(
+    request: SupplierActivationRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
     """
-    Reactivate all temporarily deactivated suppliers for the current user.
+    Turn On Specific Suppliers
     
-    This endpoint removes all temporary deactivations, making all suppliers
-    that the user has permissions for visible again.
+    Reactivates specified temporarily deactivated suppliers for the current user.
+    Checks if suppliers are turned off before attempting to turn them on.
+    
+    Request Body:
+    - supplier_name: List of supplier names to activate
     
     Returns:
-    - Success message with reactivated suppliers
+    - Success message with activated suppliers
+    - Error if suppliers are not turned off or don't exist
     
     Raises:
+    - 400: Suppliers not turned off or invalid request
     - 500: Database error
     """
     try:
-        # Find all temporary deactivation records for this user
+        if not request.supplier_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one supplier name is required"
+            )
+        
+        # Check which suppliers are currently turned off (temp deactivated)
+        temp_deactivated_names = [f"TEMP_DEACTIVATED_{name}" for name in request.supplier_name]
+        
         temp_deactivations = db.query(models.UserProviderPermission).filter(
             models.UserProviderPermission.user_id == current_user.id,
-            models.UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%")
+            models.UserProviderPermission.provider_name.in_(temp_deactivated_names)
         ).all()
         
-        reactivated = []
-        for deactivation in temp_deactivations:
-            # Extract original supplier name
-            original_name = deactivation.provider_name.replace("TEMP_DEACTIVATED_", "")
-            reactivated.append(original_name)
-            db.delete(deactivation)
+        # Create mapping of deactivated suppliers
+        deactivated_suppliers = {
+            deactivation.provider_name.replace("TEMP_DEACTIVATED_", ""): deactivation 
+            for deactivation in temp_deactivations
+        }
+        
+        # Check which suppliers are not turned off
+        not_turned_off = []
+        for supplier in request.supplier_name:
+            if supplier not in deactivated_suppliers:
+                not_turned_off.append(supplier)
+        
+        # If some suppliers are not turned off, show error
+        if not_turned_off:
+            if len(not_turned_off) == len(request.supplier_name):
+                # All suppliers are already active
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"All suppliers are already active: {', '.join(not_turned_off)}"
+                )
+            else:
+                # Some suppliers are not turned off
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"These suppliers are not turned off: {', '.join(not_turned_off)}. Only turned off suppliers can be activated."
+                )
+        
+        # All suppliers are turned off, proceed to activate them
+        activated = []
+        for supplier_name in request.supplier_name:
+            deactivation_record = deactivated_suppliers[supplier_name]
+            db.delete(deactivation_record)
+            activated.append(supplier_name)
         
         db.commit()
         
         return {
-            "message": f"Successfully reactivated all suppliers: {reactivated}",
-            "reactivated_suppliers": reactivated
+            "message": f"Successfully activated suppliers: {', '.join(activated)}",
+            "activated_suppliers": activated,
+            "total_activated": len(activated)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while reactivating suppliers: {str(e)}"
+            detail=f"An error occurred while activating suppliers: {str(e)}"
         )

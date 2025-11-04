@@ -374,7 +374,7 @@ class ITTIDMappingRequest(BaseModel):
     ittid: str
 
 
-@router.post("/get_mapping_with_ittid", status_code=status.HTTP_200_OK)
+@router.post("/get-mapping-hotel-with-ittid", status_code=status.HTTP_200_OK)
 def get_mapping_with_ittid(
     request: ITTIDMappingRequest,
     current_user: User = Depends(get_current_user),

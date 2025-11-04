@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "923be642-7a44-424d-9fd2-50402f112884",
 		"name": "ITT Hotel API -------------> HITA",
-		"description": "Some todo. need to add user/me to add data. like user type, when created, paid_user, unpaid_user etc add information.\n\nget all supplier id like\n\nhotelbeds = \\[tolal id = 1245122\\]\n\nlist of all ids specifq supplier.",
+		"description": "Some todo. need to add user/check-me to add data. like user type, when created, paid_user, unpaid_user etc add information.\n\nget all supplier id like\n\nhotelbeds = \\[tolal id = 1245122\\]\n\nlist of all ids specifq supplier.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "38769584"
 	},
@@ -32,7 +32,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/user/me/",
+							"raw": "{{host}}/v1.0/user/check-me/",
 							"host": [
 								"{{host}}"
 							],
@@ -593,7 +593,7 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_hotel_with_ittid/{{ittid}}",
+									"raw": "{{host}}/v1.0/content/get-hotel-with-ittid/{{ittid}}",
 									"host": [
 										"{{host}}"
 									],
@@ -637,7 +637,7 @@
 									}
 								],
 								"url": {
-									"raw": "{{host}}/v1.0/hotels/get_supplier_info?supplier=hotelbeds",
+									"raw": "{{host}}/v1.0/hotels/get-supplier-info?supplier=hotelbeds",
 									"host": [
 										"{{host}}"
 									],
@@ -822,7 +822,7 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_hotel_with_ittid/",
+									"raw": "{{host}}/v1.0/content/get-hotel-with-ittid/",
 									"host": [
 										"{{host}}"
 									],
@@ -998,7 +998,7 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_update_provider_info?from_date={{from_date}}&to_date={{to_date}}&limit_per_page={{limit_value}}",
+									"raw": "{{host}}/v1.0/content/get-update-provider-info?from_date={{from_date}}&to_date={{to_date}}&limit_per_page={{limit_value}}",
 									"host": [
 										"{{host}}"
 									],
@@ -1117,7 +1117,7 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_basic_country_info/",
+									"raw": "{{host}}/v1.0/content/get-basic-info-follow-countryCode/",
 									"host": [
 										"{{host}}"
 									],
@@ -2280,7 +2280,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/hotels/get_user_accessible_suppliers/",
+							"raw": "{{host}}/v1.0/hotels/check-my-active-suppliers/",
 							"host": [
 								"{{host}}"
 							],
@@ -2331,14 +2331,14 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/user/get_list_of_available_suppliers/",
+							"raw": "{{host}}/v1.0/user/check-available-suppliers/",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"user",
-								"get_list_of_available_suppliers",
+								"check-available-suppliers",
 								""
 							]
 						}
@@ -3235,7 +3235,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/health/metrics/",
+							"raw": "{{host}}/v1.0/health/check-metrics/",
 							"host": [
 								"{{host}}"
 							],
@@ -3799,7 +3799,7 @@
 					}
 				],
 				"url": {
-					"raw": "{{host}}/v1.0/user/me/",
+					"raw": "{{host}}/v1.0/user/check-me/",
 					"host": [
 						"{{host}}"
 					],

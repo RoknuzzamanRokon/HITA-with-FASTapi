@@ -69,14 +69,14 @@ This API module provides complete user authentication, JWT token management, API
 | `/register` | POST | Register new user accounts |
 | `/logout` | POST | Logout from current device |
 | `//logout-all` | POST | Logout from all devices |
-| `/me` | GET | Get current user profile information |
+| `/check-me` | GET | Get current user profile information |
 | `/regenerate_api_key` | POST | Regenerate personal API key |
 | `/generate_api_key/{user_id}` | POST | Generate API key for specific user (Admin) |
 | `/revoke_api_key/{user_id}` | DELETE | Revoke API key for specific user (Admin) |
 | `/health` | GET | Authentication service health check |
 | `/super/users` | GET | Get all users (Super User only) |
 | `/super/users/{user_id}/activate` | PUT | Activate/deactivate user accounts (Admin) |
-| `/apikey/me` | GET | Get user profile using API key authentication |
+| `/check-api-key` | GET | Get user profile using API key authentication |
 
 ### 🔄 Authentication Flow
 
@@ -196,7 +196,7 @@ This API module provides complete user profile management, account information r
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/v1.0/user/me` | GET | Get current user profile and account information |
+| `/v1.0/user/check-me` | GET | Get current user profile and account information |
 
 
 ### 🔄 Profile Access Flow
@@ -366,8 +366,8 @@ This API module provides complete hotel data management, supplier integration, a
 |----------|--------|-------------|
 | `/input_hotel_all_details` | POST | Create complete hotel records with all related data |
 | `/add_provider_all_details_with_ittid` | POST | Add provider mappings to existing hotels |
-| `/get_supplier_info` | GET | Retrieve supplier information and hotel counts |
-| `/get_user_accessible_suppliers` | GET | Get user's accessible supplier list with analytics |
+| `/get-supplier-info` | GET | Retrieve supplier information and hotel counts |
+| `/check-my-active-suppliers` | GET | Get user's accessible supplier list with analytics |
 
 ### 🔄 Integration Workflow
 
@@ -568,7 +568,7 @@ This API module provides complete user lifecycle management, point allocation sy
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/me` | GET | Get current user profile and account information |
+| `/check-me` | GET | Get current user profile and account information |
 | `/` | POST | Create new user with role-based validation |
 | `/create_super_user` | POST | Create super user accounts (super user only) |
 | `/create_admin_user` | POST | Create admin user accounts (super user only) |
@@ -579,7 +579,7 @@ This API module provides complete user lifecycle management, point allocation sy
 | `/check/all` | GET | List all users with enhanced filtering and pagination |
 | `/check/user_info/{user_id}` | GET | Get specific user information and details |
 | `/active_my_supplier` | GET | Get user's accessible supplier permissions |
-| `/get_list_of_available_suppliers` | GET | Get complete system supplier catalog |
+| `/check-available-suppliers` | GET | Get complete system supplier catalog |
 | `/list` | GET | Enhanced paginated user listing with search |
 | `/stats` | GET | Get comprehensive user statistics |
 | `/{user_id}/details` | GET | Get detailed user information with analytics |
@@ -813,10 +813,10 @@ def enhance_user_endpoints_documentation(openapi_schema):
     """Enhance documentation for user management endpoints"""
     paths = openapi_schema.get("paths", {})
     
-    # Enhanced documentation for /v1.0/user/me endpoint
-    if "/v1.0/user/me" in paths:
-        paths["/v1.0/user/me"]["get"]["summary"] = "Get Current User Information"
-        paths["/v1.0/user/me"]["get"]["description"] = """
+    # Enhanced documentation for /v1.0/user/check-me endpoint
+    if "/v1.0/user/check-me" in paths:
+        paths["/v1.0/user/check-me"]["get"]["summary"] = "Get Current User Information"
+        paths["/v1.0/user/check-me"]["get"]["description"] = """
         Retrieve detailed information about the currently authenticated user.
         
         **Returns:**
@@ -830,7 +830,7 @@ def enhance_user_endpoints_documentation(openapi_schema):
         - Account settings page
         - Point balance checking
         """
-        paths["/v1.0/user/me"]["get"]["tags"] = ["User Profile"]
+        paths["/v1.0/user/check-me"]["get"]["tags"] = ["User Profile"]
     
     # Enhanced documentation for /v1.0/user/check/all endpoint
     if "/v1.0/user/check/all" in paths:
@@ -1534,8 +1534,8 @@ def add_example_responses(openapi_schema):
         }
     
     # Add examples for current user endpoint
-    if "/v1.0/user/me" in paths and "get" in paths["/v1.0/user/me"]:
-        endpoint = paths["/v1.0/user/me"]["get"]
+    if "/v1.0/user/check-me" in paths and "get" in paths["/v1.0/user/check-me"]:
+        endpoint = paths["/v1.0/user/check-me"]["get"]
         endpoint["responses"] = {
             "200": {
                 "description": "Current user information",

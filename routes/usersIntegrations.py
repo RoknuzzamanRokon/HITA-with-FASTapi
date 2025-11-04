@@ -48,7 +48,7 @@ router = APIRouter(
 )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/check-me", response_model=UserResponse)
 async def self_info(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -1466,7 +1466,7 @@ def check_active_my_supplier(
     - 500: On unexpected errors (e.g., database issues)
     """
     try:
-        # Get all supplier permissions (same logic as /me endpoint)
+        # Get all supplier permissions (same logic as /check-me endpoint)
         all_permissions = [
             perm.provider_name
             for perm in db.query(models.UserProviderPermission)
@@ -1546,8 +1546,8 @@ def check_active_my_supplier(
         )
 
 
-@router.get("/get_list_of_available_suppliers")
-def get_list_of_available_suppliers(
+@router.get("/check-available-suppliers")
+def get1_list_of_available_suppliers(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
