@@ -884,7 +884,7 @@ def reset_user_point(
         )
 
 
-@router.get("/points/check/me")
+@router.get("/points-check")
 def check_point_details(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -1437,7 +1437,7 @@ def active_my_supplier(
         )
 
 
-@router.get("/check_active_my_supplier")
+@router.get("/check-active-my-supplier")
 def check_active_my_supplier(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],

@@ -2130,7 +2130,7 @@
 									}
 								],
 								"url": {
-									"raw": "{{host}}/v1.0/user/points/check/me/",
+									"raw": "{{host}}/v1.0/user/points-check/",
 									"host": [
 										"{{host}}"
 									],
@@ -2185,7 +2185,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/user/points/check/me/",
+							"raw": "{{host}}/v1.0/user/points-check/",
 							"host": [
 								"{{host}}"
 							],

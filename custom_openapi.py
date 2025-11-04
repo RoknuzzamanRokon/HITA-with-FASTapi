@@ -575,7 +575,7 @@ This API module provides complete user lifecycle management, point allocation sy
 | `/create_general_user` | POST | Create general user accounts (admin/super user) |
 | `/points/give` | POST | Allocate points to users with package types |
 | `/reset_point/{user_id}/` | POST | Reset user points to zero (admin operation) |
-| `/points/check/me` | GET | Get detailed point history and transactions |
+| `/points-check` | GET | Get detailed point history and transactions |
 | `/check/all` | GET | List all users with enhanced filtering and pagination |
 | `/check/user_info/{user_id}` | GET | Get specific user information and details |
 | `/active_my_supplier` | GET | Get user's accessible supplier permissions |
@@ -862,9 +862,9 @@ def enhance_user_endpoints_documentation(openapi_schema):
         paths["/v1.0/user/check/all"]["get"]["tags"] = ["User Management"]
     
     # Enhanced documentation for point checking endpoint
-    if "/v1.0/user/points/check/me" in paths:
-        paths["/v1.0/user/points/check/me"]["get"]["summary"] = "Get Detailed Point Information"
-        paths["/v1.0/user/points/check/me"]["get"]["description"] = """
+    if "/v1.0/user/points-check" in paths:
+        paths["/v1.0/user/points-check"]["get"]["summary"] = "Get Detailed Point Information"
+        paths["/v1.0/user/points-check"]["get"]["description"] = """
         Retrieve comprehensive point information for the current user including transaction history.
         
         **Returns:**
@@ -883,7 +883,7 @@ def enhance_user_endpoints_documentation(openapi_schema):
         - Transaction history review
         - Usage analytics and reporting
         """
-        paths["/v1.0/user/points/check/me"]["get"]["tags"] = ["Point Management"]
+        paths["/v1.0/user/points-check"]["get"]["tags"] = ["Point Management"]
     
     # Enhanced documentation for analytics endpoints
     enhance_analytics_endpoints_documentation(paths)

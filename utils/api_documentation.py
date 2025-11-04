@@ -759,9 +759,9 @@ def apply_enhanced_documentation(app: FastAPI):
                 paths[endpoint]["post"].update(creation_doc)
         
         # Enhance point management endpoint
-        if "/v1.0/user/points/check/me" in paths and "get" in paths["/v1.0/user/points/check/me"]:
+        if "/v1.0/user/points-check" in paths and "get" in paths["/v1.0/user/points-check"]:
             point_doc = doc_helper.get_point_management_documentation()
-            paths["/v1.0/user/points/check/me"]["get"].update(point_doc)
+            paths["/v1.0/user/points-check"]["get"].update(point_doc)
 
 
 # Validation rules documentation
