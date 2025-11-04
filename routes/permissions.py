@@ -129,7 +129,7 @@ class SupplierToggleRequest(BaseModel):
     supplier_name: List[str]
 
 
-@router.post("/off_info_supplier", status_code=status.HTTP_200_OK)
+@router.post("/turn-off-supplier", status_code=status.HTTP_200_OK)
 def deactivate_suppliers_temporarily(
     request: SupplierToggleRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -217,7 +217,7 @@ def deactivate_suppliers_temporarily(
         )
 
 
-@router.post("/on_info_supplier", status_code=status.HTTP_200_OK)
+@router.post("/turn-on-supplier", status_code=status.HTTP_200_OK)
 def activate_all_suppliers(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)

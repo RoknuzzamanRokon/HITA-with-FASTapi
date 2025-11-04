@@ -1369,7 +1369,7 @@ def active_my_supplier(
     - SUPER_USER / ADMIN_USER: All suppliers from the system (minus temporarily deactivated)
     - General User: Only assigned suppliers (minus temporarily deactivated)
     
-    Note: Temporarily deactivated suppliers can be reactivated using /v1.0/permissions/on_info_supplier
+    Note: Temporarily deactivated suppliers can be reactivated using /v1.0/permissions/turn-on-supplier
     """
 
     try:

@@ -64,11 +64,11 @@ This API module provides complete user authentication, JWT token management, API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/token` | POST | Login and obtain JWT access/refresh tokens |
-| `/refresh` | POST | Refresh expired access tokens |
+| `/token` | POST | Login and obtain JWT access/refresh-token tokens |
+| `/refresh-token` | POST | Refresh expired access tokens |
 | `/register` | POST | Register new user accounts |
 | `/logout` | POST | Logout from current device |
-| `/logout_all` | POST | Logout from all devices |
+| `//logout-all` | POST | Logout from all devices |
 | `/me` | GET | Get current user profile information |
 | `/regenerate_api_key` | POST | Regenerate personal API key |
 | `/generate_api_key/{user_id}` | POST | Generate API key for specific user (Admin) |

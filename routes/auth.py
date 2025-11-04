@@ -333,7 +333,7 @@ async def ultra_fast_token(
     }
 
 
-@router.post("/refresh", response_model=Token)
+@router.post("/refresh-token", response_model=Token)
 async def refresh_access_token(
     refresh_request: RefreshTokenRequest, db: Session = Depends(get_db)
 ):
@@ -536,7 +536,7 @@ async def logout(
     return {"message": "Successfully logged out"}
 
 
-@router.post("/logout_all")
+@router.post("/logout-all")
 async def logout_all_devices(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
 ):

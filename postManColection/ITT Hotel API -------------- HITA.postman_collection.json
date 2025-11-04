@@ -285,7 +285,7 @@
 							"raw": "{\r\n    \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb21hbiIsInVzZXJfaWQiOiI1Nzc5MzU2MDgxIiwicm9sZSI6ImdlbmVyYWxfdXNlciIsImV4cCI6MTc2MjczODU2MiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc2MDkzODU2Mn0.cIYbVLsJwQvBaYcdyFBVIep8TEF24JYzc6_eoTz-YC8\",\r\n    \"token_type\": \"bearer\",\r\n    \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb21hbiIsInVzZXJfaWQiOiI1Nzc5MzU2MDgxIiwiZXhwIjoxNzYxNTQzMzYyLCJ0eXBlIjoicmVmcmVzaCIsImlhdCI6MTc2MDkzODU2Mn0.rqJsc4nkCVtybL3jtEzM2r0mW3WDJCbPIqyN8cF_UfA\"\r\n}"
 						},
 						"url": {
-							"raw": "{{host}}/v1.0/auth/refresh/",
+							"raw": "{{host}}/v1.0/auth/refresh-token/",
 							"host": [
 								"{{host}}"
 							],
@@ -426,14 +426,14 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/auth/logout_all/",
+							"raw": "{{host}}/v1.0/auth//logout-all/",
 							"host": [
 								"{{host}}"
 							],
 							"path": [
 								"v1.0",
 								"auth",
-								"logout_all",
+								"/logout-all",
 								""
 							]
 						}
