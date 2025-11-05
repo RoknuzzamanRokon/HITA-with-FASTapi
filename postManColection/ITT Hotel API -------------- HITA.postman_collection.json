@@ -862,7 +862,7 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_hotel_data_provider_name_and_id/",
+									"raw": "{{host}}/v1.0/content/get-hotel-data-with-provider-name-and-id",
 									"host": [
 										"{{host}}"
 									],
@@ -2280,7 +2280,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{host}}/v1.0/hotels/check-my-active-suppliers/",
+							"raw": "{{host}}/v1.0/hotels/check-my-active-suppliers-info/",
 							"host": [
 								"{{host}}"
 							],

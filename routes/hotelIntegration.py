@@ -683,7 +683,7 @@ def get_supplier_info(
         )
 
 # Get user accessible suppliers
-@router.get("/check-my-active-suppliers")
+@router.get("/check-my-active-suppliers-info")
 def get_user_accessible_suppliers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)

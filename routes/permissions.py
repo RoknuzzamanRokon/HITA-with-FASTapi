@@ -139,20 +139,20 @@ def deactivate_suppliers_temporarily(
     db: Session = Depends(get_db)
 ):
     """
-    Temporarily deactivate suppliers for the current user.
+    Turn Off Suppliers
     
-    This endpoint allows any authenticated user to temporarily hide specific suppliers
-    from their active supplier list. The suppliers remain in their permissions but
-    are marked as temporarily inactive.
+    Temporarily deactivates specified suppliers for the current user.
+    Checks supplier existence and current status before deactivation.
     
     Body:
     - supplier_name: List of supplier names to deactivate
     
     Returns:
     - Success message with deactivated suppliers
+    - Error if suppliers already off or not found
     
     Raises:
-    - 400: Invalid supplier names or user doesn't have access to suppliers
+    - 400: Suppliers already off, not found, or no access
     - 500: Database error
     """
     try:
@@ -164,37 +164,67 @@ def deactivate_suppliers_temporarily(
                 detail="At least one supplier name is required."
             )
         
-        # For super users and admin users, we'll create a temporary deactivation record
-        # For general users, we need to check if they have permission for these suppliers
-        if current_user.role not in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
-            # Check if general user has permissions for these suppliers
-            user_suppliers = [
+        # Get user's available suppliers based on role
+        if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+            # Super/Admin users can access all system suppliers
+            all_system_suppliers = [
+                row.provider_name
+                for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+            ]
+            user_accessible_suppliers = set(all_system_suppliers)
+        else:
+            # General users - get their assigned suppliers (excluding temp deactivated)
+            user_permissions = [
                 perm.provider_name
                 for perm in db.query(models.UserProviderPermission)
                 .filter(models.UserProviderPermission.user_id == current_user.id)
                 .all()
             ]
             
-            invalid_suppliers = [name for name in supplier_names if name not in user_suppliers]
-            if invalid_suppliers:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"You don't have access to these suppliers: {invalid_suppliers}"
-                )
+            # Filter out temp deactivated to get base permissions
+            user_accessible_suppliers = set([
+                perm for perm in user_permissions 
+                if not perm.startswith("TEMP_DEACTIVATED_")
+            ])
         
-        # Store temporarily deactivated suppliers in user session/cache
-        # Since we can't modify the database schema, we'll use a simple approach
-        # by creating temporary deactivation records
+        # Check which suppliers are not found/accessible
+        not_found_suppliers = [name for name in supplier_names if name not in user_accessible_suppliers]
+        if not_found_suppliers:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot find supplier: {', '.join(not_found_suppliers)}"
+            )
         
-        deactivated = []
+        # Check which suppliers are already deactivated
+        already_deactivated = []
         for supplier_name in supplier_names:
-            # Check if already deactivated
             existing = db.query(models.UserProviderPermission).filter(
                 models.UserProviderPermission.user_id == current_user.id,
                 models.UserProviderPermission.provider_name == f"TEMP_DEACTIVATED_{supplier_name}"
             ).first()
             
-            if not existing:
+            if existing:
+                already_deactivated.append(supplier_name)
+        
+        # If all suppliers are already deactivated, show error
+        if already_deactivated:
+            if len(already_deactivated) == len(supplier_names):
+                # All suppliers already off
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This hotel already off"
+                )
+            else:
+                # Some suppliers already off
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"These suppliers are already off: {', '.join(already_deactivated)}"
+                )
+        
+        # Deactivate suppliers that are not already deactivated
+        deactivated = []
+        for supplier_name in supplier_names:
+            if supplier_name not in already_deactivated:
                 # Create a temporary deactivation record
                 temp_deactivation = models.UserProviderPermission(
                     user_id=current_user.id,
@@ -206,8 +236,9 @@ def deactivate_suppliers_temporarily(
         db.commit()
         
         return {
-            "message": f"Successfully deactivated suppliers: {deactivated}",
-            "deactivated_suppliers": deactivated
+            "message": f"Successfully deactivated suppliers: {', '.join(deactivated)}",
+            "deactivated_suppliers": deactivated,
+            "total_deactivated": len(deactivated)
         }
         
     except HTTPException:

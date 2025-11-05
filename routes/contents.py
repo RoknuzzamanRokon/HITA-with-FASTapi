@@ -290,8 +290,8 @@ def get_basic_country_info(
         )
 
 
-@router.post("/get_hotel_data_provider_name_and_id", status_code=status.HTTP_200_OK)
-def get_hotel_data_provider_name_and_id(
+@router.post("/get-hotel-data-with-provider-name-and-id", status_code=status.HTTP_200_OK)
+async def get_hotel_data_provider_name_and_id(
     request: ProviderHotelRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -371,14 +371,58 @@ def get_hotel_data_provider_name_and_id(
 
     try:
         result = []
+        supplier_off_list = []
+        not_found_list = []
+        
         for identity in request.provider_hotel_identity:
             name = identity.provider_name
             pid = identity.provider_id
             
-            # Validate provider access
-            if allowed_providers and name not in allowed_providers:
-                print(f"User not allowed for provider: {name}")
-                continue
+            # Check if user has permission for the requested supplier
+            supplier_is_off = False
+            
+            # For general users, check if they have active permission for this specific supplier
+            if current_user.role == models.UserRole.GENERAL_USER:
+                # Get all user permissions
+                all_permissions = [
+                    perm.provider_name
+                    for perm in db.query(models.UserProviderPermission)
+                    .filter(models.UserProviderPermission.user_id == current_user.id)
+                    .all()
+                ]
+                
+                # Check for temporary deactivation
+                temp_deactivated_name = f"TEMP_DEACTIVATED_{name}"
+                is_temp_deactivated = temp_deactivated_name in all_permissions
+                has_base_permission = name in all_permissions
+                
+                if not has_base_permission:
+                    print(f"User has no permission for supplier: {name}")
+                    not_found_list.append(f"{name}:{pid}")
+                    continue
+                    
+                if is_temp_deactivated:
+                    print(f"Supplier is temporarily deactivated: {name}")
+                    supplier_is_off = True
+                    supplier_off_list.append(name)
+                    continue
+            else:
+                # For super/admin users, check for temporary deactivation only
+                temp_deactivated_permissions = [
+                    perm.provider_name
+                    for perm in db.query(models.UserProviderPermission)
+                    .filter(
+                        models.UserProviderPermission.user_id == current_user.id,
+                        models.UserProviderPermission.provider_name == f"TEMP_DEACTIVATED_{name}"
+                    )
+                    .all()
+                ]
+                
+                if temp_deactivated_permissions:
+                    print(f"Supplier is temporarily deactivated for admin/super user: {name}")
+                    supplier_is_off = True
+                    supplier_off_list.append(name)
+                    continue
 
             # Find provider mapping
             mapping = (
@@ -388,12 +432,14 @@ def get_hotel_data_provider_name_and_id(
             )
             if not mapping:
                 print(f"No mapping found for provider_id={pid}, provider_name={name}")
+                not_found_list.append(f"{name}:{pid}")
                 continue
 
             # Find hotel
             hotel = db.query(Hotel).filter(Hotel.ittid == mapping.ittid).first()
             if not hotel:
                 print(f"No hotel found for ittid={mapping.ittid}")
+                not_found_list.append(f"{name}:{pid}")
                 continue
 
             # Get related data
@@ -417,19 +463,32 @@ def get_hotel_data_provider_name_and_id(
                 "updated_at": hotel.updated_at.isoformat() if hotel.updated_at else None,
                 "created_at": hotel.created_at.isoformat() if hotel.created_at else None,
             }
-
-            # Build provider_mappings list with only the required fields and order
-            provider_mappings_list = [{
+            
+            # Enhanced provider mappings with full details - only for the requested supplier
+            enhanced_provider_mappings = []
+            
+            # Get full hotel details for the requested supplier mapping only
+            hotel_details = await get_hotel_details_internal(
+                supplier_code=mapping.provider_name,
+                hotel_id=mapping.provider_id,
+                current_user=current_user,
+                db=db
+            )
+            
+            # Create enhanced provider mapping for the requested supplier only
+            pm_data = {
                 "id": mapping.id,
-                "provider_id": mapping.provider_id,
+                "content_mapper": {
+                    "ittid": mapping.ittid,
+                    "giata_code": mapping.giata_code,
+                    "vervotech_id": mapping.vervotech_id
+                },
                 "provider_name": mapping.provider_name,
-                "system_type": mapping.system_type,
-                "giata_code": mapping.giata_code,
-                "vervotech_id": mapping.vervotech_id,
-                # "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
-                # "created_at": mapping.created_at.isoformat() if mapping.created_at else None,
-            }]
-
+                "provider_id": mapping.provider_id,
+                "full_details": hotel_details
+            }
+            enhanced_provider_mappings.append(pm_data)
+                
             # Build locations list with only the required fields and order
             locations_list = [{
                 "id": loc.id,
@@ -454,15 +513,41 @@ def get_hotel_data_provider_name_and_id(
 
             result.append({
                 "hotel": hotel_dict,
-                "provider_mappings": provider_mappings_list,
+                "provider_mappings": enhanced_provider_mappings,
                 "locations": locations_list,
                 "contacts": contacts_list
             })
 
-        if not result:
+        # Handle specific error cases
+        if supplier_off_list:
+            from datetime import datetime
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": True,
+                    "message": f"Supplier is off: {', '.join(supplier_off_list)}",
+                    "error_code": "SUPPLIER_OFF",
+                    "details": {
+                        "status_code": 400,
+                        "off_suppliers": supplier_off_list
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+        
+        if not result and not_found_list:
+            from datetime import datetime
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Cannot find mapping for any of the requested suppliers in our system."
+                detail={
+                    "error": True,
+                    "message": "Cannot find mapping for any of the requested suppliers in our system.",
+                    "error_code": "HTTP_404",
+                    "details": {
+                        "status_code": 404
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                }
             )
 
         return result

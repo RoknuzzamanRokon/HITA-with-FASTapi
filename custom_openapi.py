@@ -367,7 +367,7 @@ This API module provides complete hotel data management, supplier integration, a
 | `/input_hotel_all_details` | POST | Create complete hotel records with all related data |
 | `/add_provider_all_details_with_ittid` | POST | Add provider mappings to existing hotels |
 | `/get-supplier-info` | GET | Retrieve supplier information and hotel counts |
-| `/check-my-active-suppliers` | GET | Get user's accessible supplier list with analytics |
+| `/check-my-active-suppliers-info` | GET | Get user's accessible supplier list with analytics |
 
 ### 🔄 Integration Workflow
 

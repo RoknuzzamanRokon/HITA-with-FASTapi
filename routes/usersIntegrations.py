@@ -1443,30 +1443,23 @@ def check_active_my_supplier(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Get detailed statistics about the user's supplier access and status.
-
-    Returns comprehensive information about:
-    - Total suppliers the user has access to
-    - Currently active/visible suppliers for the user
-    - Temporarily deactivated suppliers count
-    - List of active suppliers
-
+    Check My Active Suppliers
+    
+    Returns user's supplier access statistics with on/off status lists.
+    
     Returns:
-    - active_supplier: Total number of suppliers the user has access to (assigned + temp deactivated)
-    - total_on_supplier: Number of currently active/visible suppliers for the user
-    - total_of_supplier: Number of temporarily deactivated suppliers
-    - my_supplier: List of currently active supplier names
-
+    - active_supplier: Total suppliers user has access to
+    - total_on_supplier: Currently active suppliers count
+    - total_off_supplier: Temporarily deactivated suppliers count  
+    - off_supplier_list: List of turned off supplier names
+    - on_supplier_list: List of active supplier names
+    
     Role-Based Access:
-    - SUPER_USER / ADMIN_USER: Statistics for all system suppliers
-    - General User: Statistics for assigned suppliers only
-
-    Raises:
-    - 404: If no suppliers are found
-    - 500: On unexpected errors (e.g., database issues)
+    - Super/Admin: All system suppliers (minus temp deactivated)
+    - General users: Only assigned suppliers
     """
     try:
-        # Get all supplier permissions (same logic as /check-me endpoint)
+        # Get all supplier permissions
         all_permissions = [
             perm.provider_name
             for perm in db.query(models.UserProviderPermission)
@@ -1513,10 +1506,11 @@ def check_active_my_supplier(
             all_accessible_suppliers = list(set(all_system_suppliers + temp_deactivated_suppliers))
             
             return {
-                "active_supplier": len(all_accessible_suppliers),           # Total suppliers user has access to
-                "total_on_supplier": len(currently_active_suppliers),       # Currently active for user
-                "total_of_supplier": len(temp_deactivated_suppliers),       # Temporarily deactivated
-                "my_supplier": currently_active_suppliers
+                "active_supplier": len(all_accessible_suppliers),
+                "total_on_supplier": len(currently_active_suppliers),
+                "total_off_supplier": len(temp_deactivated_suppliers),
+                "off_supplier_list": sorted(temp_deactivated_suppliers),
+                "on_supplier_list": sorted(currently_active_suppliers)
             }
         
         # For general users, total accessible suppliers (including temp deactivated)
@@ -1529,10 +1523,11 @@ def check_active_my_supplier(
             )
         
         return {
-            "active_supplier": len(all_accessible_suppliers),           # Total suppliers user has access to
-            "total_on_supplier": len(currently_active_suppliers),       # Currently active for user
-            "total_of_supplier": len(temp_deactivated_suppliers),       # Temporarily deactivated
-            "my_supplier": currently_active_suppliers
+            "active_supplier": len(all_accessible_suppliers),
+            "total_on_supplier": len(currently_active_suppliers),
+            "total_off_supplier": len(temp_deactivated_suppliers),
+            "off_supplier_list": sorted(temp_deactivated_suppliers),
+            "on_supplier_list": sorted(currently_active_suppliers)
         }
         
     except HTTPException:
