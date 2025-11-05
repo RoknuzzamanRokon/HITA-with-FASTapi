@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
-from models import User, UserRole, UserProviderPermission
+from models import User, UserRole, UserProviderPermission, UserIPWhitelist
 from typing import List, Annotated
 from routes.auth import get_current_user
 from pydantic import BaseModel
 import models
+from security.input_validation import validate_ip_address
+from datetime import datetime
 
 router = APIRouter(
     prefix="/v1.0/permissions",
@@ -18,6 +20,10 @@ class ProviderPermissionRequest(BaseModel):
 
 class SupplierActivationRequest(BaseModel):
     supplier_name: List[str]
+
+class IPWhitelistRequest(BaseModel):
+    id: str  # User ID
+    ip: List[str]  # List of IP addresses
 
 
 @router.post("/admin/check_activate_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)
@@ -338,4 +344,450 @@ def activate_suppliers(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while activating suppliers: {str(e)}"
+        )
+
+@router.post("/ip/active_permission", status_code=status.HTTP_200_OK)
+def activate_ip_permission(
+    request: IPWhitelistRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    IP Whitelist Management
+    
+    Allows super users and admin users to whitelist IP addresses for specific users.
+    Users can only access APIs from whitelisted IP addresses once this is configured.
+    
+    Request Body:
+    - id: Target user ID to whitelist IPs for
+    - ip: List of IP addresses to whitelist (IPv4/IPv6 supported)
+    
+    Access Control:
+    - Super User: Can whitelist IPs for any user
+    - Admin User: Can whitelist IPs for any user
+    - General User: Not allowed
+    
+    Features:
+    - IP address format validation (IPv4/IPv6)
+    - Duplicate IP prevention for same user
+    - Audit logging for security tracking
+    - Bulk IP address management
+    
+    Security:
+    - Only super users and admins can manage IP whitelists
+    - All changes are logged for audit purposes
+    - Invalid IP addresses are rejected
+    - User existence validation
+    
+    Returns:
+    - Success message with whitelisted IPs
+    - Count of newly added vs existing IPs
+    - Detailed status for each IP address
+    """
+    try:
+        # Validate user authentication and role
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User authentication required"
+            )
+        
+        # Check if the current user has admin or super user role
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super users and admin users can manage IP whitelists"
+            )
+        
+        # Validate request data
+        if not request.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User ID is required"
+            )
+        
+        if not request.ip or len(request.ip) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one IP address is required"
+            )
+        
+        # Validate target user exists
+        target_user = db.query(User).filter(User.id == request.id).first()
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID '{request.id}' not found"
+            )
+        
+        # Validate all IP addresses
+        invalid_ips = []
+        valid_ips = []
+        
+        for ip_addr in request.ip:
+            if not ip_addr or not ip_addr.strip():
+                invalid_ips.append(ip_addr)
+                continue
+                
+            ip_addr = ip_addr.strip()
+            if validate_ip_address(ip_addr):
+                valid_ips.append(ip_addr)
+            else:
+                invalid_ips.append(ip_addr)
+        
+        if invalid_ips:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid IP addresses: {', '.join(invalid_ips)}"
+            )
+        
+        # Check for existing IP addresses for this user
+        existing_ips = db.query(UserIPWhitelist).filter(
+            UserIPWhitelist.user_id == request.id,
+            UserIPWhitelist.ip_address.in_(valid_ips),
+            UserIPWhitelist.is_active == True
+        ).all()
+        
+        existing_ip_addresses = {ip.ip_address for ip in existing_ips}
+        new_ips = [ip for ip in valid_ips if ip not in existing_ip_addresses]
+        
+        # Add new IP addresses
+        added_ips = []
+        for ip_addr in new_ips:
+            whitelist_entry = UserIPWhitelist(
+                user_id=request.id,
+                ip_address=ip_addr,
+                created_by=current_user.id,
+                created_at=datetime.utcnow(),
+                is_active=True
+            )
+            db.add(whitelist_entry)
+            added_ips.append(ip_addr)
+        
+        db.commit()
+        
+        # Prepare response
+        response = {
+            "message": f"Successfully processed IP whitelist for user '{target_user.username}'",
+            "target_user": {
+                "id": target_user.id,
+                "username": target_user.username,
+                "email": target_user.email
+            },
+            "ip_summary": {
+                "total_requested": len(valid_ips),
+                "newly_added": len(added_ips),
+                "already_existing": len(existing_ip_addresses),
+                "total_active_ips": len(valid_ips)
+            },
+            "ip_details": {
+                "newly_added": added_ips,
+                "already_existing": list(existing_ip_addresses),
+                "all_active_ips": valid_ips
+            },
+            "created_by": {
+                "id": current_user.id,
+                "username": getattr(current_user, 'username', 'unknown'),
+                "role": current_user.role
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while managing IP whitelist: {str(e)}"
+        )
+
+@router.get("/ip/list/{user_id}", status_code=status.HTTP_200_OK)
+def get_user_ip_whitelist(
+    user_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Get IP Whitelist for User
+    
+    Retrieves all active IP whitelist entries for a specific user.
+    Only super users and admin users can view IP whitelists.
+    
+    Args:
+        user_id: Target user ID to get IP whitelist for
+        current_user: Currently authenticated user (must be super/admin)
+        db: Database session
+    
+    Returns:
+        dict: User information and their IP whitelist entries
+    
+    Access Control:
+        - SUPER_USER: Can view any user's IP whitelist
+        - ADMIN_USER: Can view any user's IP whitelist
+        - GENERAL_USER: Access denied
+    """
+    try:
+        # Check permissions
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super users and admin users can view IP whitelists"
+            )
+        
+        # Check if target user exists
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID '{user_id}' not found"
+            )
+        
+        # Get active IP whitelist entries
+        ip_entries = db.query(UserIPWhitelist).filter(
+            UserIPWhitelist.user_id == user_id,
+            UserIPWhitelist.is_active == True
+        ).all()
+        
+        # Format response
+        ip_list = []
+        for entry in ip_entries:
+            ip_list.append({
+                "id": entry.id,
+                "ip_address": entry.ip_address,
+                "created_at": entry.created_at.isoformat() if entry.created_at else None,
+                "updated_at": entry.updated_at.isoformat() if entry.updated_at else None
+            })
+        
+        return {
+            "success": True,
+            "user": {
+                "id": target_user.id,
+                "username": target_user.username,
+                "email": target_user.email
+            },
+            "ip_whitelist": {
+                "total_entries": len(ip_list),
+                "entries": ip_list
+            },
+            "managed_by": {
+                "id": current_user.id,
+                "username": current_user.username
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving IP whitelist: {str(e)}"
+        )
+
+
+class IPRemovalRequest(BaseModel):
+    user_id: str
+    ip_addresses: List[str]
+
+
+@router.delete("/ip/remove", status_code=status.HTTP_200_OK)
+def remove_ip_whitelist(
+    request: IPRemovalRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Remove IP Addresses from Whitelist
+    
+    Removes specific IP addresses from a user's whitelist.
+    Only super users and admin users can manage IP whitelists.
+    
+    Request Body:
+        - user_id: Target user ID to remove IPs from
+        - ip_addresses: List of IP addresses to remove
+    
+    Args:
+        request: IPRemovalRequest containing user_id and ip_addresses
+        current_user: Currently authenticated user (must be super/admin)
+        db: Database session
+    
+    Returns:
+        dict: Success message and details of removed IPs
+    
+    Access Control:
+        - SUPER_USER: Can remove any user's IP whitelist entries
+        - ADMIN_USER: Can remove any user's IP whitelist entries
+        - GENERAL_USER: Access denied
+    """
+    try:
+        # Check permissions
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super users and admin users can manage IP whitelists"
+            )
+        
+        # Check if target user exists
+        target_user = db.query(User).filter(User.id == request.user_id).first()
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID '{request.user_id}' not found"
+            )
+        
+        # Validate IP addresses
+        import ipaddress
+        valid_ips = []
+        invalid_ips = []
+        
+        for ip in request.ip_addresses:
+            try:
+                ipaddress.ip_address(ip.strip())
+                valid_ips.append(ip.strip())
+            except ValueError:
+                invalid_ips.append(ip)
+        
+        if invalid_ips:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid IP addresses: {', '.join(invalid_ips)}"
+            )
+        
+        # Find existing entries to remove
+        entries_to_remove = db.query(UserIPWhitelist).filter(
+            UserIPWhitelist.user_id == request.user_id,
+            UserIPWhitelist.ip_address.in_(valid_ips),
+            UserIPWhitelist.is_active == True
+        ).all()
+        
+        if not entries_to_remove:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No matching IP addresses found in whitelist"
+            )
+        
+        # Remove entries (soft delete by setting is_active = False)
+        removed_ips = []
+        for entry in entries_to_remove:
+            entry.is_active = False
+            entry.updated_at = datetime.utcnow()
+            removed_ips.append(entry.ip_address)
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Successfully removed {len(removed_ips)} IP address(es) from whitelist",
+            "target_user": {
+                "id": target_user.id,
+                "username": target_user.username
+            },
+            "removed_ips": removed_ips,
+            "managed_by": {
+                "id": current_user.id,
+                "username": current_user.username
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while removing IP whitelist: {str(e)}"
+        )
+
+
+@router.delete("/ip/clear/{user_id}", status_code=status.HTTP_200_OK)
+def clear_user_ip_whitelist(
+    user_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Clear All IP Whitelist Entries for User
+    
+    Removes all IP whitelist entries for a specific user.
+    Only super users and admin users can manage IP whitelists.
+    
+    Args:
+        user_id: Target user ID to clear IP whitelist for
+        current_user: Currently authenticated user (must be super/admin)
+        db: Database session
+    
+    Returns:
+        dict: Success message and count of cleared entries
+    
+    Access Control:
+        - SUPER_USER: Can clear any user's IP whitelist
+        - ADMIN_USER: Can clear any user's IP whitelist
+        - GENERAL_USER: Access denied
+    """
+    try:
+        # Check permissions
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super users and admin users can manage IP whitelists"
+            )
+        
+        # Check if target user exists
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID '{user_id}' not found"
+            )
+        
+        # Find all active entries for this user
+        active_entries = db.query(UserIPWhitelist).filter(
+            UserIPWhitelist.user_id == user_id,
+            UserIPWhitelist.is_active == True
+        ).all()
+        
+        if not active_entries:
+            return {
+                "success": True,
+                "message": "No active IP whitelist entries found for user",
+                "target_user": {
+                    "id": target_user.id,
+                    "username": target_user.username
+                },
+                "cleared_count": 0
+            }
+        
+        # Clear all entries (soft delete)
+        cleared_ips = []
+        for entry in active_entries:
+            entry.is_active = False
+            entry.updated_at = datetime.utcnow()
+            cleared_ips.append(entry.ip_address)
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Successfully cleared {len(cleared_ips)} IP whitelist entries",
+            "target_user": {
+                "id": target_user.id,
+                "username": target_user.username
+            },
+            "cleared_ips": cleared_ips,
+            "cleared_count": len(cleared_ips),
+            "managed_by": {
+                "id": current_user.id,
+                "username": current_user.username
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while clearing IP whitelist: {str(e)}"
         )

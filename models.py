@@ -336,3 +336,17 @@ class Chain(Base):
 
     # Relationships
     hotel = relationship("Hotel", back_populates="chains")
+
+class UserIPWhitelist(Base):
+    __tablename__ = "user_ip_whitelist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), ForeignKey("users.id"), nullable=False)
+    ip_address = Column(String(45), nullable=False)  # Support both IPv4 and IPv6
+    created_by = Column(String(50), nullable=False)  # Admin/Super user who added this
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+    # Relationships
+    user = relationship("User", backref="ip_whitelist")

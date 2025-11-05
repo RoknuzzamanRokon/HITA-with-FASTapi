@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Requ
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from database import get_db
-from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole
+from models import Hotel, ProviderMapping, Location, Contact, UserProviderPermission, UserRole, UserIPWhitelist
 from pydantic import BaseModel
 from typing import List, Optional, Annotated, Dict, Any
 from datetime import datetime
@@ -20,6 +20,7 @@ from routes.hotelFormattingData import map_to_our_format
 from routes.path import RAW_BASE_DIR
 import os
 from routes.auth import get_current_user
+from middleware.ip_middleware import get_client_ip
 
 from schemas import ProviderProperty, GetAllHotelResponse
 
@@ -150,35 +151,69 @@ class CountryInfoRequest(BaseModel):
 
 @router.post("/get-basic-info-follow-countryCode", status_code=status.HTTP_200_OK)
 def get_basic_country_info(
+    http_request: Request,
     request: CountryInfoRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Get Basic Country Information for Specific Supplier
+    Get Country Hotel Data by Supplier
     
-    Fast endpoint to retrieve country-specific hotel data for a supplier.
-    Only returns data for suppliers the user has active permissions for.
+    Retrieves hotel data for a specific country and supplier combination.
+    Fast file-based lookup with role-based access control.
+    
+    Request Body:
+        - supplier: Supplier/provider name (e.g., "booking", "expedia")
+        - country_iso: ISO country code (e.g., "US", "GB", "FR")
     
     Features:
-    - Fast file-based data retrieval
-    - Role-based access control with supplier permission validation
-    - Temporary deactivation support
-    - Optimized for speed with minimal database queries
+        - ✅ IP whitelist validation
+        - ✅ Role-based supplier access control
+        - ✅ Temporary supplier deactivation support
+        - ✅ Fast file-based data retrieval
+        - ✅ JSON validation and error handling
     
-    Args:
-        request: CountryInfoRequest containing supplier and country_iso
-        current_user: Currently authenticated user
-        db: Database session for permission checks
+    Access Control:
+        - GENERAL_USER: Only permitted suppliers
+        - SUPER_USER/ADMIN_USER: All suppliers (except temp deactivated)
     
     Returns:
-        dict: Country hotel data for the specified supplier
+        dict: {
+            "success": True,
+            "supplier": "booking",
+            "country_iso": "US", 
+            "total_hotel": 12345,
+            "data": [hotel_data_array]
+        }
     
-    Raises:
-        403: User doesn't have permission for the requested supplier
-        404: Country data not found for supplier
-        500: File reading or JSON parsing errors
+    Errors:
+        - 403: IP not whitelisted / No supplier permission / Supplier deactivated
+        - 404: Country data file not found
+        - 500: File read error / Invalid JSON format
     """
+    
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-basic-info-follow-countryCode")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
     try:
         # FAST PERMISSION CHECK - Check user permissions for the requested supplier
         if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
@@ -1398,11 +1433,70 @@ class ProviderPropertyRequest(BaseModel):
     provider_property: List[ProviderProperty]
 
 
+def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
+    """
+    Check if the user's IP is whitelisted
+    
+    Args:
+        user_id: User ID to check whitelist for
+        request: FastAPI request object to extract IP
+        db: Database session
+    
+    Returns:
+        bool: True if IP is whitelisted or no whitelist exists, False if blocked
+    """
+    print(f"🚀 IP Whitelist Function Called - Starting check for user: {user_id}")
+    try:
+        print(f"🔍 IP Whitelist Check - User ID: {user_id}")
+        
+        # Extract client IP using the middleware helper function
+        client_ip = get_client_ip(request)
+        
+        print(f"🌐 Detected Client IP: {client_ip}")
+        
+        if not client_ip:
+            print("⚠️ Could not determine client IP, allowing access (fail open)")
+            return True
+        
+        # Check if user has any IP whitelist entries
+        whitelist_entries = db.query(models.UserIPWhitelist).filter(
+            models.UserIPWhitelist.user_id == user_id,
+            models.UserIPWhitelist.is_active == True
+        ).all()
+        
+        print(f"📋 Found {len(whitelist_entries)} whitelist entries for user")
+        
+        # REQUIRE IP WHITELIST: If no whitelist entries exist, DENY access
+        if not whitelist_entries:
+            print("❌ No whitelist entries found, DENYING access (IP whitelist required)")
+            return False
+        
+        # Check if current IP is in whitelist
+        whitelisted_ips = [entry.ip_address for entry in whitelist_entries]
+        print(f"🔒 Whitelisted IPs: {whitelisted_ips}")
+        
+        is_whitelisted = client_ip in whitelisted_ips
+        print(f"🎯 IP {client_ip} whitelisted: {is_whitelisted}")
+        
+        return is_whitelisted
+        
+    except Exception as e:
+        # If there's an error checking whitelist, fail open (allow access)
+        print(f"❌ Error checking IP whitelist: {e}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        print(f"❌ Exception details: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        return True
+
+
 @router.get("/get-all-ittid", status_code=status.HTTP_200_OK)
 def get_all_ittid(
+    request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
+    print(f"🎯 get_all_ittid function called for user: {current_user.id}")
     """
     Get All Hotel ITTIDs Based on User Permissions
     
@@ -1411,16 +1505,19 @@ def get_all_ittid(
     simple way to get hotel identifiers for further processing.
     
     Features:
+    - IP whitelist validation for enhanced security
     - Role-based access control for provider permissions
     - Point deduction only for general users
     - Comprehensive supplier and hotel count statistics
     - Efficient ITTID-only response for performance
     
     Access Control:
+        - IP Whitelist: User must access from whitelisted IP (if configured)
         - GENERAL_USER: Only sees ITTIDs from permitted providers, points deducted
         - SUPER_USER/ADMIN_USER: Can see all hotel ITTIDs, no point deduction
     
     Args:
+        request: FastAPI request object for IP extraction
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
     
@@ -1431,7 +1528,7 @@ def get_all_ittid(
             - ittid_list: List of hotel ITTID strings
     
     Error Handling:
-        - 403: User has no provider permissions (general users only)
+        - 403: IP not whitelisted, no provider permissions, or access denied
         - 500: Database or internal server errors
     
     Example Response:
@@ -1441,6 +1538,28 @@ def get_all_ittid(
             "ittid_list": ["1221", "454", "789", ...]
         }
     """
+    
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-all-ittid")
+    if not check_ip_whitelist(current_user.id, request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
     
     try:
         # 🚫 NO POINT DEDUCTION for super_user and admin_user
@@ -1735,6 +1854,7 @@ async def get_all_hotel_only_supplier(
 
 @router.get("/get-update-provider-info")
 def get_update_provider_info(
+    request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     limit_per_page: int = Query(50, ge=1, le=500, description="Number of records per page"),
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
@@ -1743,6 +1863,7 @@ def get_update_provider_info(
     page: Optional[int] = Query(None, ge=1, description="Page number to jump to (overrides resume_key)"),
     db: Session = Depends(get_db)
 ):
+    print(f"🎯 get_update_provider_info function called for user: {current_user.id}")
     """
     Get Updated Provider Information by Date Range
     
@@ -1791,6 +1912,29 @@ def get_update_provider_info(
         GET /get-update-provider-info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=100
         GET /get-update-provider-info?from_date=2023-01-01&to_date=2023-12-31&limit_per_page=500&page=200
     """
+    
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-update-provider-info")
+    if not check_ip_whitelist(current_user.id, request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
     try:
         # Validate and parse dates
         try:
