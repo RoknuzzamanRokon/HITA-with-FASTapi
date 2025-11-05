@@ -297,41 +297,27 @@ async def get_hotel_data_provider_name_and_id(
     db: Session = Depends(get_db)
 ):
     """
-    Get Hotel Data by Provider Name and ID
+    Get Hotel Data by Provider Identity
     
-    Retrieves comprehensive hotel information including provider mappings, locations, 
-    and contacts based on provider name and ID combinations.
+    Retrieves comprehensive hotel information with full details for specific supplier mappings.
+    Supports batch processing with mixed results - returns successful data while reporting issues.
     
-    Features:
-    - Role-based access control with provider permission validation
-    - Point deduction for general users
-    - Comprehensive hotel data with locations and contacts
-    - Batch processing for multiple provider identities
+    Request Body:
+    - provider_hotel_identity: Array of {provider_name, provider_id} objects
     
-    Args:
-        request (ProviderHotelRequest): Request containing list of provider identities
-        current_user: Currently authenticated user (injected by dependency)
-        db (Session): Database session (injected by dependency)
-    
-    Returns:
-        List[dict]: List of hotel data with provider mappings, locations, and contacts
+    Response Types:
+    - Success: Hotel data with locations, contacts, and enhanced provider mappings
+    - Partial: Successful results + status info for inactive/not found suppliers  
+    - Error: All suppliers inactive or not found
     
     Access Control:
-        - GENERAL_USER: Only sees providers they have permission for, points deducted
-        - SUPER_USER/ADMIN_USER: Can see all provider mappings
+    - General users: Only permitted suppliers (points deducted)
+    - Super/Admin: All suppliers except temporarily deactivated
     
-    Error Handling:
-        - 403: User has no provider permissions
-        - 404: No mappings found for requested provider identities
-        - 500: Database or internal server errors
-    
-    Example Request:
-        {
-            "provider_hotel_identity": [
-                {"provider_id": "12345", "provider_name": "booking"},
-                {"provider_id": "67890", "provider_name": "expedia"}
-            ]
-        }
+    Smart Features:
+    - Mixed status handling (some succeed, some fail)
+    - Detailed status reporting for each supplier
+    - Full hotel details integration via internal API
     """
     try:
         # Deduct points for general_user
@@ -518,39 +504,85 @@ async def get_hotel_data_provider_name_and_id(
                 "contacts": contacts_list
             })
 
-        # Handle specific error cases
-        if supplier_off_list:
-            from datetime import datetime
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": True,
-                    "message": f"Supplier is off: {', '.join(supplier_off_list)}",
-                    "error_code": "SUPPLIER_OFF",
-                    "details": {
-                        "status_code": 400,
-                        "off_suppliers": supplier_off_list
-                    },
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            )
+        # Prepare response with both results and status information
+        from datetime import datetime
         
-        if not result and not_found_list:
-            from datetime import datetime
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "error": True,
-                    "message": "Cannot find mapping for any of the requested suppliers in our system.",
-                    "error_code": "HTTP_404",
-                    "details": {
-                        "status_code": 404
-                    },
-                    "timestamp": datetime.utcnow().isoformat()
+        response = {
+            "success_count": len(result),
+            "total_requested": len(request.provider_hotel_identity),
+            "hotels": result,
+            "status_info": {
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        
+        # Add status information for inactive/not found suppliers
+        if supplier_off_list or not_found_list:
+            response["status_info"]["issues"] = {}
+            
+            if supplier_off_list:
+                response["status_info"]["issues"]["inactive_suppliers"] = {
+                    "count": len(supplier_off_list),
+                    "suppliers": supplier_off_list,
+                    "message": f"Supplier(s) are temporarily deactivated: {', '.join(supplier_off_list)}"
                 }
-            )
+            
+            if not_found_list:
+                response["status_info"]["issues"]["not_found"] = {
+                    "count": len(not_found_list),
+                    "suppliers": not_found_list,
+                    "message": f"Cannot find mapping for: {', '.join(not_found_list)}"
+                }
+        
+        # If no results at all, return error
+        if not result:
+            if supplier_off_list and not not_found_list:
+                # All suppliers are off
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": True,
+                        "message": f"All suppliers are off: {', '.join(supplier_off_list)}",
+                        "error_code": "ALL_SUPPLIERS_OFF",
+                        "details": {
+                            "status_code": 400,
+                            "off_suppliers": supplier_off_list
+                        },
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                )
+            elif not_found_list and not supplier_off_list:
+                # All suppliers not found
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={
+                        "error": True,
+                        "message": "Cannot find mapping for any of the requested suppliers in our system.",
+                        "error_code": "HTTP_404",
+                        "details": {
+                            "status_code": 404
+                        },
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                )
+            else:
+                # Mixed issues but no results
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": True,
+                        "message": "No active suppliers found for the requested identities.",
+                        "error_code": "NO_ACTIVE_SUPPLIERS",
+                        "details": {
+                            "status_code": 400,
+                            "off_suppliers": supplier_off_list,
+                            "not_found": not_found_list
+                        },
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                )
 
-        return result
+        return response
     
     except HTTPException:
         raise
