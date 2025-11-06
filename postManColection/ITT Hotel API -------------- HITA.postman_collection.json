@@ -536,7 +536,7 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_all_hotel_info?resume_key={{resume_value}}&limit={{limit_per_page}}",
+									"raw": "{{host}}/v1.0/content/get-all-basic-hotel-info?resume_key={{resume_value}}&limit={{limit_per_page}}",
 									"host": [
 										"{{host}}"
 									],
@@ -902,14 +902,14 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_hotel_mapping_data_using_provider_name_and_id/",
+									"raw": "{{host}}/v1.0/content/get-hotel-mapping-info-using-provider-name-and-id/",
 									"host": [
 										"{{host}}"
 									],
 									"path": [
 										"v1.0",
 										"content",
-										"get_hotel_mapping_data_using_provider_name_and_id",
+										"get-hotel-mapping-info-using-provider-name-and-id",
 										""
 									]
 								}

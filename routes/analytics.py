@@ -525,7 +525,7 @@ async def get_user_activity(
                 if not favorite_endpoints:
                     # Infer endpoints based on transaction patterns
                     if points_used > 0:
-                        favorite_endpoints = ["/v1.0/hotel/details", "/v1.0/content/get_all_hotel_info"]
+                        favorite_endpoints = ["/v1.0/hotel/details", "/v1.0/content/get-all-basic-hotel-info"]
                     else:
                         favorite_endpoints = ["/v1.0/analytics/dashboard"]
                         

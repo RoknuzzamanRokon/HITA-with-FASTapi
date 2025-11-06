@@ -24,14 +24,47 @@ from middleware.ip_middleware import get_client_ip
 
 from schemas import ProviderProperty, GetAllHotelResponse
 
-router = APIRouter()
-
 
 router = APIRouter(
     prefix="/v1.0/content",
     tags=["Hotel Content"],
     responses={404: {"description": "Not found"}},
 )
+
+
+
+def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
+    """
+    Check if the user's IP address is in the whitelist.
+    
+    Args:
+        user_id (str): The user ID to check
+        request (Request): The FastAPI request object
+        db (Session): Database session
+    
+    Returns:
+        bool: True if IP is whitelisted, False otherwise
+    """
+    try:
+        # Get client IP using the middleware function
+        client_ip = get_client_ip(request)
+        
+        if not client_ip:
+            return False
+        
+        # Check if the user has any active IP whitelist entries for this IP
+        whitelist_entry = db.query(UserIPWhitelist).filter(
+            UserIPWhitelist.user_id == user_id,
+            UserIPWhitelist.ip_address == client_ip,
+            UserIPWhitelist.is_active == True
+        ).first()
+        
+        return whitelist_entry is not None
+        
+    except Exception as e:
+        print(f"Error checking IP whitelist: {str(e)}")
+        return False
+
 
 
 
@@ -148,6 +181,11 @@ class CountryInfoRequest(BaseModel):
     supplier: str
     country_iso: str
 
+class ProviderProperty(BaseModel):
+    provider_name: str
+
+class ProviderPropertyRequest(BaseModel):
+    provider_property: List[ProviderProperty]
 
 @router.post("/get-basic-info-follow-countryCode", status_code=status.HTTP_200_OK)
 def get_basic_country_info(
@@ -327,6 +365,7 @@ def get_basic_country_info(
 
 @router.post("/get-hotel-data-with-provider-name-and-id", status_code=status.HTTP_200_OK)
 async def get_hotel_data_provider_name_and_id(
+    http_request: Request,
     request: ProviderHotelRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -354,6 +393,28 @@ async def get_hotel_data_provider_name_and_id(
     - Detailed status reporting for each supplier
     - Full hotel details integration via internal API
     """
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-basic-info-follow-countryCode")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
     try:
         # Deduct points for general_user
         if current_user.role == models.UserRole.GENERAL_USER:
@@ -540,8 +601,6 @@ async def get_hotel_data_provider_name_and_id(
             })
 
         # Prepare response with both results and status information
-        from datetime import datetime
-        
         response = {
             "success_count": len(result),
             "total_requested": len(request.provider_hotel_identity),
@@ -628,16 +687,10 @@ async def get_hotel_data_provider_name_and_id(
         )
 
 
-class ProviderHotelIdentity(BaseModel):
-    provider_id: str
-    provider_name: str
 
-class ProviderHotelRequest(BaseModel):
-    provider_hotel_identity: List[ProviderHotelIdentity]
-
-
-@router.post("/get_hotel_mapping_data_using_provider_name_and_id", status_code=status.HTTP_200_OK)
+@router.post("/get-hotel-mapping-info-using-provider-name-and-id", status_code=status.HTTP_200_OK)
 def get_hotel_mapping_data_using_provider_name_and_id(
+    http_request: Request,
     request: ProviderHotelRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -687,6 +740,28 @@ def get_hotel_mapping_data_using_provider_name_and_id(
             }
         ]
     """
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-hotel-mapping-info-using-provider-name-and-id")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
     try:
         # Deduct points for general_user
         if current_user.role == models.UserRole.GENERAL_USER:
@@ -755,7 +830,7 @@ def get_hotel_mapping_data_using_provider_name_and_id(
                 "provider_mapping_id": mapping.id,
                 "provider_id": mapping.provider_id,
                 "provider_name": mapping.provider_name,
-                "system_type": mapping.system_type,
+                # "system_type": mapping.system_type,
                 # "giata_code": mapping.giata_code,
                 # "vervotech_id": mapping.vervotech_id,
                 # "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None,
@@ -789,6 +864,7 @@ class ITTIDRequest(BaseModel):
 # Get provider mapping
 @router.post("/get-hotel-with-ittid", status_code=status.HTTP_200_OK)
 async def get_hotels_using_ittid_list(
+    http_request: Request,
     request: ITTIDRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -824,139 +900,168 @@ async def get_hotels_using_ittid_list(
         - Provider mappings with null full_details are automatically excluded
         - Hotels with no valid provider mappings are excluded from results
     """
-
-    # 🚫 NO POINT DEDUCTION for super_user and admin_user
-    if current_user.role == models.UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
-    elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
-        print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
-
-    # Fetch hotels
-    hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
-    if not hotels:
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-basic-info-follow-countryCode")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No hotels found for the provided ittid values."
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    try:
+        # 🚫 NO POINT DEDUCTION for super_user and admin_user
+        if current_user.role == models.UserRole.GENERAL_USER:
+            deduct_points_for_general_user(current_user, db)
+        elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+
+        # Fetch hotels
+        hotels = db.query(models.Hotel).filter(models.Hotel.ittid.in_(request.ittid)).all()
+        if not hotels:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No hotels found for the provided ittid values."
+            )
+
+        result = []
+
+        # For General Users: only allowed providers (excluding temp deactivated)
+        if current_user.role == models.UserRole.GENERAL_USER:
+            # Get all user permissions (including temp deactivated ones)
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            # Separate active and temporarily deactivated suppliers
+            temp_deactivated_suppliers = []
+            allowed_providers = []
+            
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    allowed_providers.append(perm)
+            
+            # Remove temporarily deactivated suppliers from allowed providers
+            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            
+            for hotel in hotels:
+                provider_mappings = db.query(models.ProviderMapping).filter(
+                    models.ProviderMapping.ittid == hotel.ittid,
+                    models.ProviderMapping.provider_name.in_(final_allowed_providers)
+                ).all()
+
+                formatted_provider_mappings = []
+                for mapping in provider_mappings:
+                    # Get full hotel details for this provider mapping
+                    hotel_details = await get_hotel_details_internal(
+                        supplier_code=mapping.provider_name,
+                        hotel_id=mapping.provider_id,
+                        current_user=current_user,
+                        db=db
+                    )
+                    
+                    # FILTER: Only include mappings with non-null full_details
+                    if hotel_details is not None:
+                        mapping_data = {
+                            "id": mapping.id,
+                            "ittid": mapping.ittid,
+                            "provider_name": mapping.provider_name,
+                            "provider_id": mapping.provider_id,
+                            "full_details": hotel_details  # Include full hotel details
+                        }
+                        formatted_provider_mappings.append(mapping_data)
+
+                # Only include hotel in result if it has valid provider mappings
+                if formatted_provider_mappings:
+                    result.append({
+                        "ittid": hotel.ittid,
+                        "provider_mappings": formatted_provider_mappings
+                    })
+        else:
+            # For SUPER/ADMIN users – return all mappings with full details (excluding temp deactivated)
+            # Get temporarily deactivated suppliers for super/admin users
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            temp_deactivated_suppliers = []
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+            
+            for hotel in hotels:
+                all_provider_mappings = db.query(models.ProviderMapping).filter(
+                    models.ProviderMapping.ittid == hotel.ittid
+                ).all()
+                
+                # Filter out temporarily deactivated suppliers
+                if temp_deactivated_suppliers:
+                    provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
+                else:
+                    provider_mappings = all_provider_mappings
+
+                formatted_provider_mappings = []
+                for mapping in provider_mappings:
+                    # Get full hotel details for this provider mapping
+                    hotel_details = await get_hotel_details_internal(
+                        supplier_code=mapping.provider_name,
+                        hotel_id=mapping.provider_id,
+                        current_user=current_user,
+                        db=db
+                    )
+                    
+                    # FILTER: Only include mappings with non-null full_details
+                    if hotel_details is not None:
+                        mapping_data = {
+                            "id": mapping.id,
+                            "ittid": mapping.ittid,
+                            "provider_name": mapping.provider_name,
+                            "provider_id": mapping.provider_id,
+                            "full_details": hotel_details  # Include full hotel details
+                        }
+                        formatted_provider_mappings.append(mapping_data)
+
+                # Only include hotel in result if it has valid provider mappings
+                if formatted_provider_mappings:
+                    result.append({
+                        "ittid": hotel.ittid,
+                        "provider_mappings": formatted_provider_mappings
+                    })
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing mapping data request: {str(e)}"
         )
 
-    result = []
-
-    # For General Users: only allowed providers (excluding temp deactivated)
-    if current_user.role == models.UserRole.GENERAL_USER:
-        # Get all user permissions (including temp deactivated ones)
-        all_permissions = [
-            permission.provider_name
-            for permission in db.query(UserProviderPermission)
-            .filter(UserProviderPermission.user_id == current_user.id)
-            .all()
-        ]
-        
-        # Separate active and temporarily deactivated suppliers
-        temp_deactivated_suppliers = []
-        allowed_providers = []
-        
-        for perm in all_permissions:
-            if perm.startswith("TEMP_DEACTIVATED_"):
-                original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                temp_deactivated_suppliers.append(original_name)
-            else:
-                allowed_providers.append(perm)
-        
-        # Remove temporarily deactivated suppliers from allowed providers
-        final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
-        
-        for hotel in hotels:
-            provider_mappings = db.query(models.ProviderMapping).filter(
-                models.ProviderMapping.ittid == hotel.ittid,
-                models.ProviderMapping.provider_name.in_(final_allowed_providers)
-            ).all()
-
-            formatted_provider_mappings = []
-            for mapping in provider_mappings:
-                # Get full hotel details for this provider mapping
-                hotel_details = await get_hotel_details_internal(
-                    supplier_code=mapping.provider_name,
-                    hotel_id=mapping.provider_id,
-                    current_user=current_user,
-                    db=db
-                )
-                
-                # FILTER: Only include mappings with non-null full_details
-                if hotel_details is not None:
-                    mapping_data = {
-                        "id": mapping.id,
-                        "ittid": mapping.ittid,
-                        "provider_name": mapping.provider_name,
-                        "provider_id": mapping.provider_id,
-                        "full_details": hotel_details  # Include full hotel details
-                    }
-                    formatted_provider_mappings.append(mapping_data)
-
-            # Only include hotel in result if it has valid provider mappings
-            if formatted_provider_mappings:
-                result.append({
-                    "ittid": hotel.ittid,
-                    "provider_mappings": formatted_provider_mappings
-                })
-    else:
-        # For SUPER/ADMIN users – return all mappings with full details (excluding temp deactivated)
-        # Get temporarily deactivated suppliers for super/admin users
-        all_permissions = [
-            permission.provider_name
-            for permission in db.query(UserProviderPermission)
-            .filter(UserProviderPermission.user_id == current_user.id)
-            .all()
-        ]
-        
-        temp_deactivated_suppliers = []
-        for perm in all_permissions:
-            if perm.startswith("TEMP_DEACTIVATED_"):
-                original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                temp_deactivated_suppliers.append(original_name)
-        
-        for hotel in hotels:
-            all_provider_mappings = db.query(models.ProviderMapping).filter(
-                models.ProviderMapping.ittid == hotel.ittid
-            ).all()
-            
-            # Filter out temporarily deactivated suppliers
-            if temp_deactivated_suppliers:
-                provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
-            else:
-                provider_mappings = all_provider_mappings
-
-            formatted_provider_mappings = []
-            for mapping in provider_mappings:
-                # Get full hotel details for this provider mapping
-                hotel_details = await get_hotel_details_internal(
-                    supplier_code=mapping.provider_name,
-                    hotel_id=mapping.provider_id,
-                    current_user=current_user,
-                    db=db
-                )
-                
-                # FILTER: Only include mappings with non-null full_details
-                if hotel_details is not None:
-                    mapping_data = {
-                        "id": mapping.id,
-                        "ittid": mapping.ittid,
-                        "provider_name": mapping.provider_name,
-                        "provider_id": mapping.provider_id,
-                        "full_details": hotel_details  # Include full hotel details
-                    }
-                    formatted_provider_mappings.append(mapping_data)
-
-            # Only include hotel in result if it has valid provider mappings
-            if formatted_provider_mappings:
-                result.append({
-                    "ittid": hotel.ittid,
-                    "provider_mappings": formatted_provider_mappings
-                })
-
-    return result
 
 @router.get("/get-hotel-with-ittid/{ittid}", status_code=status.HTTP_200_OK)
 async def get_hotel_using_ittid(
+    http_request: Request,
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -997,177 +1102,207 @@ async def get_hotel_using_ittid(
         403: Forbidden - No access to suppliers for this hotel
         404: Hotel not found or no supplier mappings available
     """
-    
-    # Get hotel first (no point deduction yet)
-    hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
-    if not hotel:
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-hotel-with-ittid")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Hotel with id '{ittid}' not found."
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
         )
-
-    # 🔍 CHECK FOR ACTIVE SUPPLIERS (Provider Mappings)
-    # First check if there are ANY provider mappings for this ITTID
-    all_provider_mappings = db.query(models.ProviderMapping).filter(
-        models.ProviderMapping.ittid == ittid
-    ).all()
     
-    if not all_provider_mappings:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Cannot active supplier with this ittid '{ittid}'. No supplier mappings found for this hotel."
-        )
-
-    # Check user-specific permissions for general users
-    if current_user.role == models.UserRole.GENERAL_USER:
-        # Get all user permissions (including temp deactivated ones)
-        all_permissions = [
-            permission.provider_name
-            for permission in db.query(UserProviderPermission)
-            .filter(UserProviderPermission.user_id == current_user.id)
-            .all()
-        ]
-        
-        # Separate active and temporarily deactivated suppliers
-        temp_deactivated_suppliers = []
-        allowed_providers = []
-        
-        for perm in all_permissions:
-            if perm.startswith("TEMP_DEACTIVATED_"):
-                # Extract original supplier name
-                original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                temp_deactivated_suppliers.append(original_name)
-            else:
-                allowed_providers.append(perm)
-        
-        # Remove temporarily deactivated suppliers from allowed providers
-        final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
-        
-        if not final_allowed_providers:
+    try:
+        # Get hotel first (no point deduction yet)
+        hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
+        if not hotel:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Do not have permission or not active"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Hotel with id '{ittid}' not found."
             )
-        
-        # Check if user has access to any of the suppliers for this hotel
-        accessible_provider_mappings = db.query(models.ProviderMapping).filter(
-            models.ProviderMapping.ittid == ittid,
-            models.ProviderMapping.provider_name.in_(final_allowed_providers)
+
+        # 🔍 CHECK FOR ACTIVE SUPPLIERS (Provider Mappings)
+        # First check if there are ANY provider mappings for this ITTID
+        all_provider_mappings = db.query(models.ProviderMapping).filter(
+            models.ProviderMapping.ittid == ittid
         ).all()
         
-        if not accessible_provider_mappings:
-            # Hotel exists and has suppliers, but user doesn't have access to any of them
-            available_suppliers = [pm.provider_name for pm in all_provider_mappings]
+        if not all_provider_mappings:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Cannot access suppliers for this ittid '{ittid}'. Available suppliers: {', '.join(available_suppliers)}. Contact admin for access."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cannot active supplier with this ittid '{ittid}'. No supplier mappings found for this hotel."
             )
-    
-    print(f"✅ Active suppliers found for ITTID {ittid}: {len(all_provider_mappings)} suppliers")
 
-    # Get related data
-    locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
-    # chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
-    contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
+        # Check user-specific permissions for general users
+        if current_user.role == models.UserRole.GENERAL_USER:
+            # Get all user permissions (including temp deactivated ones)
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            # Separate active and temporarily deactivated suppliers
+            temp_deactivated_suppliers = []
+            allowed_providers = []
+            
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    # Extract original supplier name
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    allowed_providers.append(perm)
+            
+            # Remove temporarily deactivated suppliers from allowed providers
+            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            
+            if not final_allowed_providers:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Do not have permission or not active"
+                )
+            
+            # Check if user has access to any of the suppliers for this hotel
+            accessible_provider_mappings = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.ittid == ittid,
+                models.ProviderMapping.provider_name.in_(final_allowed_providers)
+            ).all()
+            
+            if not accessible_provider_mappings:
+                # Hotel exists and has suppliers, but user doesn't have access to any of them
+                available_suppliers = [pm.provider_name for pm in all_provider_mappings]
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Cannot access suppliers for this ittid '{ittid}'. Available suppliers: {', '.join(available_suppliers)}. Contact admin for access."
+                )
+        
+        print(f"✅ Active suppliers found for ITTID {ittid}: {len(all_provider_mappings)} suppliers")
 
-    # Get provider mappings for response (based on user role)
-    if current_user.role == models.UserRole.GENERAL_USER:
-        # For general users, only show accessible provider mappings (excluding temp deactivated)
-        # Use the same logic as above to get final allowed providers
-        all_permissions = [
-            permission.provider_name
-            for permission in db.query(UserProviderPermission)
-            .filter(UserProviderPermission.user_id == current_user.id)
-            .all()
-        ]
-        
-        # Separate active and temporarily deactivated suppliers
-        temp_deactivated_suppliers = []
-        allowed_providers = []
-        
-        for perm in all_permissions:
-            if perm.startswith("TEMP_DEACTIVATED_"):
-                original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                temp_deactivated_suppliers.append(original_name)
-            else:
-                allowed_providers.append(perm)
-        
-        # Remove temporarily deactivated suppliers from allowed providers
-        final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
-        
-        provider_mappings = db.query(models.ProviderMapping).filter(
-            models.ProviderMapping.ittid == ittid,
-            models.ProviderMapping.provider_name.in_(final_allowed_providers)
-        ).all()
-    else:
-        # For super/admin users, check for temporarily deactivated suppliers
-        all_permissions = [
-            permission.provider_name
-            for permission in db.query(UserProviderPermission)
-            .filter(UserProviderPermission.user_id == current_user.id)
-            .all()
-        ]
-        
-        # Get temporarily deactivated suppliers for super/admin users
-        temp_deactivated_suppliers = []
-        for perm in all_permissions:
-            if perm.startswith("TEMP_DEACTIVATED_"):
-                original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                temp_deactivated_suppliers.append(original_name)
-        
-        # Filter out temporarily deactivated suppliers from all provider mappings
-        if temp_deactivated_suppliers:
-            provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
+        # Get related data
+        locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
+        # chains = db.query(models.Chain).filter(models.Chain.ittid == hotel.ittid).all()
+        contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
+
+        # Get provider mappings for response (based on user role)
+        if current_user.role == models.UserRole.GENERAL_USER:
+            # For general users, only show accessible provider mappings (excluding temp deactivated)
+            # Use the same logic as above to get final allowed providers
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            # Separate active and temporarily deactivated suppliers
+            temp_deactivated_suppliers = []
+            allowed_providers = []
+            
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    allowed_providers.append(perm)
+            
+            # Remove temporarily deactivated suppliers from allowed providers
+            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            
+            provider_mappings = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.ittid == ittid,
+                models.ProviderMapping.provider_name.in_(final_allowed_providers)
+            ).all()
         else:
-            provider_mappings = all_provider_mappings
+            # For super/admin users, check for temporarily deactivated suppliers
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            # Get temporarily deactivated suppliers for super/admin users
+            temp_deactivated_suppliers = []
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+            
+            # Filter out temporarily deactivated suppliers from all provider mappings
+            if temp_deactivated_suppliers:
+                provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
+            else:
+                provider_mappings = all_provider_mappings
 
-    # Enhanced provider mappings with full details
-    enhanced_provider_mappings = []
-    for pm in provider_mappings:
-        # Get full hotel details for this provider mapping
-        hotel_details = await get_hotel_details_internal(
-            supplier_code=pm.provider_name,
-            hotel_id=pm.provider_id,
-            current_user=current_user,
-            db=db
-        )
-        
-        # Create simplified provider mapping with only essential fields
-        pm_data = {
-            "id": pm.id,
-            "ittid": pm.ittid,
-            "provider_name": pm.provider_name,
-            "provider_id": pm.provider_id,
-            "full_details": hotel_details
+        # Enhanced provider mappings with full details
+        enhanced_provider_mappings = []
+        for pm in provider_mappings:
+            # Get full hotel details for this provider mapping
+            hotel_details = await get_hotel_details_internal(
+                supplier_code=pm.provider_name,
+                hotel_id=pm.provider_id,
+                current_user=current_user,
+                db=db
+            )
+            
+            # Create simplified provider mapping with only essential fields
+            pm_data = {
+                "id": pm.id,
+                "ittid": pm.ittid,
+                "provider_name": pm.provider_name,
+                "provider_id": pm.provider_id,
+                "full_details": hotel_details
+            }
+            enhanced_provider_mappings.append(pm_data)
+
+        # Serialize the response with enhanced provider mappings
+        response_data = {
+            "total_supplier": len(provider_mappings),
+            "provider_list": [pm.provider_name for pm in provider_mappings],
+            "hotel": serialize_datetime_objects(hotel),
+            "provider_mappings": enhanced_provider_mappings,
+            "locations": [serialize_datetime_objects(loc) for loc in locations],
+            # "chains": [serialize_datetime_objects(chain) for chain in chains],
+            "contacts": [serialize_datetime_objects(contact) for contact in contacts],
         }
-        enhanced_provider_mappings.append(pm_data)
 
-    # Serialize the response with enhanced provider mappings
-    response_data = {
-        "total_supplier": len(provider_mappings),
-        "provider_list": [pm.provider_name for pm in provider_mappings],
-        "hotel": serialize_datetime_objects(hotel),
-        "provider_mappings": enhanced_provider_mappings,
-        "locations": [serialize_datetime_objects(loc) for loc in locations],
-        # "chains": [serialize_datetime_objects(chain) for chain in chains],
-        "contacts": [serialize_datetime_objects(contact) for contact in contacts],
-    }
-
-    # 💸 POINT DEDUCTION ONLY ON SUCCESSFUL REQUEST
-    # Points are deducted only when the request is successful and data is returned
-    if current_user.role == models.UserRole.GENERAL_USER:
-        deduct_points_for_general_user(current_user, db)
-        print(f"💸 Points deducted for successful request by general user: {current_user.email}")
-    elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
-        print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
-
-    return response_data
+        # 💸 POINT DEDUCTION ONLY ON SUCCESSFUL REQUEST
+        # Points are deducted only when the request is successful and data is returned
+        if current_user.role == models.UserRole.GENERAL_USER:
+            deduct_points_for_general_user(current_user, db)
+            print(f"💸 Points deducted for successful request by general user: {current_user.email}")
+        elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+        return response_data
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing mapping data request: {str(e)}"
+        )
 
 
 
 
-@router.get("/get_all_hotel_info", status_code=status.HTTP_200_OK)
+@router.get("/get-all-basic-hotel-info", status_code=status.HTTP_200_OK)
 def get_all_hotels(
+    http_request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     page: int = Query(1, ge=1, description="Page number, starting from 1"),
     limit: int = Query(50, ge=1, le=1000, description="Number of hotels per page (max 1000)"),
@@ -1223,7 +1358,28 @@ def get_all_hotels(
         
     Example: "12345_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890AbCdEfGhIjKlMn"
     """
-
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-all-basic-hotel-info")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
     try:
         # 🚫 NO POINT DEDUCTION for super_user and admin_user
         # Only deduct points for general_user
@@ -1424,13 +1580,6 @@ def get_all_hotels(
             "note": "resume_key is automatically required for subsequent requests"
         }
     }
-
-
-class ProviderProperty(BaseModel):
-    provider_name: str
-
-class ProviderPropertyRequest(BaseModel):
-    provider_property: List[ProviderProperty]
 
 
 def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
@@ -2360,6 +2509,7 @@ class SupplierHotelRequest(BaseModel):
 
 @router.post("/get-all-hotel-basic-info-with-supplier", status_code=status.HTTP_200_OK)
 def get_all_hotel_with_supplier(
+    http_request: Request,
     request: SupplierHotelRequest,
     current_user: Annotated[models.User, Depends(get_current_user)],
     limit_per_page: int = Query(50, ge=1, le=500, description="Number of records per page"),
@@ -2390,6 +2540,29 @@ def get_all_hotel_with_supplier(
     - Pagination metadata (total, current page, resume key)
     - Supplier analytics and counts
     """
+    
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-hotel-with-ittid")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
     try:
         # Validate request
         if not request.supplier_name:

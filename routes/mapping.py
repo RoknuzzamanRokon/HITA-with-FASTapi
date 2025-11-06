@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Hotel, ProviderMapping, Location, RateTypeInfo, User
@@ -13,13 +13,73 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 import secrets, string
 from routes.auth import get_current_user
-
+from middleware.ip_middleware import get_client_ip
 
 router = APIRouter(
     prefix="/v1.0/mapping",
     tags=["Hotel mapping"],
     responses={404: {"description": "Not found"}},
 )
+
+
+
+
+def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
+    """
+    Check if the user's IP is whitelisted
+    
+    Args:
+        user_id: User ID to check whitelist for
+        request: FastAPI request object to extract IP
+        db: Database session
+    
+    Returns:
+        bool: True if IP is whitelisted or no whitelist exists, False if blocked
+    """
+    print(f"🚀 IP Whitelist Function Called - Starting check for user: {user_id}")
+    try:
+        print(f"🔍 IP Whitelist Check - User ID: {user_id}")
+        
+        # Extract client IP using the middleware helper function
+        client_ip = get_client_ip(request)
+        
+        print(f"🌐 Detected Client IP: {client_ip}")
+        
+        if not client_ip:
+            print("⚠️ Could not determine client IP, allowing access (fail open)")
+            return True
+        
+        # Check if user has any IP whitelist entries
+        whitelist_entries = db.query(models.UserIPWhitelist).filter(
+            models.UserIPWhitelist.user_id == user_id,
+            models.UserIPWhitelist.is_active == True
+        ).all()
+        
+        print(f"📋 Found {len(whitelist_entries)} whitelist entries for user")
+        
+        # REQUIRE IP WHITELIST: If no whitelist entries exist, DENY access
+        if not whitelist_entries:
+            print("❌ No whitelist entries found, DENYING access (IP whitelist required)")
+            return False
+        
+        # Check if current IP is in whitelist
+        whitelisted_ips = [entry.ip_address for entry in whitelist_entries]
+        print(f"🔒 Whitelisted IPs: {whitelisted_ips}")
+        
+        is_whitelisted = client_ip in whitelisted_ips
+        print(f"🎯 IP {client_ip} whitelisted: {is_whitelisted}")
+        
+        return is_whitelisted
+        
+    except Exception as e:
+        # If there's an error checking whitelist, fail open (allow access)
+        print(f"❌ Error checking IP whitelist: {e}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        print(f"❌ Exception details: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        return True
+
 
 
 @router.post("/add_rate_type_with_ittid_and_pid", status_code=status.HTTP_201_CREATED)
@@ -376,6 +436,7 @@ class ITTIDMappingRequest(BaseModel):
 
 @router.post("/get-mapping-hotel-with-ittid", status_code=status.HTTP_200_OK)
 def get_mapping_with_ittid(
+    http_request: Request,
     request: ITTIDMappingRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -410,6 +471,26 @@ def get_mapping_with_ittid(
         404: Hotel not found or no accessible mappings
         500: Database or processing errors
     """
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-hotel-with-ittid")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        client_ip = get_client_ip(http_request) or "unknown"
+        
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+        
     try:
         # Validate ITTID
         if not request.ittid or not request.ittid.strip():

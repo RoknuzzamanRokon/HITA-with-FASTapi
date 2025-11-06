@@ -1645,7 +1645,7 @@ def add_analytics_examples(paths):
                                     "total_requests": 45,
                                     "points_used": 450,
                                     "active_days": 12,
-                                    "favorite_endpoints": ["/v1.0/hotel/details", "/v1.0/content/get_all_hotel_info"]
+                                    "favorite_endpoints": ["/v1.0/hotel/details", "/v1.0/content/get-all-basic-hotel-info"]
                                 }
                             ],
                             "activity_trends": {
