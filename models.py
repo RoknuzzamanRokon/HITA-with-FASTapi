@@ -350,3 +350,14 @@ class UserIPWhitelist(Base):
 
     # Relationships
     user = relationship("User", backref="ip_whitelist")
+
+
+class SupplierSummary(Base):
+    __tablename__ = "supplier_summary"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider_name = Column(String(50), unique=True, nullable=False, index=True)
+    total_hotels = Column(Integer, nullable=False, default=0)
+    total_mappings = Column(Integer, nullable=False, default=0)
+    last_updated = Column(DateTime, nullable=True)
+    summary_generated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

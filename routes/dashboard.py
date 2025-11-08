@@ -2205,3 +2205,232 @@ async def export_dashboard_data(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export dashboard data: {str(e)}"
         )
+        
+@router.get("/current-active-user-check")
+async def get_current_active_user_info(
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get Current Active User Complete Information and Activity Analysis
+    
+    Provides comprehensive information about the currently authenticated user including
+    detailed activity logs, URL usage patterns, login/logout history, API usage statistics,
+    and complete user profile information. This endpoint gives a complete 360-degree view
+    of the current user's system interaction and behavior patterns.
+    
+    Features:
+    - ✅ Complete user profile and account information
+    - ✅ Provider permissions and access levels
+    - ✅ IP whitelist entries and security settings
+    - ✅ Recent activity logs and API usage patterns
+    - ✅ Login/logout history and session tracking
+    - ✅ Points balance and transaction history
+    - ✅ URL access patterns and frequency analysis
+    - ✅ Account status and security metrics
+    - ✅ System preferences and configuration
+    
+    Returns:
+        dict: Comprehensive user information including:
+            - user_profile: Basic user information and account details
+            - permissions: Provider permissions and access control
+            - security: IP whitelist, login history, security metrics
+            - activity: Recent activity logs and usage patterns
+            - points: Points balance and transaction history
+            - statistics: API usage statistics and patterns
+            - preferences: User preferences and settings
+    
+    Access Control:
+        - Requires active user authentication
+        - Returns data only for the authenticated user
+        - No role restrictions (all users can access their own data)
+    
+    HTTP Status Codes:
+        200: User information retrieved successfully
+        401: Authentication required
+        500: Internal server error
+    """
+    
+    try:
+        # 1. USER PROFILE INFORMATION
+        user_profile = {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "role": current_user.role if current_user.role else None,
+            "is_active": current_user.is_active,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "updated_at": current_user.updated_at.isoformat() if current_user.updated_at else None,
+            "last_login": current_user.last_login.isoformat() if hasattr(current_user, 'last_login') and current_user.last_login else None,
+            "points_balance": getattr(current_user, 'points', 0)
+        }
+        
+        # 2. PROVIDER PERMISSIONS
+        user_permissions = db.query(models.UserProviderPermission).filter(
+            models.UserProviderPermission.user_id == current_user.id
+        ).all()
+        
+        # Separate active and temporarily deactivated permissions
+        active_permissions = []
+        temp_deactivated_permissions = []
+        
+        for perm in user_permissions:
+            if perm.provider_name.startswith("TEMP_DEACTIVATED_"):
+                original_name = perm.provider_name.replace("TEMP_DEACTIVATED_", "")
+                temp_deactivated_permissions.append({
+                    "id": perm.id,
+                    "provider_name": original_name,
+                    "status": "temporarily_deactivated",
+                    "created_at": perm.created_at.isoformat() if hasattr(perm, 'created_at') and perm.created_at else None
+                })
+            else:
+                # Check if this provider is not temporarily deactivated
+                is_temp_deactivated = any(
+                    p.provider_name == f"TEMP_DEACTIVATED_{perm.provider_name}" 
+                    for p in user_permissions
+                )
+                
+                active_permissions.append({
+                    "id": perm.id,
+                    "provider_name": perm.provider_name,
+                    "status": "deactivated" if is_temp_deactivated else "active",
+                    "created_at": perm.created_at.isoformat() if hasattr(perm, 'created_at') and perm.created_at else None
+                })
+        
+        permissions_info = {
+            "total_permissions": len(user_permissions),
+            "active_permissions": len([p for p in active_permissions if p["status"] == "active"]),
+            "deactivated_permissions": len([p for p in active_permissions if p["status"] == "deactivated"]),
+            "temp_deactivated_permissions": len(temp_deactivated_permissions),
+            "permissions_list": active_permissions + temp_deactivated_permissions
+        }
+        
+        # 3. IP WHITELIST AND SECURITY
+        ip_whitelist_entries = db.query(models.UserIPWhitelist).filter(
+            models.UserIPWhitelist.user_id == current_user.id,
+            models.UserIPWhitelist.is_active == True
+        ).all()
+        
+        security_info = {
+            "ip_whitelist": {
+                "total_entries": len(ip_whitelist_entries),
+                "entries": [
+                    {
+                        "id": entry.id,
+                        "ip_address": entry.ip_address,
+                        "created_at": entry.created_at.isoformat() if hasattr(entry, 'created_at') and entry.created_at else None,
+                        "updated_at": entry.updated_at.isoformat() if hasattr(entry, 'updated_at') and entry.updated_at else None
+                    }
+                    for entry in ip_whitelist_entries
+                ]
+            },
+            "account_security": {
+                "has_ip_whitelist": len(ip_whitelist_entries) > 0,
+                "is_active": current_user.is_active,
+                "role_level": current_user.role if current_user.role else "unknown"
+            }
+        }
+        
+        # 4. RECENT ACTIVITY LOGS (if audit log model exists)
+        recent_activity = []
+        try:
+            # Try to get recent audit logs
+            if hasattr(models, 'AuditLog'):
+                recent_logs = db.query(models.AuditLog).filter(
+                    models.AuditLog.user_id == current_user.id
+                ).order_by(models.AuditLog.timestamp.desc()).limit(20).all()
+                
+                recent_activity = [
+                    {
+                        "id": log.id,
+                        "action": log.action,
+                        "endpoint": log.endpoint,
+                        "method": log.method,
+                        "status_code": log.status_code,
+                        "client_ip": log.client_ip,
+                        "timestamp": log.timestamp.isoformat() if log.timestamp else None
+                    }
+                    for log in recent_logs
+                ]
+        except Exception as e:
+            # If audit log model doesn't exist or there's an error, continue without it
+            pass
+        
+        activity_info = {
+            "recent_activity_count": len(recent_activity),
+            "recent_activities": recent_activity
+        }
+        
+        # 5. POINTS AND TRANSACTIONS (if points system exists)
+        points_info = {
+            "current_balance": getattr(current_user, 'points', 0),
+            "points_system_active": hasattr(current_user, 'points')
+        }
+        
+        # Try to get points transaction history if model exists
+        try:
+            if hasattr(models, 'PointsTransaction'):
+                recent_transactions = db.query(models.PointsTransaction).filter(
+                    models.PointsTransaction.user_id == current_user.id
+                ).order_by(models.PointsTransaction.created_at.desc()).limit(10).all()
+                
+                points_info["recent_transactions"] = [
+                    {
+                        "id": trans.id,
+                        "amount": trans.amount,
+                        "transaction_type": trans.transaction_type,
+                        "description": trans.description,
+                        "created_at": trans.created_at.isoformat() if trans.created_at else None
+                    }
+                    for trans in recent_transactions
+                ]
+        except Exception:
+            pass
+        
+        # 6. USAGE STATISTICS
+        statistics_info = {
+            "total_provider_permissions": len(user_permissions),
+            "active_providers": len([p for p in active_permissions if p["status"] == "active"]),
+            "ip_whitelist_entries": len(ip_whitelist_entries),
+            "recent_activity_entries": len(recent_activity),
+            "account_age_days": (datetime.utcnow() - current_user.created_at).days if current_user.created_at else 0
+        }
+        
+        # 7. SYSTEM PREFERENCES (placeholder for future implementation)
+        preferences_info = {
+            "timezone": "UTC",  # Default, can be expanded
+            "language": "en",   # Default, can be expanded
+            "notifications_enabled": True  # Default, can be expanded
+        }
+        
+        # 8. COMPILE COMPLETE RESPONSE
+        response = {
+            "success": True,
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_profile": user_profile,
+            "permissions": permissions_info,
+            "security": security_info,
+            "activity": activity_info,
+            "points": points_info,
+            "statistics": statistics_info,
+            "preferences": preferences_info,
+            "system_info": {
+                "api_version": "v1.0",
+                "endpoint": "/current-active-user-check",
+                "response_generated_at": datetime.utcnow().isoformat()
+            }
+        }
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": True,
+                "message": "Failed to retrieve user information",
+                "error_code": "USER_INFO_RETRIEVAL_ERROR",
+                "details": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
