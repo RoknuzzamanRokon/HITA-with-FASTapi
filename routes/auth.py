@@ -1062,7 +1062,7 @@ async def get_all_users(
     ]
 
 
-@router.put("/super/users/{user_id}/activate")
+@router.put("/admin/users/{user_id}/activate")
 async def activate_user(
     user_id: str,
     admin: Annotated[models.User, Depends(require_admin)],

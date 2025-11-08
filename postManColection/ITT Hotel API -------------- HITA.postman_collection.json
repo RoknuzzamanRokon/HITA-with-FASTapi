@@ -2082,7 +2082,7 @@
 									}
 								],
 								"url": {
-									"raw": "{{host}}/v1.0/user/check/user_info/{{user_id}}/",
+									"raw": "{{host}}/v1.0/user/check-user-info/{{user_id}}/",
 									"host": [
 										"{{host}}"
 									],

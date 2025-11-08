@@ -577,7 +577,7 @@ This API module provides complete user lifecycle management, point allocation sy
 | `/reset_point/{user_id}/` | POST | Reset user points to zero (admin operation) |
 | `/points-check` | GET | Get detailed point history and transactions |
 | `/check/all` | GET | List all users with enhanced filtering and pagination |
-| `/check/user_info/{user_id}` | GET | Get specific user information and details |
+| `/check-user-info/{user_id}` | GET | Get specific user information and details |
 | `/active_my_supplier` | GET | Get user's accessible supplier permissions |
 | `/check-available-suppliers` | GET | Get complete system supplier catalog |
 | `/list` | GET | Enhanced paginated user listing with search |

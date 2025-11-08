@@ -1273,77 +1273,162 @@ def convert_to_legacy_format(user_response: UserListResponse):
 #     return response
 
 
-@router.get("/check/user_info/{user_id}")
+@router.get("/check-user-info/{user_id}")
 def check_user_info(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Retrieve detailed info for a specific user.
+    Retrieve detailed info for a specific user (created by current user only).
 
-    - Access restricted to SUPER_USER or ADMIN_USER.
-    - Only returns info for users created by the current user.
+    This endpoint allows admin and super users to view detailed information
+    about users they have created. Access is restricted to ensure users can
+    only view information about their own created users.
+
+    Access Control:
+    - Super User: Can view users they created
+    - Admin User: Can view users they created
+    - General User: Access denied
+
+    Ownership Validation:
+    - Checks if the user was created by the current admin/super user
+    - Validates using the created_by field which contains creator's email
+    - Returns 404 if user not found or not created by current user
 
     Returns:
     - User ID, username, email
     - Role, active status, created_by
-    - Points summary (total, current, paid status, total RQ)
-    - Recent activity status (using_rq_status)
+    - Points summary (total, current, paid status, total requests)
+    - Recent activity status (Active/Inactive based on last 7 days)
+    - Active suppliers list
+
+    Raises:
+    - 403: Access denied for general users
+    - 404: User not found or not created by current user
+    - 500: Internal server error
     """
+    
+    try:
+        # Access control - only super_user and admin_user can access
+        if current_user.role not in [
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user or admin_user can access this endpoint.",
+            )
 
-    if current_user.role not in [
-        models.UserRole.SUPER_USER,
-        models.UserRole.ADMIN_USER,
-    ]:
+        # Find the user
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        
+        # Validate ownership - check if user was created by current user
+        # The created_by field format is: "role: email" (e.g., "super_user: admin@example.com")
+        is_owner = False
+        
+        if user.created_by:
+            # Extract email from created_by field
+            # Format examples: "super_user: admin@example.com", "admin_user: admin@example.com"
+            if ":" in user.created_by:
+                creator_email = user.created_by.split(":", 1)[1].strip()
+                is_owner = creator_email == current_user.email
+            else:
+                # Fallback: check if created_by contains current user's email
+                is_owner = current_user.email in user.created_by
+        
+        # Super users can view all users (optional - remove if you want strict ownership)
+        if current_user.role == models.UserRole.SUPER_USER:
+            is_owner = True  # Super users can view any user
+        
+        if not is_owner:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found or you do not have permission to view this user.",
+            )
+
+        # Get user points information
+        user_points = (
+            db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
+        )
+        
+        # Determine paid status
+        if user.role == models.UserRole.SUPER_USER:
+            paid_status = "Super User - Unlimited Points"
+        else:
+            paid_status = "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
+        
+        points_info = {
+            "total_points": user_points.total_points if user_points else 0,
+            "current_points": user_points.current_points if user_points else 0,
+            "total_used_points": user_points.total_used_points if user_points else 0,
+            "paid_status": paid_status,
+            "total_rq": db.query(models.PointTransaction)
+            .filter(models.PointTransaction.giver_id == user.id)
+            .count(),
+        }
+        
+        # Get recent activity status (last 7 days)
+        last_7_days = datetime.utcnow() - timedelta(days=7)
+        recent_transactions = (
+            db.query(models.PointTransaction)
+            .filter(
+                or_(
+                    models.PointTransaction.giver_id == user.id,
+                    models.PointTransaction.receiver_id == user.id
+                ),
+                models.PointTransaction.created_at >= last_7_days,
+            )
+            .count()
+        )
+        using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
+        
+        # Get active suppliers
+        suppliers = [
+            perm.provider_name
+            for perm in db.query(models.UserProviderPermission)
+            .filter(models.UserProviderPermission.user_id == user.id)
+            .all()
+        ]
+        active_suppliers = list(set(suppliers))
+
+        return {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "points": points_info,
+            "active_suppliers": active_suppliers,
+            "total_suppliers": len(active_suppliers),
+            "created_at": user.created_at,
+            "updated_at": user.updated_at,
+            "user_status": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "is_active": user.is_active,
+            "using_rq_status": using_rq_status,
+            "created_by": user.created_by,
+            "viewed_by": {
+                "user_id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+            }
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Handle unexpected errors
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user or admin_user can access this endpoint.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving user information: {str(e)}"
         )
-
-    created_by_str = f"{current_user.role.lower()}: {current_user.email}"
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user or user.created_by != created_by_str:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found or you do not have permission to view this user.",
-        )
-
-    user_points = (
-        db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
-    )
-    paid_status = "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
-    points_info = {
-        "total_points": user_points.total_points if user_points else 0,
-        "current_points": user_points.current_points if user_points else 0,
-        "paid_status": paid_status,
-        "total_rq": db.query(models.PointTransaction)
-        .filter(models.PointTransaction.giver_id == user.id)
-        .count(),
-    }
-    last_7_days = datetime.utcnow() - timedelta(days=7)
-    recent_transactions = (
-        db.query(models.PointTransaction)
-        .filter(
-            (models.PointTransaction.giver_id == user.id)
-            | (models.PointTransaction.receiver_id == user.id),
-            models.PointTransaction.created_at >= last_7_days,
-        )
-        .count()
-    )
-    using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
-
-    return {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "points": points_info,
-        "created_at": user.created_at,
-        "user_status": user.role,
-        "is_active": user.is_active,
-        "using_rq_status": using_rq_status,
-        "created_by": user.created_by,
-    }
 
 
 @router.get("/active_my_supplier")
@@ -1893,7 +1978,7 @@ async def bulk_user_operations(
         )
 
 
-@router.put("/{user_id}", response_model=UserListResponse)
+@router.put("/update/{user_id}", response_model=UserListResponse)
 async def update_user(
     user_id: str,
     user_updates: UserUpdateRequest,
@@ -1954,7 +2039,7 @@ async def update_user(
         )
 
 
-@router.delete("/{user_id}")
+@router.delete("/delete/{user_id}")
 async def delete_user(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)] = None,
@@ -2090,3 +2175,177 @@ async def health_check():
         "version": "1.0.0"
     }
 
+
+@router.get("/all-general-user")
+async def get_all_unpaid_general_users(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(25, ge=1, le=100, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search by username or email"),
+    current_user: Annotated[models.User, Depends(get_current_user)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+):
+    """
+    Get all general users who are not paid (unpaid status).
+    
+    This endpoint returns a list of general users who have zero or no points,
+    indicating they haven't been allocated any points yet (unpaid status).
+    
+    Features:
+    - Pagination support (page, limit)
+    - Search by username or email
+    - Only returns general users with unpaid status
+    - Includes user details, points info, and supplier access
+    
+    Access Control:
+    - Super User: Can view all unpaid general users
+    - Admin User: Can view all unpaid general users
+    - General User: Access denied
+    
+    Returns:
+    - users: List of unpaid general users with details
+    - pagination: Page info (page, limit, total, total_pages, etc.)
+    - statistics: Summary counts
+    
+    Raises:
+    - 403: Access denied for general users
+    - 500: Internal server error
+    """
+    
+    try:
+        # Access control - only super_user and admin_user can access
+        if current_user.role not in [
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user or admin_user can access this endpoint.",
+            )
+        
+        # Base query for general users
+        query = db.query(models.User).filter(
+            models.User.role == models.UserRole.GENERAL_USER
+        )
+        
+        # Join with UserPoint to filter unpaid users
+        # Unpaid means: no points record OR current_points = 0
+        query = query.outerjoin(
+            models.UserPoint,
+            models.User.id == models.UserPoint.user_id
+        ).filter(
+            or_(
+                models.UserPoint.user_id.is_(None),  # No points record
+                models.UserPoint.current_points == 0,  # Zero points
+                models.UserPoint.current_points.is_(None)  # Null points
+            )
+        )
+        
+        # Apply search filter if provided
+        if search:
+            search_filter = f"%{search}%"
+            query = query.filter(
+                or_(
+                    models.User.username.ilike(search_filter),
+                    models.User.email.ilike(search_filter)
+                )
+            )
+        
+        # Get total count before pagination
+        total_count = query.count()
+        
+        # Calculate pagination
+        total_pages = (total_count + limit - 1) // limit
+        offset = (page - 1) * limit
+        
+        # Apply pagination
+        users = query.order_by(models.User.created_at.desc()).offset(offset).limit(limit).all()
+        
+        # Build user list with details
+        user_list = []
+        for user in users:
+            # Get user points
+            user_points = db.query(models.UserPoint).filter(
+                models.UserPoint.user_id == user.id
+            ).first()
+            
+            # Get active suppliers
+            suppliers = [
+                perm.provider_name
+                for perm in db.query(models.UserProviderPermission)
+                .filter(models.UserProviderPermission.user_id == user.id)
+                .all()
+            ]
+            active_suppliers = list(set(suppliers))
+            
+            # Get recent activity status
+            last_7_days = datetime.utcnow() - timedelta(days=7)
+            recent_transactions = db.query(models.PointTransaction).filter(
+                or_(
+                    models.PointTransaction.giver_id == user.id,
+                    models.PointTransaction.receiver_id == user.id
+                ),
+                models.PointTransaction.created_at >= last_7_days,
+            ).count()
+            
+            activity_status = "Active" if recent_transactions > 0 else "Inactive"
+            
+            # Build user info
+            user_info = {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+                "is_active": user.is_active,
+                "created_at": user.created_at,
+                "updated_at": user.updated_at,
+                "created_by": user.created_by,
+                "points": {
+                    "total_points": user_points.total_points if user_points else 0,
+                    "current_points": user_points.current_points if user_points else 0,
+                    "total_used_points": user_points.total_used_points if user_points else 0,
+                    "paid_status": "Unpaid"
+                },
+                "active_suppliers": active_suppliers,
+                "total_suppliers": len(active_suppliers),
+                "activity_status": activity_status,
+                "total_requests": db.query(models.PointTransaction).filter(
+                    models.PointTransaction.giver_id == user.id
+                ).count()
+            }
+            
+            user_list.append(user_info)
+        
+        # Build response
+        response = {
+            "users": user_list,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            },
+            "statistics": {
+                "total_unpaid_users": total_count,
+                "showing": len(user_list)
+            },
+            "requested_by": {
+                "user_id": current_user.id,
+                "username": current_user.username,
+                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+            },
+            "timestamp": datetime.utcnow()
+        }
+        
+        return response
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving unpaid users: {str(e)}"
+        )
