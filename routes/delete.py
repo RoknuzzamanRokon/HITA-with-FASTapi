@@ -46,26 +46,62 @@ def delete_user(
     
     **⚠️ Warning:** This action is irreversible. All user data will be permanently lost.
     """
-    # Check if the current user is a super_user
-    if current_user.role != models.UserRole.SUPER_USER:
+    try:
+        # Check if the current user is a super_user
+        if current_user.role != models.UserRole.SUPER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user can delete users."
+            )
+
+        # Find the user by ID
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found."
+            )
+
+        # Delete related records first to avoid foreign key constraint errors
+        
+        # Delete user points
+        db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).delete()
+        
+        # Delete user provider permissions
+        db.query(models.UserProviderPermission).filter(models.UserProviderPermission.user_id == user_id).delete()
+        
+        # Delete user sessions
+        db.query(models.UserSession).filter(models.UserSession.user_id == user_id).delete()
+        
+        # Delete user activity logs (optional - you may want to keep these for compliance)
+        db.query(models.UserActivityLog).filter(models.UserActivityLog.user_id == user_id).delete()
+        
+        # Delete IP whitelist entries
+        db.query(models.UserIPWhitelist).filter(models.UserIPWhitelist.user_id == user_id).delete()
+        
+        # Delete point transactions where user is giver or receiver
+        db.query(models.PointTransaction).filter(
+            (models.PointTransaction.giver_id == user_id) | 
+            (models.PointTransaction.receiver_id == user_id)
+        ).delete(synchronize_session=False)
+        
+        # Finally, delete the user
+        db.delete(user)
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"User with ID {user_id} has been deleted successfully."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user can delete users."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete user: {str(e)}"
         )
-
-    # Find the user by ID
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found."
-        )
-
-    # Delete the user
-    db.delete(user)
-    db.commit()
-
-    return {"message": f"User with ID {user_id} has been deleted."}
 
 
 @router.delete("/delete_super_user/{user_id}", include_in_schema = False)
@@ -100,26 +136,62 @@ def delete_supper_user(
     
     **⚠️ Critical Warning:** Deleting super users affects system administration capabilities.
     """
-    # Check if the current user is a super_user
-    if current_user.role != models.UserRole.SUPER_USER:
+    try:
+        # Check if the current user is a super_user
+        if current_user.role != models.UserRole.SUPER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user can delete users."
+            )
+
+        # Find the user by ID
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found."
+            )
+
+        # Delete related records first to avoid foreign key constraint errors
+        
+        # Delete user points
+        db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).delete()
+        
+        # Delete user provider permissions
+        db.query(models.UserProviderPermission).filter(models.UserProviderPermission.user_id == user_id).delete()
+        
+        # Delete user sessions
+        db.query(models.UserSession).filter(models.UserSession.user_id == user_id).delete()
+        
+        # Delete user activity logs (optional - you may want to keep these for compliance)
+        db.query(models.UserActivityLog).filter(models.UserActivityLog.user_id == user_id).delete()
+        
+        # Delete IP whitelist entries
+        db.query(models.UserIPWhitelist).filter(models.UserIPWhitelist.user_id == user_id).delete()
+        
+        # Delete point transactions where user is giver or receiver
+        db.query(models.PointTransaction).filter(
+            (models.PointTransaction.giver_id == user_id) | 
+            (models.PointTransaction.receiver_id == user_id)
+        ).delete(synchronize_session=False)
+        
+        # Finally, delete the user
+        db.delete(user)
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"Super user with ID {user_id} has been deleted successfully."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user can delete users."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete super user: {str(e)}"
         )
-
-    # Find the user by ID
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found."
-        )
-
-    # Delete the user
-    db.delete(user)
-    db.commit()
-
-    return {"message": f"User with ID {user_id} has been deleted."}
 
 
 @router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK, include_in_schema = False)

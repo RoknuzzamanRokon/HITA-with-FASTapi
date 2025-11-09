@@ -346,7 +346,7 @@ def activate_suppliers(
             detail=f"An error occurred while activating suppliers: {str(e)}"
         )
 
-@router.post("/ip/active_permission", status_code=status.HTTP_200_OK)
+@router.post("/ip/active-permission", status_code=status.HTTP_200_OK)
 def activate_ip_permission(
     request: IPWhitelistRequest,
     current_user: Annotated[User, Depends(get_current_user)],

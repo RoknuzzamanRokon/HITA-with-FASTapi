@@ -1280,21 +1280,19 @@ def check_user_info(
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Retrieve detailed info for a specific user (created by current user only).
+    Retrieve detailed info for a specific user.
 
-    This endpoint allows admin and super users to view detailed information
-    about users they have created. Access is restricted to ensure users can
-    only view information about their own created users.
+    This endpoint allows users to view detailed information based on their role:
 
     Access Control:
-    - Super User: Can view users they created
+    - Super User: Can view all users
     - Admin User: Can view users they created
-    - General User: Access denied
+    - General User: Can only view their own information
 
     Ownership Validation:
-    - Checks if the user was created by the current admin/super user
-    - Validates using the created_by field which contains creator's email
-    - Returns 404 if user not found or not created by current user
+    - Super users can view any user
+    - Admin users can view users they created
+    - General users can only view themselves (user_id must match their own ID)
 
     Returns:
     - User ID, username, email
@@ -1304,22 +1302,12 @@ def check_user_info(
     - Active suppliers list
 
     Raises:
-    - 403: Access denied for general users
+    - 403: Access denied (general user trying to view another user)
     - 404: User not found or not created by current user
     - 500: Internal server error
     """
     
     try:
-        # Access control - only super_user and admin_user can access
-        if current_user.role not in [
-            models.UserRole.SUPER_USER,
-            models.UserRole.ADMIN_USER,
-        ]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super_user or admin_user can access this endpoint.",
-            )
-
         # Find the user
         user = db.query(models.User).filter(models.User.id == user_id).first()
         
@@ -1329,25 +1317,37 @@ def check_user_info(
                 detail="User not found.",
             )
         
-        # Validate ownership - check if user was created by current user
-        # The created_by field format is: "role: email" (e.g., "super_user: admin@example.com")
-        is_owner = False
+        # Validate access based on role
+        is_allowed = False
         
-        if user.created_by:
-            # Extract email from created_by field
-            # Format examples: "super_user: admin@example.com", "admin_user: admin@example.com"
-            if ":" in user.created_by:
-                creator_email = user.created_by.split(":", 1)[1].strip()
-                is_owner = creator_email == current_user.email
-            else:
-                # Fallback: check if created_by contains current user's email
-                is_owner = current_user.email in user.created_by
-        
-        # Super users can view all users (optional - remove if you want strict ownership)
+        # Super users can view all users
         if current_user.role == models.UserRole.SUPER_USER:
-            is_owner = True  # Super users can view any user
+            is_allowed = True
         
-        if not is_owner:
+        # General users can only view their own information
+        elif current_user.role == models.UserRole.GENERAL_USER:
+            if user_id == current_user.id:
+                is_allowed = True
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only view your own information.",
+                )
+        
+        # Admin users can view users they created OR users with "own:" prefix
+        elif current_user.role == models.UserRole.ADMIN_USER:
+            if user.created_by:
+                # Check if user created their own account (starts with "own:")
+                if user.created_by.startswith("own:"):
+                    is_allowed = True  # Admin can view self-created users
+                # Otherwise, check if admin created this user
+                elif ":" in user.created_by:
+                    creator_email = user.created_by.split(":", 1)[1].strip()
+                    is_allowed = creator_email == current_user.email
+                else:
+                    is_allowed = current_user.email in user.created_by
+        
+        if not is_allowed:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found or you do not have permission to view this user.",
@@ -1403,6 +1403,7 @@ def check_user_info(
             "username": user.username,
             "email": user.email,
             "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "api_key": user.api_key,
             "points": points_info,
             "active_suppliers": active_suppliers,
             "total_suppliers": len(active_suppliers),
