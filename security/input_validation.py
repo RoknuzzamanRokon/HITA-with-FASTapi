@@ -20,13 +20,13 @@ class SecurityConfig:
     """Security configuration constants"""
     
     # Password security requirements
-    MIN_PASSWORD_LENGTH = 12  # Increased from 8 for better security
+    MIN_PASSWORD_LENGTH = 6  # Minimum 6 characters only
     MAX_PASSWORD_LENGTH = 128
-    REQUIRE_UPPERCASE = True
-    REQUIRE_LOWERCASE = True
-    REQUIRE_DIGITS = True
-    REQUIRE_SPECIAL_CHARS = True
-    MIN_SPECIAL_CHARS = 2
+    REQUIRE_UPPERCASE = False
+    REQUIRE_LOWERCASE = False
+    REQUIRE_DIGITS = False
+    REQUIRE_SPECIAL_CHARS = False
+    MIN_SPECIAL_CHARS = 0
     
     # Username security
     MIN_USERNAME_LENGTH = 3
@@ -141,34 +141,9 @@ class AdvancedPasswordValidator:
                 f'Password must contain at least {self.config.MIN_SPECIAL_CHARS} special characters'
             )
         
-        # Common password check
-        if password.lower() in self.common_passwords:
-            result['is_valid'] = False
-            result['errors'].append('Password is too common. Please choose a more secure password')
-        
-        # Keyboard pattern check
-        password_lower = password.lower()
-        for pattern in self.keyboard_patterns:
-            if pattern in password_lower or pattern[::-1] in password_lower:
-                result['warnings'].append('Password contains keyboard patterns which may be less secure')
-                break
-        
-        # Sequential characters check
-        if self._has_sequential_chars(password):
-            result['warnings'].append('Password contains sequential characters which may be less secure')
-        
-        # Repeated characters check
-        if self._has_repeated_chars(password):
-            result['warnings'].append('Password contains repeated character patterns')
-        
-        # Calculate strength score
+        # Calculate strength score (for informational purposes only)
         result['strength_score'] = self._calculate_strength_score(password)
         result['strength_level'] = self._get_strength_level(result['strength_score'])
-        
-        # Minimum strength requirement
-        if result['strength_score'] < 60:
-            result['is_valid'] = False
-            result['errors'].append('Password is too weak. Please create a stronger password')
         
         return result
     

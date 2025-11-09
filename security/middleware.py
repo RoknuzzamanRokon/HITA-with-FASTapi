@@ -100,9 +100,14 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             
         except HTTPException as e:
             # Log security-related HTTP exceptions
-            if audit_logger and e.status_code in [401, 403, 429]:
+            if audit_logger and e.status_code in [401, 403, 422, 429]:
                 await self._log_security_event(request, e, audit_logger)
-            raise e
+            
+            # Convert HTTPException to JSONResponse
+            return JSONResponse(
+                status_code=e.status_code,
+                content=e.detail if isinstance(e.detail, dict) else {"error": True, "message": str(e.detail)}
+            )
             
         except Exception as e:
             # Log unexpected errors
