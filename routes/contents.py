@@ -2309,7 +2309,7 @@ def _load_hotel_data_cache():
         return {}
 
 
-@router.post("/search_with_hotel_name", status_code=status.HTTP_200_OK)
+@router.post("/search-with-hotel-name", status_code=status.HTTP_200_OK)
 def search_hotel_with_name(
     request: HotelNameRequest = Body(...),
 ):
@@ -2424,7 +2424,7 @@ def _load_hotel_names_cache():
 
 
 @router.get("/autocomplete", status_code=status.HTTP_200_OK)
-def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel name", min_length=1)):
+def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel name", min_length=2)):
     """
     Hotel Name Autocomplete Search (Optimized)
     

@@ -749,6 +749,203 @@ async def search_locations(
         raise HTTPException(status_code=500, detail=f"Error searching locations: {str(e)}")
 
 
+# Hotel Search Models
+class HotelSearchRequest(BaseModel):
+    lat: str
+    lon: str
+    radius: str 
+    supplier: List[str]
+    country_code: str
+    
+    class Config:
+        from_attributes = True
+
+
+class HotelItem(BaseModel):
+    a: float 
+    b: float  
+    name: str
+    addr: str
+    type: Optional[str] = "" 
+    photo: str
+    star: float
+    vervotech: str
+    giata: Optional[str]
+    
+    class Config:
+        from_attributes = True
+        extra = "allow"  
+
+
+class HotelSearchResponse(BaseModel):
+    total_hotels: int
+    hotels: List[HotelItem]
+    
+    class Config:
+        from_attributes = True
+
+
+def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate the distance between two points on Earth using the Haversine formula.
+    
+    Args:
+        lat1, lon1: Latitude and longitude of first point
+        lat2, lon2: Latitude and longitude of second point
+    
+    Returns:
+        Distance in kilometers
+    """
+    from math import radians, sin, cos, sqrt, atan2
+    
+    # Earth's radius in kilometers
+    R = 6371.0
+    
+    # Convert degrees to radians
+    lat1_rad = radians(lat1)
+    lon1_rad = radians(lon1)
+    lat2_rad = radians(lat2)
+    lon2_rad = radians(lon2)
+    
+    # Differences
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    # Haversine formula
+    a = sin(dlat / 2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    
+    distance = R * c
+    return distance
+
+
+@router.post("/search-hotel-with-location", response_model=HotelSearchResponse)
+async def search_hotel_with_location(request: HotelSearchRequest):
+    """
+    Search hotels within a specified radius from a given location.
+    
+    **What it does:**
+    Searches for hotels from specified suppliers within a given radius of coordinates.
+    Uses JSON files stored in static/countryJson/{supplier}/{country_code}.json
+    
+    **Request body:**
+    ```json
+    {
+        "lat": "25.2048493",
+        "lon": "55.2707828",
+        "radius": "10",
+        "supplier": ["agoda"],
+        "country_code": "AI"
+    }
+    ```
+    
+    **Response format:**
+    ```json
+    {
+        "total_hotels": 2,
+        "hotels": [
+            {
+                "a": 18.17,
+                "b": -63.1423,
+                "name": "Sheriva Luxury Villas and Suites",
+                "addr": "Maundays Bay Rd",
+                "type": "Villa",
+                "photo": "https://...",
+                "star": 4.0,
+                "vervotech": "15392205",
+                "giata": "291678",
+                "agoda": ["55395643"]
+            }
+        ]
+    }
+    ```
+    
+    **Parameters:**
+    - lat: Latitude of search center
+    - lon: Longitude of search center
+    - radius: Search radius in kilometers
+    - supplier: List of suppliers to search (e.g., ["agoda"])
+    - country_code: ISO country code (e.g., "AI")
+    """
+    import json
+    import os
+    from pathlib import Path
+    
+    try:
+        # Convert input parameters
+        search_lat = float(request.lat)
+        search_lon = float(request.lon)
+        radius_km = float(request.radius)
+        
+        all_hotels = []
+        
+        # Process each supplier
+        for supplier in request.supplier:
+            # Construct file path
+            json_file_path = Path(f"static/countryJson/{supplier}/{request.country_code}.json")
+            
+            # Check if file exists
+            if not json_file_path.exists():
+                continue
+            
+            # Read JSON file
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                hotels_data = json.load(f)
+            
+            # Filter hotels within radius
+            for hotel in hotels_data:
+                hotel_lat = hotel.get('lat')
+                hotel_lon = hotel.get('lon')
+                
+                if hotel_lat is None or hotel_lon is None:
+                    continue
+                
+                # Calculate distance
+                distance = calculate_distance(search_lat, search_lon, hotel_lat, hotel_lon)
+                
+                # Check if within radius
+                if distance <= radius_km:
+                    # Transform to output format
+                    hotel_item = {
+                        "a": hotel_lat,
+                        "b": hotel_lon,
+                        "name": hotel.get('name') or '',
+                        "addr": hotel.get('addr') or '',
+                        "type": hotel.get('ptype') or '',
+                        "photo": hotel.get('photo') or '',
+                        "star": hotel.get('star', 0.0),
+                        "vervotech": hotel.get('vervotech') or '',
+                        "giata": hotel.get('giata'),
+                    }
+                    
+                    # Add supplier-specific IDs
+                    if supplier in hotel:
+                        hotel_item[supplier] = hotel[supplier]
+                    
+                    all_hotels.append(hotel_item)
+        
+        return {
+            "total_hotels": len(all_hotels),
+            "hotels": all_hotels
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid input parameters: {str(e)}"
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Hotel data not found for the specified country/supplier"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error searching hotels: {str(e)}"
+        )
+
+
 @router.get("/{location_id}", response_model=LocationDetailResponse)
 async def get_location_by_id(location_id: int, db: Session = Depends(get_db)):
     """
@@ -799,3 +996,8 @@ async def get_location_by_id(location_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching location: {str(e)}")
+
+
+
+
+
