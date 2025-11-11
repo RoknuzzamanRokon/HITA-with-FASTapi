@@ -985,7 +985,8 @@ async def get_hotels_using_ittid_list(
                             "ittid": mapping.ittid,
                             "provider_name": mapping.provider_name,
                             "provider_id": mapping.provider_id,
-                            "full_details": hotel_details  # Include full hotel details
+                            "updated_at": mapping.updated_at,
+                            "full_details": hotel_details  
                         }
                         formatted_provider_mappings.append(mapping_data)
 
@@ -1039,7 +1040,8 @@ async def get_hotels_using_ittid_list(
                             "ittid": mapping.ittid,
                             "provider_name": mapping.provider_name,
                             "provider_id": mapping.provider_id,
-                            "full_details": hotel_details  # Include full hotel details
+                            "updated_at": mapping.updated_at,
+                            "full_details": hotel_details 
                         }
                         formatted_provider_mappings.append(mapping_data)
 
@@ -1265,6 +1267,7 @@ async def get_hotel_using_ittid(
                 "ittid": pm.ittid,
                 "provider_name": pm.provider_name,
                 "provider_id": pm.provider_id,
+                "updated_at": pm.updated_at,
                 "full_details": hotel_details
             }
             enhanced_provider_mappings.append(pm_data)
@@ -2423,6 +2426,43 @@ def _load_hotel_names_cache():
         return []
 
 
+# Global cache for detailed hotel data
+_hotel_details_cache = None
+
+def _load_hotel_details_cache():
+    """Load detailed hotel data into memory cache for autocomplete-all"""
+    global _hotel_details_cache
+    if _hotel_details_cache is not None:
+        return _hotel_details_cache
+    
+    csv_path = "static/hotelcontent/itt_hotel_basic_info.csv"
+    hotel_data = []
+    
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                if row.get("Name"):
+                    hotel_info = {
+                        "name": row["Name"].strip(),
+                        "address": row.get("AddressLine1", "").strip(),
+                        "city": row.get("CityName", "").strip(),
+                        "country": row.get("CountryName", "").strip(),
+                        "country_code": row.get("CountryCode", "").strip(),
+                        "latitude": row.get("Latitude", "").strip(),
+                        "longitude": row.get("Longitude", "").strip()
+                    }
+                    if hotel_info["name"]:
+                        hotel_data.append(hotel_info)
+        
+        # Sort by name for better user experience
+        hotel_data.sort(key=lambda x: x["name"])
+        _hotel_details_cache = hotel_data
+        return hotel_data
+    except Exception:
+        return []
+
+
 @router.get("/autocomplete", status_code=status.HTTP_200_OK)
 def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel name", min_length=2)):
     """
@@ -2479,6 +2519,103 @@ def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel n
             name for name in hotel_names 
             if name.lower().startswith(search_query)
         ][:20]  # Limit to 20 results
+        
+        return {
+            "results": suggestions,
+            "count": len(suggestions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Autocomplete error: {str(e)}"
+        )
+
+
+@router.get("/autocomplete-all", status_code=status.HTTP_200_OK)
+def autocomplete_hotel_all(query: str = Query(..., description="Search query for hotel name, address, city, or country", min_length=2)):
+    """
+    Hotel Autocomplete Search with Full Details (Optimized)
+    
+    Ultra-fast autocomplete suggestions with complete hotel information.
+    Searches across Name, AddressLine1, CityName, and CountryName fields.
+    
+    Features:
+    - In-memory cached hotel data for instant lookup
+    - Case-insensitive matching across multiple fields
+    - Returns complete hotel details (name, city, country, coordinates, etc.)
+    - Limited results (max 20) for performance
+    
+    Args:
+        query (str): Search query to match against hotel name, address, city, or country (min 2 characters)
+    
+    Returns:
+        dict: Autocomplete results containing:
+            - results: List of matching hotels with full details (max 20 results)
+            - count: Number of results returned
+    
+    Performance:
+        - First request: ~100-200ms (loads cache)
+        - Subsequent requests: <10ms (uses cache)
+        
+    Example Request:
+        GET /autocomplete-all?query=Grand
+        
+    Example Response:
+        {
+            "results": [
+                {
+                    "name": "Grand Hotel Central",
+                    "country_code": "ES",
+                    "longitude": "2.1734",
+                    "latitude": "41.3851",
+                    "city": "Barcelona",
+                    "country": "Spain"
+                }
+            ],
+            "count": 1
+        }
+    """
+    try:
+        # Validate input
+        query = query.strip()
+        if not query:
+            return {"results": [], "count": 0}
+        
+        # Load cache if not already loaded
+        hotel_data = _load_hotel_details_cache()
+        
+        if not hotel_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Hotel database not available"
+            )
+        
+        # Search across multiple fields
+        search_query = query.lower()
+        suggestions = []
+        
+        for hotel in hotel_data:
+            # Check if query matches any of the fields
+            if (search_query in hotel["name"].lower() or
+                search_query in hotel["address"].lower() or
+                search_query in hotel["city"].lower() or
+                search_query in hotel["country"].lower()):
+                
+                suggestions.append({
+                    "name": hotel["name"],
+                    "country_code": hotel["country_code"],
+                    "longitude": hotel["longitude"],
+                    "latitude": hotel["latitude"],
+                    "city": hotel["city"],
+                    "country": hotel["country"]
+                })
+                
+                # Limit to 20 results for performance
+                if len(suggestions) >= 20:
+                    break
         
         return {
             "results": suggestions,

@@ -56,12 +56,6 @@ def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
         print(f"Error checking IP whitelist: {str(e)}")
         return False
     
-# Response Models
-class CityResponse(BaseModel):
-    city_name: str
-    
-    class Config:
-        from_attributes = True
 
 class CitiesListResponse(BaseModel):
     total_city: int
@@ -83,22 +77,9 @@ class CountriesListResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class CountryCodeResponse(BaseModel):
-    country_code: str
-    
-    class Config:
-        from_attributes = True
-
 class CountryCodesListResponse(BaseModel):
     total_country_code: int
     country_code: List[str]
-    
-    class Config:
-        from_attributes = True
-
-class CityWithCountryResponse(BaseModel):
-    city_name: str
-    country_name: str
     
     class Config:
         from_attributes = True
@@ -133,6 +114,69 @@ class LocationDetailResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+# Hotel Search Models
+class HotelSearchRequest(BaseModel):
+    lat: str
+    lon: str
+    radius: str 
+    supplier: List[str]
+    country_code: str
+    
+    class Config:
+        from_attributes = True
+
+class HotelItem(BaseModel):
+    a: float 
+    b: float  
+    name: str
+    addr: str
+    type: Optional[str] = "" 
+    photo: str
+    star: float
+    vervotech: str
+    giata: Optional[str]
+    
+    class Config:
+        from_attributes = True
+        extra = "allow"  
+
+class HotelSearchResponse(BaseModel):
+    total_hotels: int
+    hotels: List[HotelItem]
+    
+    class Config:
+        from_attributes = True
+
+class CityByCountryItem(BaseModel):
+    country_name: str
+    country_code: str
+    total_city: int
+    last_update: str
+    city_list: List[str]
+    
+    class Config:
+        from_attributes = True
+
+class CitiesByCountryResponse(BaseModel):
+    data: List[CityByCountryItem]
+    
+    class Config:
+        from_attributes = True
+
+class CountryFilterRequest(BaseModel):
+    country_name: Optional[str] = None
+    country_code: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class CountryISOFilterRequest(BaseModel):
+    country_code: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
 
 
 @router.get("/cities", response_model=CitiesListResponse)
@@ -177,45 +221,6 @@ async def get_all_cities(db: Session = Depends(get_db)):
         return {
             "total_city": len(city_names),
             "city_name": sorted(city_names)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching cities: {str(e)}")
-
-
-@router.get("/cities/fast", response_model=CitiesListResponse)
-async def get_all_cities_fast(db: Session = Depends(get_db)):
-    """
-    ULTRA-FAST version of cities endpoint using raw SQL.
-    
-    This endpoint uses optimized raw SQL for maximum performance.
-    Use this if the cached version is still too slow for your needs.
-    
-    Performance: ~100-500ms vs potentially long wait times (90x+ faster)
-    
-    Returns:
-        CitiesListResponse: Same format as /cities but much faster
-    """
-    try:
-        # Use raw SQL for maximum performance
-        raw_sql = text("""
-            SELECT DISTINCT city_name 
-            FROM locations 
-            WHERE city_name IS NOT NULL 
-            AND city_name != '' 
-            ORDER BY city_name
-        """)
-        
-        def execute_raw_query():
-            result = db.execute(raw_sql)
-            return [row[0] for row in result.fetchall()]
-        
-        # Execute in thread pool
-        loop = asyncio.get_event_loop()
-        city_names = await loop.run_in_executor(None, execute_raw_query)
-        
-        return {
-            "total_city": len(city_names),
-            "city_name": city_names
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching cities: {str(e)}")
@@ -285,7 +290,7 @@ async def get_all_country_codes(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching country codes: {str(e)}")
 
 
-@router.get("/cities_with_countries", response_model=CitiesWithCountriesGroupedResponse)
+@router.get("/cities-with-countries", response_model=CitiesWithCountriesGroupedResponse)
 @cache(expire=3600)  # Cache for 1 hour
 async def get_cities_with_countries(db: Session = Depends(get_db)):
     """
@@ -385,256 +390,6 @@ async def get_cities_with_countries(db: Session = Depends(get_db)):
         # Execute in thread pool for better async performance
         loop = asyncio.get_event_loop()
         countries_data = await loop.run_in_executor(None, execute_ultra_fast_query)
-        
-        return {
-            "total_country": len(countries_data),
-            "last_update": datetime.utcnow().isoformat(),
-            "countries": countries_data
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching cities with countries: {str(e)}")
-
-
-@router.get("/cities_with_countries/lightning", response_model=CitiesWithCountriesGroupedResponse)
-async def get_cities_with_countries_lightning(db: Session = Depends(get_db)):
-    """
-    LIGHTNING-FAST version - Uses aggressive optimizations for speed.
-    
-    **EXTREME OPTIMIZATIONS:**
-    - ✅ Limits data to prevent massive scans
-    - ✅ Uses simple queries for maximum speed
-    - ✅ Minimal processing overhead
-    - ✅ No caching dependency
-    
-    **Expected Performance: 1-5 seconds**
-    
-    Use this if you need guaranteed fast response without waiting for cache.
-    """
-    try:
-        # LIGHTNING-FAST approach: Limit data and use simple query
-        lightning_sql = text("""
-            SELECT DISTINCT country_name, city_name
-            FROM locations 
-            WHERE country_name IS NOT NULL 
-                AND country_name != ''
-                AND city_name IS NOT NULL 
-                AND city_name != ''
-                AND LENGTH(TRIM(country_name)) > 2
-                AND LENGTH(TRIM(city_name)) > 1
-            ORDER BY country_name, city_name
-            LIMIT 10000
-        """)
-        
-        def execute_lightning_query():
-            result = db.execute(lightning_sql)
-            country_cities = defaultdict(set)
-            
-            # Process results with minimal overhead
-            for row in result.fetchall():
-                country = row[0].strip()
-                city = row[1].strip()
-                if len(country) > 2 and len(city) > 1:  # Basic validation
-                    country_cities[country].add(city)
-            
-            # Convert to response format
-            countries_list = []
-            for country_name in sorted(country_cities.keys()):
-                cities_list = sorted(list(country_cities[country_name]))
-                countries_list.append({
-                    "country_name": country_name,
-                    "total": len(cities_list),
-                    "city_name": cities_list
-                })
-            
-            return countries_list
-        
-        # Execute in thread pool
-        loop = asyncio.get_event_loop()
-        countries_data = await loop.run_in_executor(None, execute_lightning_query)
-        
-        return {
-            "total_country": len(countries_data),
-            "last_update": datetime.utcnow().isoformat(),
-            "countries": countries_data
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching cities with countries: {str(e)}")
-
-
-@router.get("/cities_with_countries/sample", response_model=CitiesWithCountriesGroupedResponse)
-async def get_cities_with_countries_sample(db: Session = Depends(get_db)):
-    """
-    INSTANT SAMPLE VERSION - Returns a small sample for immediate testing.
-    
-    **INSTANT PERFORMANCE: ~100-500ms**
-    
-    This endpoint returns a limited sample of data to test the format
-    while you optimize your database. Perfect for development and testing.
-    """
-    try:
-        # ULTRA-AGGRESSIVE optimization: Very small limit with simple processing
-        sample_sql = text("""
-            SELECT country_name, city_name
-            FROM locations 
-            WHERE country_name IS NOT NULL 
-                AND country_name != ''
-                AND city_name IS NOT NULL 
-                AND city_name != ''
-                AND country_name IN ('Malaysia', 'Bangladesh', 'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 'France', 'Japan', 'India')
-            ORDER BY country_name, city_name
-            LIMIT 100
-        """)
-        
-        def execute_sample_query():
-            result = db.execute(sample_sql)
-            country_cities = defaultdict(set)  # Use set for automatic deduplication
-            
-            for row in result.fetchall():
-                country = row[0].strip()
-                city = row[1].strip()
-                if country and city and len(country) > 2 and len(city) > 1:
-                    country_cities[country].add(city)
-            
-            # Convert to response format
-            countries_list = []
-            for country_name in sorted(country_cities.keys()):
-                cities_list = sorted(list(country_cities[country_name]))
-                countries_list.append({
-                    "country_name": country_name,
-                    "total": len(cities_list),
-                    "city_name": cities_list
-                })
-            
-            return countries_list
-        
-        # Execute directly (no thread pool for small queries)
-        countries_data = execute_sample_query()
-        
-        return {
-            "total_country": len(countries_data),
-            "last_update": datetime.utcnow().isoformat(),
-            "countries": countries_data
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching sample cities with countries: {str(e)}")
-
-
-@router.get("/cities_with_countries/turbo", response_model=CitiesWithCountriesGroupedResponse)
-async def get_cities_with_countries_turbo(db: Session = Depends(get_db)):
-    """
-    TURBO-FAST VERSION - Uses extreme optimizations for large datasets.
-    
-    **PERFORMANCE: ~1-3 seconds**
-    
-    This endpoint uses aggressive limits and optimizations specifically
-    designed for your large dataset (106K+ cities, 312 countries).
-    """
-    try:
-        # TURBO optimization: Use subquery to limit data early
-        turbo_sql = text("""
-            SELECT country_name, city_name
-            FROM (
-                SELECT DISTINCT country_name, city_name
-                FROM locations 
-                WHERE country_name IS NOT NULL 
-                    AND country_name != ''
-                    AND city_name IS NOT NULL 
-                    AND city_name != ''
-                    AND LENGTH(country_name) BETWEEN 3 AND 50
-                    AND LENGTH(city_name) BETWEEN 2 AND 50
-                ORDER BY country_name, city_name
-                LIMIT 5000
-            ) AS limited_data
-            ORDER BY country_name, city_name
-        """)
-        
-        def execute_turbo_query():
-            result = db.execute(turbo_sql)
-            country_cities = defaultdict(set)
-            
-            # Process with minimal overhead
-            for row in result.fetchall():
-                country_cities[row[0]].add(row[1])
-            
-            # Convert to response format efficiently
-            return [
-                {
-                    "country_name": country,
-                    "total": len(cities),
-                    "city_name": sorted(cities)
-                }
-                for country, cities in sorted(country_cities.items())
-            ]
-        
-        # Execute in thread pool
-        loop = asyncio.get_event_loop()
-        countries_data = await loop.run_in_executor(None, execute_turbo_query)
-        
-        return {
-            "total_country": len(countries_data),
-            "last_update": datetime.utcnow().isoformat(),
-            "countries": countries_data
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching turbo cities with countries: {str(e)}")
-
-
-@router.get("/cities_with_countries/fast", response_model=CitiesWithCountriesGroupedResponse)
-async def get_cities_with_countries_fast(db: Session = Depends(get_db)):
-    """
-    ULTRA-FAST version of cities with countries endpoint.
-    
-    This endpoint uses optimized raw SQL for maximum performance without caching.
-    Use this if you need guaranteed fresh data every time.
-    
-    Performance: ~200-800ms vs potentially long wait times
-    
-    Returns:
-        CitiesWithCountriesGroupedResponse: Same format as /cities_with_countries but always fresh
-    """
-    try:
-        # Use raw SQL for maximum performance
-        raw_sql = text("""
-            SELECT country_name, city_name
-            FROM locations 
-            WHERE country_name IS NOT NULL 
-            AND country_name != ''
-            AND city_name IS NOT NULL 
-            AND city_name != ''
-            ORDER BY country_name, city_name
-        """)
-        
-        def execute_grouped_query():
-            result = db.execute(raw_sql)
-            
-            # Group cities by country
-            country_cities = defaultdict(set)  # Use set to avoid duplicates
-            
-            for row in result.fetchall():
-                country_name = row[0]
-                city_name = row[1].strip()  # Remove leading/trailing spaces
-                if country_name and city_name:
-                    country_cities[country_name].add(city_name)
-            
-            # Convert to the required format
-            countries_list = []
-            for country_name, cities_set in sorted(country_cities.items()):
-                cities_list = sorted(list(cities_set))  # Convert set to sorted list
-                countries_list.append({
-                    "country_name": country_name,
-                    "total": len(cities_list),
-                    "city_name": cities_list
-                })
-            
-            return countries_list
-        
-        # Execute in thread pool for better async performance
-        loop = asyncio.get_event_loop()
-        countries_data = await loop.run_in_executor(None, execute_grouped_query)
         
         return {
             "total_country": len(countries_data),
@@ -747,42 +502,6 @@ async def search_locations(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching locations: {str(e)}")
-
-
-# Hotel Search Models
-class HotelSearchRequest(BaseModel):
-    lat: str
-    lon: str
-    radius: str 
-    supplier: List[str]
-    country_code: str
-    
-    class Config:
-        from_attributes = True
-
-
-class HotelItem(BaseModel):
-    a: float 
-    b: float  
-    name: str
-    addr: str
-    type: Optional[str] = "" 
-    photo: str
-    star: float
-    vervotech: str
-    giata: Optional[str]
-    
-    class Config:
-        from_attributes = True
-        extra = "allow"  
-
-
-class HotelSearchResponse(BaseModel):
-    total_hotels: int
-    hotels: List[HotelItem]
-    
-    class Config:
-        from_attributes = True
 
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -998,6 +717,302 @@ async def get_location_by_id(location_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching location: {str(e)}")
 
 
+# Global cache for cities by country
+_cities_by_country_cache = None
+_cities_cache_timestamp = None
 
 
+def _load_cities_by_country_cache(db: Session):
+    """Load cities grouped by country into memory cache"""
+    global _cities_by_country_cache, _cities_cache_timestamp
+    
+    from datetime import timedelta
+    
+    # Return cache if it exists and is less than 1 hour old
+    if _cities_by_country_cache is not None and _cities_cache_timestamp is not None:
+        if datetime.utcnow() - _cities_cache_timestamp < timedelta(hours=1):
+            return _cities_by_country_cache
+    
+    try:
+        # Optimized SQL query to get cities grouped by country (normalize to uppercase)
+        sql = text("""
+            SELECT 
+                UPPER(country_name) as country_name,
+                country_code,
+                STRING_AGG(DISTINCT TRIM(city_name), '|' ORDER BY TRIM(city_name)) as cities,
+                COUNT(DISTINCT TRIM(city_name)) as city_count
+            FROM locations 
+            WHERE country_name IS NOT NULL 
+                AND country_name != ''
+                AND country_code IS NOT NULL
+                AND country_code != ''
+                AND city_name IS NOT NULL 
+                AND city_name != ''
+                AND TRIM(city_name) != ''
+            GROUP BY UPPER(country_name), country_code
+            ORDER BY UPPER(country_name)
+        """)
+        
+        result = db.execute(sql)
+        country_dict = {}
+        current_time = datetime.utcnow().isoformat()
+        
+        for row in result.fetchall():
+            country_name = row[0]
+            country_code = row[1]
+            cities_string = row[2] if row[2] else ""
+            
+            # Split cities and clean them
+            if cities_string:
+                city_list = [city.strip() for city in cities_string.split('|') if city.strip()]
+            else:
+                city_list = []
+            
+            # Merge cities if country already exists (in case of multiple country_codes)
+            if country_name in country_dict:
+                existing_cities = set(country_dict[country_name]["city_list"])
+                existing_cities.update(city_list)
+                country_dict[country_name]["city_list"] = sorted(list(existing_cities))
+                country_dict[country_name]["total_city"] = len(country_dict[country_name]["city_list"])
+            else:
+                country_dict[country_name] = {
+                    "country_name": country_name,
+                    "country_code": country_code,
+                    "total_city": len(city_list),
+                    "last_update": current_time,
+                    "city_list": sorted(list(set(city_list)))
+                }
+        
+        # Convert dict to list
+        countries_data = list(country_dict.values())
+        
+        # Update cache
+        _cities_by_country_cache = countries_data
+        _cities_cache_timestamp = datetime.utcnow()
+        
+        return countries_data
+        
+    except Exception as e:
+        # Fallback to simpler query if STRING_AGG is not supported
+        print(f"Advanced SQL failed, using fallback: {str(e)}")
+        
+        fallback_sql = text("""
+            SELECT DISTINCT UPPER(country_name) as country_name, country_code, TRIM(city_name) as city_name
+            FROM locations 
+            WHERE country_name IS NOT NULL 
+                AND country_name != ''
+                AND country_code IS NOT NULL
+                AND country_code != ''
+                AND city_name IS NOT NULL 
+                AND city_name != ''
+                AND TRIM(city_name) != ''
+            ORDER BY UPPER(country_name), city_name
+        """)
+        
+        result = db.execute(fallback_sql)
+        country_data_dict = defaultdict(lambda: {"cities": set(), "code": ""})
+        
+        for row in result.fetchall():
+            country_name = row[0]  # Already uppercase from query
+            country_code = row[1]
+            city_name = row[2]
+            
+            if country_name and city_name:
+                country_data_dict[country_name]["cities"].add(city_name)
+                country_data_dict[country_name]["code"] = country_code
+        
+        countries_data = []
+        current_time = datetime.utcnow().isoformat()
+        
+        for country_name, data in sorted(country_data_dict.items()):
+            city_list = sorted(list(data["cities"]))
+            countries_data.append({
+                "country_name": country_name,
+                "country_code": data["code"],
+                "total_city": len(city_list),
+                "last_update": current_time,
+                "city_list": city_list
+            })
+        
+        # Update cache
+        _cities_by_country_cache = countries_data
+        _cities_cache_timestamp = datetime.utcnow()
+        
+        return countries_data
 
+
+@router.post("/get-cities-follow-country", response_model=CitiesByCountryResponse)
+async def get_cities_follow_countries(
+    request: Optional[CountryFilterRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all cities grouped by countries with optional filtering and caching.
+    
+    **OPTIMIZED VERSION with 1-hour caching for ultra-fast performance.**
+    
+    Features:
+    - In-memory caching for instant subsequent requests
+    - Optional country name or country code filtering
+    - Optimized SQL with aggregation
+    - Complete city lists per country
+    - Country codes included
+    - Last update timestamp
+    
+    Request Body (Optional):
+        {
+            "country_name": "Bangladesh"  // Optional: filter by country name
+            "country_code": "AF"          // Optional: filter by ISO country code
+        }
+    
+    Returns:
+        CitiesByCountryResponse: Object containing array of countries with:
+            - country_name: Name of the country
+            - country_code: ISO country code
+            - total_city: Number of cities in that country
+            - last_update: Timestamp of data
+            - city_list: Array of all city names in that country
+    
+    Performance:
+        - First request: ~2-10 seconds (loads and caches data)
+        - Subsequent requests (within 1 hour): <10ms (uses cache)
+        - Cache expires after 1 hour, then refreshes automatically
+    
+    Example Request (All countries):
+        POST /v1.0/locations/get-cities-follow-country
+        Body: {}
+        
+    Example Request (By country name):
+        POST /v1.0/locations/get-cities-follow-country
+        Body: {"country_name": "Bangladesh"}
+        
+    Example Request (By country code):
+        POST /v1.0/locations/get-cities-follow-country
+        Body: {"country_code": "AF"}
+        
+    Example Response:
+        {
+            "data": [
+                {
+                    "country_name": "AFGHANISTAN",
+                    "country_code": "AF",
+                    "total_city": 3,
+                    "last_update": "2025-11-11T10:30:00",
+                    "city_list": ["Afghanistan", "Badghis", "Kabul"]
+                }
+            ]
+        }
+    """
+    try:
+        def get_cities_data():
+            return _load_cities_by_country_cache(db)
+        
+        # Execute in thread pool for better async performance
+        loop = asyncio.get_event_loop()
+        countries_data = await loop.run_in_executor(None, get_cities_data)
+        
+        # Filter by country name if provided
+        if request and request.country_name:
+            countries_data = [
+                country for country in countries_data 
+                if country["country_name"].lower() == request.country_name.lower()
+            ]
+        # Filter by country code if provided
+        elif request and request.country_code:
+            countries_data = [
+                country for country in countries_data 
+                if country["country_code"].upper() == request.country_code.upper()
+            ]
+        
+        return {
+            "data": countries_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching cities by countries: {str(e)}"
+        )
+
+
+@router.post("/get-cities-follow-countryISO", response_model=CitiesByCountryResponse)
+async def get_cities_follow_country_iso(
+    request: Optional[CountryISOFilterRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all cities grouped by countries with optional ISO code filtering and caching.
+    
+    **OPTIMIZED VERSION with 1-hour caching for ultra-fast performance.**
+    
+    Features:
+    - In-memory caching for instant subsequent requests
+    - Optional country ISO code filtering
+    - Optimized SQL with aggregation
+    - Complete city lists per country
+    - Country codes included
+    - Last update timestamp
+    
+    Request Body (Optional):
+        {
+            "country_code": "AF"  // Optional: filter by ISO country code
+        }
+    
+    Returns:
+        CitiesByCountryResponse: Object containing array of countries with:
+            - country_code: ISO country code
+            - country_name: Name of the country
+            - total_city: Number of cities in that country
+            - last_update: Timestamp of data
+            - city_list: Array of all city names in that country
+    
+    Performance:
+        - First request: ~2-10 seconds (loads and caches data)
+        - Subsequent requests (within 1 hour): <10ms (uses cache)
+        - Cache expires after 1 hour, then refreshes automatically
+    
+    Example Request (All countries):
+        POST /v1.0/locations/get-cities-follow-countryISO
+        Body: {}
+        
+    Example Request (Specific country by ISO):
+        POST /v1.0/locations/get-cities-follow-countryISO
+        Body: {"country_code": "AF"}
+        
+    Example Response:
+        {
+            "data": [
+                {
+                    "country_code": "AF",
+                    "country_name": "AFGHANISTAN",
+                    "total_city": 3,
+                    "last_update": "2025-11-11T08:04:15.267438",
+                    "city_list": ["Afghanistan", "Badghis", "Kabul"]
+                }
+            ]
+        }
+    """
+    try:
+        def get_cities_data():
+            return _load_cities_by_country_cache(db)
+        
+        # Execute in thread pool for better async performance
+        loop = asyncio.get_event_loop()
+        countries_data = await loop.run_in_executor(None, get_cities_data)
+        
+        # Filter by country ISO code if provided
+        if request and request.country_code:
+            countries_data = [
+                country for country in countries_data 
+                if country["country_code"].upper() == request.country_code.upper()
+            ]
+        
+        return {
+            "data": countries_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching cities by country ISO: {str(e)}"
+        )
