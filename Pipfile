@@ -30,6 +30,7 @@ pandas = "*"
 xmltodict = "*"
 psutil = "*"
 aiohttp = "*"
+rapidfuzz = "*"
 
 [dev-packages]
 pytest = "*"

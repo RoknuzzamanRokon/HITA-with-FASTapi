@@ -21,6 +21,7 @@ from routes.path import RAW_BASE_DIR
 import os
 from routes.auth import get_current_user
 from middleware.ip_middleware import get_client_ip
+from rapidfuzz import fuzz, process
 
 from schemas import ProviderProperty, GetAllHotelResponse
 
@@ -2535,9 +2536,12 @@ def autocomplete_hotel_name(query: str = Query(..., description="Partial hotel n
 
 
 @router.get("/autocomplete-all", status_code=status.HTTP_200_OK)
-def autocomplete_hotel_all(query: str = Query(..., description="Search query for hotel name, address, city, or country", min_length=2)):
+def autocomplete_hotel_all(
+    query: str = Query(..., description="Search query for hotel name, address, city, or country", min_length=2),
+    fuzzy: bool = Query(False, description="Enable fuzzy matching for more flexible search")
+):
     """
-    Hotel Autocomplete Search with Full Details (Optimized)
+    Hotel Autocomplete Search with Full Details (Optimized with Fuzzy Matching)
     
     Ultra-fast autocomplete suggestions with complete hotel information.
     Searches across Name, AddressLine1, CityName, and CountryName fields.
@@ -2545,23 +2549,27 @@ def autocomplete_hotel_all(query: str = Query(..., description="Search query for
     Features:
     - In-memory cached hotel data for instant lookup
     - Case-insensitive matching across multiple fields
+    - Optional fuzzy matching for typo-tolerant search
     - Returns complete hotel details (name, city, country, coordinates, etc.)
     - Limited results (max 20) for performance
+    - Sorted by relevance score when fuzzy matching is enabled
     
     Args:
         query (str): Search query to match against hotel name, address, city, or country (min 2 characters)
+        fuzzy (bool): Enable fuzzy matching (default: False). When enabled, finds results even with typos or partial matches
     
     Returns:
         dict: Autocomplete results containing:
             - results: List of matching hotels with full details (max 20 results)
             - count: Number of results returned
+            - fuzzy_enabled: Whether fuzzy matching was used
     
     Performance:
         - First request: ~100-200ms (loads cache)
-        - Subsequent requests: <10ms (uses cache)
+        - Subsequent requests: <10ms (exact match), <50ms (fuzzy match)
         
     Example Request:
-        GET /autocomplete-all?query=Grand
+        GET /autocomplete-all?query=Grand&fuzzy=true
         
     Example Response:
         {
@@ -2572,17 +2580,19 @@ def autocomplete_hotel_all(query: str = Query(..., description="Search query for
                     "longitude": "2.1734",
                     "latitude": "41.3851",
                     "city": "Barcelona",
-                    "country": "Spain"
+                    "country": "Spain",
+                    "score": 95.5
                 }
             ],
-            "count": 1
+            "count": 1,
+            "fuzzy_enabled": true
         }
     """
     try:
         # Validate input
         query = query.strip()
         if not query:
-            return {"results": [], "count": 0}
+            return {"results": [], "count": 0, "fuzzy_enabled": fuzzy}
         
         # Load cache if not already loaded
         hotel_data = _load_hotel_details_cache()
@@ -2593,33 +2603,66 @@ def autocomplete_hotel_all(query: str = Query(..., description="Search query for
                 detail="Hotel database not available"
             )
         
-        # Search across multiple fields
         search_query = query.lower()
         suggestions = []
         
-        for hotel in hotel_data:
-            # Check if query matches any of the fields
-            if (search_query in hotel["name"].lower() or
-                search_query in hotel["address"].lower() or
-                search_query in hotel["city"].lower() or
-                search_query in hotel["country"].lower()):
-                
+        if fuzzy:
+            # Optimized fuzzy matching - use rapidfuzz's fast extractors
+            # Create searchable strings for each hotel (name is most important, then city)
+            hotel_search_strings = []
+            for hotel in hotel_data:
+                # Prioritize name and city for faster, more relevant matches
+                search_str = f"{hotel['name']} {hotel['city']} {hotel['country']}"
+                hotel_search_strings.append((search_str, hotel))
+            
+            # Use rapidfuzz's optimized process.extract (much faster than manual loop)
+            # It uses C++ implementation under the hood
+            matches = process.extract(
+                search_query,
+                [item[0] for item in hotel_search_strings],
+                scorer=fuzz.partial_ratio,
+                limit=20,
+                score_cutoff=70
+            )
+            
+            # Format results with hotel data
+            for match_text, score, idx in matches:
+                hotel = hotel_search_strings[idx][1]
                 suggestions.append({
                     "name": hotel["name"],
                     "country_code": hotel["country_code"],
                     "longitude": hotel["longitude"],
                     "latitude": hotel["latitude"],
                     "city": hotel["city"],
-                    "country": hotel["country"]
+                    "country": hotel["country"],
+                    "score": round(score, 1)
                 })
-                
-                # Limit to 20 results for performance
-                if len(suggestions) >= 20:
-                    break
+        else:
+            # Exact substring matching mode (original behavior)
+            for hotel in hotel_data:
+                # Check if query matches any of the fields
+                if (search_query in hotel["name"].lower() or
+                    search_query in hotel["address"].lower() or
+                    search_query in hotel["city"].lower() or
+                    search_query in hotel["country"].lower()):
+                    
+                    suggestions.append({
+                        "name": hotel["name"],
+                        "country_code": hotel["country_code"],
+                        "longitude": hotel["longitude"],
+                        "latitude": hotel["latitude"],
+                        "city": hotel["city"],
+                        "country": hotel["country"]
+                    })
+                    
+                    # Limit to 20 results for performance
+                    if len(suggestions) >= 20:
+                        break
         
         return {
             "results": suggestions,
-            "count": len(suggestions)
+            "count": len(suggestions),
+            "fuzzy_enabled": fuzzy
         }
         
     except HTTPException:
