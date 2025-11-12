@@ -114,7 +114,7 @@ class UserSearchParams(BaseModel):
 class UserCreateRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
-    password: str = Field(..., min_length=8)
+    password: str
     role: Optional[UserRole] = UserRole.GENERAL_USER
 
     @validator('username')
@@ -123,22 +123,11 @@ class UserCreateRequest(BaseModel):
             raise ValueError('Username must contain only alphanumeric characters and underscores')
         return v
 
-    @validator('password')
-    def validate_password_strength(cls, v):
-        import re
-        if not re.search(r'[A-Z]', v):
-            raise ValueError('Password must contain at least one uppercase letter')
-        if not re.search(r'[a-z]', v):
-            raise ValueError('Password must contain at least one lowercase letter')
-        if not re.search(r'\d', v):
-            raise ValueError('Password must contain at least one digit')
-        return v
-
 
 class UserUpdateRequest(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
-    password: Optional[str] = Field(None, min_length=8)
+    password: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
 
@@ -146,18 +135,6 @@ class UserUpdateRequest(BaseModel):
     def validate_username(cls, v):
         if v is not None and not v.replace('_', '').isalnum():
             raise ValueError('Username must contain only alphanumeric characters and underscores')
-        return v
-
-    @validator('password')
-    def validate_password_strength(cls, v):
-        if v is not None:
-            import re
-            if not re.search(r'[A-Z]', v):
-                raise ValueError('Password must contain at least one uppercase letter')
-            if not re.search(r'[a-z]', v):
-                raise ValueError('Password must contain at least one lowercase letter')
-            if not re.search(r'\d', v):
-                raise ValueError('Password must contain at least one digit')
         return v
 
 
