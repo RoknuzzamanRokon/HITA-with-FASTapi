@@ -184,7 +184,7 @@ class GivePointsRequest(BaseModel):
     allocation_type: PointAllocationType
 
 
-# --- New schemas for `get_all_hotel_only_supplier` ---
+# --- New schemas for `get-all-basic-info-using-a-supplier` ---
 
 class ProviderProperty(BaseModel):
     provider_name: str = Field(..., description="The supplier/provider name to filter hotels by")

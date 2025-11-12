@@ -1776,7 +1776,7 @@ def get_all_ittid(
 
 
 @router.get(
-    "/get_all_hotel_only_supplier",
+    "/get-all-basic-info-using-a-supplier",
     response_model=GetAllHotelResponse,
     status_code=status.HTTP_200_OK
 )
@@ -1832,7 +1832,7 @@ async def get_all_hotel_only_supplier(
         - Cache key includes user permissions and request parameters
         
     Example Request:
-        GET /get_all_hotel_only_supplier/?provider_name=booking&limit_per_page=100
+        GET /get-all-basic-info-using-a-supplier?provider_name=booking&limit_per_page=100
     """
     try:
         # --- Authorization & points deduction ---

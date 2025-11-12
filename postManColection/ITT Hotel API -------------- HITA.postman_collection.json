@@ -945,14 +945,14 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/content/get_all_hotel_only_supplier?limit_per_page={{limit_value}}",
+									"raw": "{{host}}/v1.0/content/get-all-basic-info-using-a-supplier?limit_per_page={{limit_value}}",
 									"host": [
 										"{{host}}"
 									],
 									"path": [
 										"v1.0",
 										"content",
-										"get_all_hotel_only_supplier"
+										"get-all-basic-info-using-a-supplier"
 									],
 									"query": [
 										{
