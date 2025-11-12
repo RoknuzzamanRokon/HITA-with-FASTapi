@@ -12,6 +12,9 @@ from collections import defaultdict
 from routes.auth import get_current_user
 from middleware.ip_middleware import get_client_ip
 import models
+import json
+import os
+from pathlib import Path
 
 # Router setup
 router = APIRouter(
@@ -19,9 +22,6 @@ router = APIRouter(
     tags=["Locations"],
     responses={404: {"description": "Not found"}},
 )
-
-
-
 
 
 def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
@@ -126,6 +126,32 @@ class HotelSearchRequest(BaseModel):
     class Config:
         from_attributes = True
 
+class HotelItemRate(BaseModel):
+    a: float 
+    b: float  
+    name: str
+    addr: str
+    type: Optional[str] = "" 
+    photo: str
+    star: float
+    ittid: Optional[str] = None
+    rName: Optional[str] = None
+    total: Optional[float] = None
+    fare: Optional[float] = None
+    tax: Optional[float] = None
+    fees: Optional[float] = None
+    
+    class Config:
+        from_attributes = True
+        extra = "allow"  
+
+class HotelSearchResponseRate(BaseModel):
+    total_hotels: int
+    hotels: List[HotelItemRate]
+    
+    class Config:
+        from_attributes = True        
+
 class HotelItem(BaseModel):
     a: float 
     b: float  
@@ -134,8 +160,8 @@ class HotelItem(BaseModel):
     type: Optional[str] = "" 
     photo: str
     star: float
-    vervotech: str
-    giata: Optional[str]
+    vervotech: Optional[str] = None
+    giata: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -148,6 +174,8 @@ class HotelSearchResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# Search Location with location.
 class CityByCountryItem(BaseModel):
     country_name: str
     country_code: str
@@ -586,9 +614,6 @@ async def search_hotel_with_location(request: HotelSearchRequest):
     - supplier: List of suppliers to search (e.g., ["agoda"])
     - country_code: ISO country code (e.g., "AI")
     """
-    import json
-    import os
-    from pathlib import Path
     
     try:
         # Convert input parameters
@@ -664,6 +689,241 @@ async def search_hotel_with_location(request: HotelSearchRequest):
             detail=f"Error searching hotels: {str(e)}"
         )
 
+
+@router.post("/search-hotel-with-location-with-rate", response_model=HotelSearchResponseRate)
+async def search_hotel_with_location(
+    http_request: Request,
+    request: HotelSearchRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Search hotels within a specified radius from a given location with rate information.
+    
+    **SECURITY:** Requires authentication, IP whitelist validation, and supplier permission checks.
+    
+    **What it does:**
+    Searches for hotels from specified suppliers within a given radius of coordinates.
+    Uses JSON files stored in static/countryJsonWithRate/{supplier}/{country_code}.json
+    
+    **Price Selection Logic:**
+    When a hotel has multiple price options, the endpoint automatically selects the price 
+    with the HIGHEST total value. For example:
+    - If price[0].total = 83.17 and price[1].total = 0.0, returns price[0]
+    - If price[0].total = 0.0 and price[1].total = 116.15, returns price[1]
+    
+    **Request body:**
+    ```json
+    {
+        "lat": "42.5081",
+        "lon": "1.53423",
+        "radius": "10",
+        "supplier": ["agoda"],
+        "country_code": "AI"
+    }
+    ```
+    
+    **Response format:**
+    ```json
+    {
+        "total_hotels": 2,
+        "hotels": [
+            {
+                "a": 42.5081,
+                "b": 1.53423,
+                "name": "Hotel Exe Princep",
+                "addr": "Carrer de la Unio, 5",
+                "type": "Hotel",
+                "photo": "https://...",
+                "star": 3.0,
+                "rName": "Economy Double or Twin Room with no View",
+                "total": 83.17,
+                "fare": 79.37,
+                "tax": 3.8,
+                "fees": 0.0,
+                "ittid": "10060288",
+                "agoda": ["128414", "32653486"]
+            }
+        ]
+    }
+    ```
+    
+    **Parameters:**
+    - lat: Latitude of search center
+    - lon: Longitude of search center
+    - radius: Search radius in kilometers
+    - supplier: List of suppliers to search (e.g., ["agoda"])
+    - country_code: ISO country code (e.g., "AI")
+    
+    **Response fields:**
+    - a: Hotel latitude
+    - b: Hotel longitude
+    - name: Hotel name
+    - addr: Hotel address
+    - type: Property type (Hotel, Villa, etc.)
+    - photo: Hotel photo URL
+    - star: Star rating
+    - rName: Room name (from selected price)
+    - total: Total price (highest available)
+    - fare: Base fare
+    - tax: Tax amount
+    - fees: Additional fees
+    - ittid: ITT hotel ID
+    - agoda: List of Agoda property IDs
+    
+    **Security:**
+    - Super User/Admin User: Access to all requested suppliers
+    - General User: Only searches suppliers with explicit permissions (unauthorized suppliers are silently filtered out)
+    
+    **Supplier Filtering:**
+    If a user requests multiple suppliers but only has permission for some, the endpoint will:
+    - Search only the authorized suppliers
+    - Return results from authorized suppliers only
+    - Silently skip unauthorized suppliers (no error thrown)
+    - Return empty result if no suppliers are authorized
+    """
+
+    
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 IP whitelist check for user: {current_user.id} in search_hotel_with_location_with_rate")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        client_ip = get_client_ip(http_request) or "unknown"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
+    # 🔒 SUPPLIER PERMISSION VALIDATION & FILTERING
+    # Super users and admin users have access to all suppliers
+    allowed_suppliers = []
+    
+    if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+        # Admin and super users can access all requested suppliers
+        allowed_suppliers = request.supplier
+    else:
+        # General users: filter suppliers based on permissions
+        for supplier in request.supplier:
+            user_supplier_permission = db.query(models.UserProviderPermission).filter(
+                models.UserProviderPermission.user_id == current_user.id,
+                models.UserProviderPermission.provider_name == supplier
+            ).first()
+            
+            if user_supplier_permission:
+                allowed_suppliers.append(supplier)
+            else:
+                print(f"⚠️ User {current_user.id} does not have permission for supplier '{supplier}' - skipping")
+    
+    # If no suppliers are allowed, return empty result
+    if not allowed_suppliers:
+        return {
+            "total_hotels": 0,
+            "hotels": []
+        }
+    
+    try:
+        # Convert input parameters
+        search_lat = float(request.lat)
+        search_lon = float(request.lon)
+        radius_km = float(request.radius)
+        
+        all_hotels = []
+        
+        # Process only allowed suppliers
+        for supplier in allowed_suppliers:
+            # Construct file path
+            json_file_path = Path(f"static/countryJsonWithRate/{supplier}/{request.country_code}.json")
+            
+            # Check if file exists
+            if not json_file_path.exists():
+                continue
+            
+            # Read JSON file
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                hotels_data = json.load(f)
+            
+            # Filter hotels within radius
+            for hotel in hotels_data:
+                hotel_lat = hotel.get('lat')
+                hotel_lon = hotel.get('lon')
+                
+                if hotel_lat is None or hotel_lon is None:
+                    continue
+                
+                # Calculate distance
+                distance = calculate_distance(search_lat, search_lon, hotel_lat, hotel_lon)
+                
+                # Check if within radius
+                if distance <= radius_km:
+                    # Transform to output format
+                    hotel_item = {
+                        "a": hotel_lat,
+                        "b": hotel_lon,
+                        "name": hotel.get('name') or '',
+                        "addr": hotel.get('addr') or '',
+                        "type": hotel.get('ptype') or '',
+                        "photo": hotel.get('photo') or '',
+                        "star": hotel.get('star', 0.0),
+                        "ittid": hotel.get('ittid') or '',
+                    }
+                    
+                    # Add supplier-specific IDs
+                    if supplier in hotel:
+                        hotel_item[supplier] = hotel[supplier]
+                    
+                    # Process price information - select the highest total price
+                    prices = hotel.get('price', [])
+                    if prices and isinstance(prices, list):
+                        # Find the price with the highest total
+                        best_price = max(prices, key=lambda p: p.get('total', 0.0))
+                        
+                        # Add price fields to hotel item
+                        hotel_item['rName'] = best_price.get('roomName') or ''
+                        hotel_item['total'] = best_price.get('total', 0.0)
+                        hotel_item['fare'] = best_price.get('fare', 0.0)
+                        hotel_item['tax'] = best_price.get('tax', 0.0)
+                        hotel_item['fees'] = best_price.get('fees', 0.0)
+                    else:
+                        # No price data available
+                        hotel_item['rName'] = ''
+                        hotel_item['total'] = 0.0
+                        hotel_item['fare'] = 0.0
+                        hotel_item['tax'] = 0.0
+                        hotel_item['fees'] = 0.0
+                    
+                    all_hotels.append(hotel_item)
+        
+        return {
+            "total_hotels": len(all_hotels),
+            "hotels": all_hotels
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid input parameters: {str(e)}"
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Hotel data not found for the specified country/supplier"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error searching hotels: {str(e)}"
+        )
+            
 
 @router.get("/{location_id}", response_model=LocationDetailResponse)
 async def get_location_by_id(location_id: int, db: Session = Depends(get_db)):

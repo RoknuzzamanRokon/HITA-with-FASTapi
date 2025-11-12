@@ -177,7 +177,6 @@ class ProviderHotelIdentity(BaseModel):
 class ProviderHotelRequest(BaseModel):
     provider_hotel_identity: List[ProviderHotelIdentity]
 
-
 class CountryInfoRequest(BaseModel):
     supplier: str
     country_iso: str
@@ -188,6 +187,10 @@ class ProviderProperty(BaseModel):
 class ProviderPropertyRequest(BaseModel):
     provider_property: List[ProviderProperty]
 
+class ITTIDRequest(BaseModel): 
+    ittid: List[str]
+    
+    
 @router.post("/get-basic-info-follow-countryCode", status_code=status.HTTP_200_OK)
 def get_basic_country_info(
     http_request: Request,
@@ -688,7 +691,6 @@ async def get_hotel_data_provider_name_and_id(
         )
 
 
-
 @router.post("/get-hotel-mapping-info-using-provider-name-and-id", status_code=status.HTTP_200_OK)
 def get_hotel_mapping_data_using_provider_name_and_id(
     http_request: Request,
@@ -858,9 +860,6 @@ def get_hotel_mapping_data_using_provider_name_and_id(
             detail=f"Error processing mapping data request: {str(e)}"
         )
 
-
-class ITTIDRequest(BaseModel):
-    ittid: List[str]
 
 # Get provider mapping
 @router.post("/get-hotel-with-ittid", status_code=status.HTTP_200_OK)
@@ -1060,7 +1059,6 @@ async def get_hotels_using_ittid_list(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing mapping data request: {str(e)}"
         )
-
 
 @router.get("/get-hotel-with-ittid/{ittid}", status_code=status.HTTP_200_OK)
 async def get_hotel_using_ittid(
@@ -1300,8 +1298,6 @@ async def get_hotel_using_ittid(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing mapping data request: {str(e)}"
         )
-
-
 
 
 @router.get("/get-all-basic-hotel-info", status_code=status.HTTP_200_OK)
