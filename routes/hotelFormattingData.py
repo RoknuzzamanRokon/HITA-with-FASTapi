@@ -18,7 +18,9 @@ import csv
 from database import get_db
 from routes.auth import get_current_user
 import models
+from models import UserIPWhitelist
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from middleware.ip_middleware import get_client_ip
 
 router = APIRouter()
 
@@ -27,6 +29,39 @@ router = APIRouter(
     tags=["Raw Hotel Content"],
     responses={404: {"description": "Not found"}},
 )
+
+
+def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
+    """
+    Check if the user's IP address is in the whitelist.
+    
+    Args:
+        user_id (str): The user ID to check
+        request (Request): The FastAPI request object
+        db (Session): Database session
+    
+    Returns:
+        bool: True if IP is whitelisted, False otherwise
+    """
+    try:
+        # Get client IP using the middleware function
+        client_ip = get_client_ip(request)
+        
+        if not client_ip:
+            return False
+        
+        # Check if the user has any active IP whitelist entries for this IP
+        whitelist_entry = db.query(UserIPWhitelist).filter(
+            UserIPWhitelist.user_id == user_id,
+            UserIPWhitelist.ip_address == client_ip,
+            UserIPWhitelist.is_active == True
+        ).first()
+        
+        return whitelist_entry is not None
+        
+    except Exception as e:
+        print(f"Error checking IP whitelist: {str(e)}")
+        return False
 
 
 class ConvertRequest(BaseModel):
@@ -6027,6 +6062,8 @@ async def convert_row_to_our_formate(
     
     Retrieve and convert raw hotel data from suppliers to standardized format.
     
+    **SECURITY:** Requires authentication, IP whitelist validation, and supplier permission checks.
+    
     **Use Cases:**
     - Get formatted hotel information for display
     - Convert supplier-specific data to unified format
@@ -6038,6 +6075,7 @@ async def convert_row_to_our_formate(
     - **SUPER_USER**: Access to all suppliers
     - **ADMIN_USER**: Access to all suppliers  
     - **GENERAL_USER**: Access only to permitted suppliers
+    - **IP Whitelist**: User's IP address must be whitelisted
     
     **Supported Suppliers:**
     - `hotelbeds`: HotelBeds API data
@@ -6083,19 +6121,58 @@ async def convert_row_to_our_formate(
     ```
     
     **Security Features:**
+    - IP whitelist validation
     - Supplier permission validation
     - Comprehensive audit logging
     - Role-based access control
     - Unauthorized access attempt tracking
     
     **Error Responses:**
-    - `403 Forbidden`: No permission for supplier
+    - `403 Forbidden`: IP not whitelisted OR no permission for supplier
     - `404 Not Found`: Hotel data not found
     - `500 Internal Error`: JSON parsing or file issues
     """
 
     supplier_code = request_body.supplier_code
     hotel_id = request_body.hotel_id
+
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 IP whitelist check for user: {current_user.id} in /v1.0/hotel/details")
+    if not check_ip_whitelist(current_user.id, request, db):
+        client_ip = get_client_ip(request) or "unknown"
+        
+        # 📝 AUDIT LOG: Record IP whitelist violation
+        audit_logger = AuditLogger(db)
+        audit_logger.log_security_event(
+            activity_type=ActivityType.UNAUTHORIZED_ACCESS_ATTEMPT,
+            user_id=current_user.id,
+            request=request,
+            details={
+                "endpoint": "/v1.0/hotel/details",
+                "action": "access_denied_ip_not_whitelisted",
+                "client_ip": client_ip,
+                "supplier_code": supplier_code,
+                "hotel_id": hotel_id,
+                "reason": "IP address not in whitelist",
+            },
+            security_level=SecurityLevel.HIGH,
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
 
     # 🔒 SUPPLIER PERMISSION CHECK: Verify user has access to this supplier
     # Super users and admin users have access to all suppliers

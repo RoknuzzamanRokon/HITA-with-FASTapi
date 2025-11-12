@@ -1776,7 +1776,7 @@ def get_all_ittid(
 
 
 @router.get(
-    "/get_all_hotel_only_supplier/",
+    "/get_all_hotel_only_supplier",
     response_model=GetAllHotelResponse,
     status_code=status.HTTP_200_OK
 )
