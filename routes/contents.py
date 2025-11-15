@@ -1645,13 +1645,12 @@ def get_all_ittid(
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    print(f"🎯 get_all_ittid function called for user: {current_user.id}")
     """
-    Get All Hotel ITTIDs Based on User Permissions
+    Get All Hotel ITTIDs Based on User Permissions with Smart Caching
     
     Retrieves a list of all hotel ITTIDs that the current user has access to,
-    based on their role and provider permissions. This endpoint provides a
-    simple way to get hotel identifiers for further processing.
+    based on their role and provider permissions. Implements smart file caching
+    that checks for existing JSON files and only updates when the date changes.
     
     Features:
     - IP whitelist validation for enhanced security
@@ -1659,6 +1658,21 @@ def get_all_ittid(
     - Point deduction only for general users
     - Comprehensive supplier and hotel count statistics
     - Efficient ITTID-only response for performance
+    - Smart date-based caching system
+    
+    Caching Logic:
+    - First checks user's folder for existing JSON files
+    - Compares file date (from filename) with current date
+    - If file date < current date: Creates new file with fresh data from database
+    - If file date = current date: Returns complete cached response (no DB query)
+    - Only updates when day/month/year changes
+    - Saves complete response object: {total_supplier, total_ittid, ittid_list}
+    
+    File Structure:
+    - Path: static/read/itt_mapping_id/{user_id}/{timestamp}_itt_mapping_id.json
+    - Timestamp format: DDMMYYYYSS (day + month + year + seconds)
+    - Example: static/read/itt_mapping_id/1a203ccda4/1511202545_itt_mapping_id.json
+    - Date comparison: 16/11/2025 > 15/11/2025 → triggers update
     
     Access Control:
         - IP Whitelist: User must access from whitelisted IP (if configured)
@@ -1675,18 +1689,35 @@ def get_all_ittid(
             - total_supplier: Number of unique suppliers/providers
             - total_ittid: Total count of accessible hotel ITTIDs
             - ittid_list: List of hotel ITTID strings
+            - file_saved: Boolean indicating if new JSON file was created
+            - file_from_cache: Boolean indicating if data loaded from existing file
+            - file_path: Path to JSON file (cached or newly created)
     
     Error Handling:
         - 403: IP not whitelisted, no provider permissions, or access denied
         - 500: Database or internal server errors
     
-    Example Response:
+    Example Response (New File):
         {
             "total_supplier": 2,
             "total_ittid": 1213213,
-            "ittid_list": ["1221", "454", "789", ...]
+            "ittid_list": ["1221", "454", "789", ...],
+            "file_saved": true,
+            "file_from_cache": false,
+            "file_path": "static/read/itt_mapping_id/1a203ccda4/1611202530_itt_mapping_id.json"
+        }
+    
+    Example Response (Cached):
+        {
+            "total_supplier": 2,
+            "total_ittid": 1213213,
+            "ittid_list": ["1221", "454", "789", ...],
+            "file_saved": false,
+            "file_from_cache": true,
+            "file_path": "static/read/itt_mapping_id/1a203ccda4/1511202545_itt_mapping_id.json"
         }
     """
+    print(f"🎯 get_all_ittid function called for user: {current_user.id}")
     
     # 🔒 IP WHITELIST VALIDATION
     print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-all-ittid")
@@ -1762,10 +1793,104 @@ def get_all_ittid(
         
         print(f"📊 Returning {len(ittid_list)} ITTIDs from {supplier_count} suppliers for user {current_user.id}")
 
+        
+        # Check for existing JSON and compare dates
+        file_saved = False
+        file_path = None
+        file_from_cache = False
+        try:
+            # Create user-specific directory if it doesn't exist
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            save_dir = os.path.join(base_dir, "static", "read", "itt_mapping_id", current_user.id)
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Get current date info
+            now = datetime.utcnow()
+            current_date_str = now.strftime('%d%m%Y')  # DDMMYYYY format
+            
+            # Check for existing JSON files in user directory
+            existing_files = []
+            if os.path.exists(save_dir):
+                existing_files = [f for f in os.listdir(save_dir) if f.endswith('_itt_mapping_id.json')]
+            
+            # Find the most recent file and check its date
+            should_update = True
+            latest_file = None
+            
+            if existing_files:
+                # Sort files by name (timestamp) to get the latest
+                existing_files.sort(reverse=True)
+                latest_file = existing_files[0]
+                
+                # Extract date from filename (first 8 characters: DDMMYYYY)
+                try:
+                    file_date_str = latest_file[:8]  # Extract DDMMYYYY
+                    file_day = int(file_date_str[:2])
+                    file_month = int(file_date_str[2:4])
+                    file_year = int(file_date_str[4:8])
+                    
+                    current_day = now.day
+                    current_month = now.month
+                    current_year = now.year
+                    
+                    # Compare dates: only update if current date is newer
+                    if (current_year > file_year or 
+                        (current_year == file_year and current_month > file_month) or
+                        (current_year == file_year and current_month == file_month and current_day > file_day)):
+                        should_update = True
+                        print(f"📅 File date ({file_day}/{file_month}/{file_year}) is older than current date ({current_day}/{current_month}/{current_year}). Will update.")
+                    else:
+                        should_update = False
+                        # Load existing file data (complete response object)
+                        existing_file_path = os.path.join(save_dir, latest_file)
+                        with open(existing_file_path, 'r', encoding='utf-8') as f:
+                            cached_data = json.load(f)
+                        
+                        # Extract data from cached response
+                        if isinstance(cached_data, dict):
+                            supplier_count = cached_data.get("total_supplier", supplier_count)
+                            ittid_list = cached_data.get("ittid_list", ittid_list)
+                        else:
+                            # Old format (just array), keep current data
+                            ittid_list = cached_data if isinstance(cached_data, list) else ittid_list
+                        
+                        file_path = existing_file_path
+                        file_from_cache = True
+                        print(f"📂 Using cached file: {latest_file} (same date)")
+                        
+                except (ValueError, IndexError) as e:
+                    print(f"⚠️ Error parsing date from filename {latest_file}: {str(e)}")
+                    should_update = True
+            
+            # Save new file if needed
+            if should_update:
+                timestamp = f"{current_date_str}{now.second:02d}"
+                filename = f"{timestamp}_itt_mapping_id.json"
+                file_path = os.path.join(save_dir, filename)
+                
+                # Save complete response object
+                response_data = {
+                    "total_supplier": supplier_count,
+                    "total_ittid": len(ittid_list),
+                    "ittid_list": ittid_list
+                }
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(response_data, f, indent=4)
+                file_saved = True
+                print(f"💾 Saved {len(ittid_list)} ITTIDs to {file_path}")
+                
+        except Exception as e:
+            print(f"⚠️ Error managing ITTID file: {str(e)}")
+            # Don't raise exception, just log the error
+
         return {
             "total_supplier": supplier_count,
             "total_ittid": len(ittid_list),
-            "ittid_list": ittid_list
+            "ittid_list": ittid_list,
+            "file_saved": file_saved,
+            "file_from_cache": file_from_cache,
+            "file_path": file_path.replace(base_dir + os.sep, "") if file_path else None
         }
 
     except Exception as e:
