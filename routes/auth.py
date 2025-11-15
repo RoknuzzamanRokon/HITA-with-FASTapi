@@ -88,6 +88,7 @@ class UserProfileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     api_key: Optional[str] = None
+    api_key_expires_at: Optional[datetime] = None
 
 
 class ResetPasswordRequest(BaseModel):
@@ -102,6 +103,10 @@ class ApiKeyCheckResponse(BaseModel):
     status: dict
     security: dict
     timestamps: dict
+
+
+class GenerateApiKeyRequest(BaseModel):
+    active_for: int  # Number of days the API key should be valid
 
 
 # Utility functions
@@ -202,13 +207,20 @@ def create_user(
     return db_user
 
 
-def generate_api_key(db: Session, user_id: str) -> str:
-    """Generate a new API key for a user"""
+def generate_api_key(db: Session, user_id: str, active_for_days: Optional[int] = None) -> str:
+    """Generate a new API key for a user with optional expiration"""
     api_key = f"ak_{uuid.uuid4().hex}"
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user:
         user.api_key = api_key
         user.updated_at = datetime.utcnow()
+        
+        # Set expiration if active_for_days is provided
+        if active_for_days is not None and active_for_days > 0:
+            user.api_key_expires_at = datetime.utcnow() + timedelta(days=active_for_days)
+        else:
+            user.api_key_expires_at = None  # No expiration
+        
         db.commit()
     return api_key
 
@@ -750,6 +762,7 @@ async def read_users_me(
         created_at=current_user.created_at,
         updated_at=current_user.updated_at,
         api_key=current_user.api_key,
+        api_key_expires_at=current_user.api_key_expires_at,
     )
 
 
@@ -800,20 +813,27 @@ async def regenerate_api_key(
 @router.post("/generate_api_key/{user_id}", response_model=dict)
 async def generate_api_key_for_user(
     user_id: str,
+    api_key_request: GenerateApiKeyRequest,
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ):
     """
-    **Generate API Key for User**
+    **Generate API Key for User with Expiration**
     
-    Create API key for another user (Admin/Super Admin management function).
+    Create API key for another user with configurable expiration (Admin/Super Admin management function).
+    
+    **Path Parameter:**
+    - user_id: Target user ID
+    
+    **Request Body:**
+    - active_for: Number of days the API key should be valid (e.g., 2 for 2 days)
     
     **Use Cases:**
-    - Providing API access to team members
-    - Bulk API key generation for projects
-    - Enabling programmatic access for users
-    - Developer onboarding
+    - Providing temporary API access to team members
+    - Time-limited API key generation for projects
+    - Enabling programmatic access with expiration
+    - Developer onboarding with trial periods
     
     **Access Control:**
     - ADMIN_USER: Can generate keys for any user
@@ -822,14 +842,22 @@ async def generate_api_key_for_user(
     
     **Process:**
     - Validates target user exists
+    - Validates user_id matches between path and body
     - Generates unique API key
+    - Sets expiration date based on active_for days
     - Updates target user's record
     - Logs action with admin details
-    - Returns key and user confirmation
+    - Returns key, expiration date, and user confirmation
+    
+    **Expiration:**
+    - API key expires after specified number of days
+    - Expiration is calculated from creation time
+    - Expired keys are automatically rejected during authentication
     
     **Audit Trail:**
     - Records admin performing action
     - Logs target user details
+    - Records expiration settings
     - High security level logging
     - Request context tracking
     """
@@ -841,6 +869,13 @@ async def generate_api_key_for_user(
             detail="Access denied. Only admin and super admin users can generate API keys for other users."
         )
     
+    # Validate active_for is positive
+    if api_key_request.active_for <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="active_for must be a positive number of days."
+        )
+    
     # Check if target user exists
     target_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not target_user:
@@ -849,8 +884,11 @@ async def generate_api_key_for_user(
             detail=f"User with ID {user_id} not found."
         )
     
-    # Generate API key for the target user
-    new_api_key = generate_api_key(db, user_id)
+    # Generate API key for the target user with expiration
+    new_api_key = generate_api_key(db, user_id, active_for_days=api_key_request.active_for)
+    
+    # Calculate expiration date
+    expires_at = datetime.utcnow() + timedelta(days=api_key_request.active_for)
     
     # 📝 AUDIT LOG: Record API key generation
     from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
@@ -862,7 +900,9 @@ async def generate_api_key_for_user(
         details={
             "action": "generate_api_key",
             "target_username": target_user.username,
-            "admin_role": current_user.role
+            "admin_role": current_user.role,
+            "active_for_days": api_key_request.active_for,
+            "expires_at": expires_at.isoformat()
         },
         request=request,
         security_level=SecurityLevel.HIGH,
@@ -873,7 +913,10 @@ async def generate_api_key_for_user(
         "message": f"API key generated successfully for user {target_user.username}",
         "user_id": user_id,
         "username": target_user.username,
-        "api_key": new_api_key
+        "api_key": new_api_key,
+        "active_for_days": api_key_request.active_for,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.utcnow().isoformat()
     }
 
 
@@ -1113,7 +1156,7 @@ async def activate_user(
 async def authenticate_api_key(
     request: Request, db: Session = Depends(get_db)
 ) -> models.User:
-    """Authenticate user via X-API-Key header. Returns user if valid and active."""
+    """Authenticate user via X-API-Key header. Returns user if valid, active, and not expired."""
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         raise HTTPException(
@@ -1130,6 +1173,14 @@ async def authenticate_api_key(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key"
         )
+    
+    # Check if API key has expired
+    if user.api_key_expires_at is not None:
+        if datetime.utcnow() > user.api_key_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="API Key has expired. Please contact your administrator for a new key."
+            )
 
     return user
 
@@ -1140,6 +1191,7 @@ async def get_user_by_api_key_or_token(
     """
     Flexible authentication: Try API key first, then JWT token.
     Returns user if either authentication method succeeds, None if both fail.
+    Checks API key expiration if applicable.
     """
     # Try API key authentication first
     api_key = request.headers.get("X-API-Key")
@@ -1149,6 +1201,15 @@ async def get_user_by_api_key_or_token(
             .filter(models.User.api_key == api_key, models.User.is_active == True)
             .first()
         )
+        
+        # Check if API key has expired
+        if user and user.api_key_expires_at is not None:
+            if datetime.utcnow() > user.api_key_expires_at:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, 
+                    detail="API Key has expired. Please contact your administrator for a new key."
+                )
+        
         if user:
             return user
     

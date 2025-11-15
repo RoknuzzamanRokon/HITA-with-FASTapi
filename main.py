@@ -81,10 +81,11 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     # Create Redis connection (adjust URL if needed)
+    # Note: decode_responses should be False for fastapi-cache2 to work properly
     redis = aioredis.from_url(
-        "redis://localhost", encoding="utf8", decode_responses=True
+        "redis://localhost", encoding="utf8", decode_responses=False
     )
-    # Initialize FastAPI-Cache with a  prefix
+    # Initialize FastAPI-Cache with a prefix
     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
 # ————————————————————————————————————————————————
 

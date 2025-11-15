@@ -32,6 +32,7 @@ class User(Base):
     hashed_password = Column(String(255))
     role = Column(SQLEnum(*[role.value for role in UserRole], name="user_role_enum", native_enum=False), default=UserRole.GENERAL_USER.value, nullable=False)  # Fixed SQLEnum initialization
     api_key = Column(String(255), nullable=True)
+    api_key_expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
     created_by = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
