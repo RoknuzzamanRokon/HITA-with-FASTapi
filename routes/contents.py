@@ -1300,6 +1300,231 @@ async def get_hotel_using_ittid(
         )
 
 
+@router.get("/get-full-hotel-with-itt-mapping-id/{ittid}", status_code=status.HTTP_200_OK)
+async def get_full_hotel_with_primary_photo(
+    http_request: Request,
+    ittid: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Get Hotel Details with Provider Mappings Having Primary Photo
+    
+    Retrieves comprehensive hotel information but only includes provider mappings
+    where the full_details contains a primary_photo. This filters out providers
+    without complete image data.
+    
+    Features:
+    - Filters provider mappings to only those with primary_photo in full_details
+    - Role-based access control for provider data
+    - Active supplier validation and permission checks
+    - Point deduction only on successful data retrieval
+    - Returns have_provider_list showing all available providers
+    
+    Args:
+        ittid (str): The ITT hotel identifier
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Hotel data with filtered provider mappings including:
+            - total_supplier: Count of providers with primary_photo
+            - have_provider_list: List of all available provider names
+            - hotel: Basic hotel information
+            - provider_mappings: Only providers with primary_photo in full_details
+            - locations: Hotel location information
+            - contacts: Hotel contact information
+    
+    Access Control:
+        - GENERAL_USER: Only sees providers they have permission for
+        - SUPER_USER/ADMIN_USER: Can see all provider mappings
+    
+    HTTP Status Codes:
+        200: Hotel data retrieved successfully
+        403: Forbidden - No access to suppliers for this hotel
+        404: Hotel not found or no supplier mappings with primary_photo
+    """
+    # 🔒 IP WHITELIST VALIDATION
+    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-full-hotel-with-itt-mapping-id")
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        client_ip = get_client_ip(http_request) or "unknown"
+            
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
+    try:
+        # Get hotel first
+        hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
+        if not hotel:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Hotel with id '{ittid}' not found."
+            )
+
+        # Check for provider mappings
+        all_provider_mappings = db.query(models.ProviderMapping).filter(
+            models.ProviderMapping.ittid == ittid
+        ).all()
+        
+        if not all_provider_mappings:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cannot active supplier with this ittid '{ittid}'. No supplier mappings found for this hotel."
+            )
+
+        # Check user permissions
+        if current_user.role == models.UserRole.GENERAL_USER:
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            temp_deactivated_suppliers = []
+            allowed_providers = []
+            
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    allowed_providers.append(perm)
+            
+            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            
+            if not final_allowed_providers:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Do not have permission or not active"
+                )
+            
+            accessible_provider_mappings = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.ittid == ittid,
+                models.ProviderMapping.provider_name.in_(final_allowed_providers)
+            ).all()
+            
+            if not accessible_provider_mappings:
+                available_suppliers = [pm.provider_name for pm in all_provider_mappings]
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Cannot access suppliers for this ittid '{ittid}'. Available suppliers: {', '.join(available_suppliers)}. Contact admin for access."
+                )
+
+        # Get related data
+        locations = db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
+        contacts = db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
+
+        # Get provider mappings based on user role
+        if current_user.role == models.UserRole.GENERAL_USER:
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            temp_deactivated_suppliers = []
+            allowed_providers = []
+            
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    allowed_providers.append(perm)
+            
+            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            
+            provider_mappings = db.query(models.ProviderMapping).filter(
+                models.ProviderMapping.ittid == ittid,
+                models.ProviderMapping.provider_name.in_(final_allowed_providers)
+            ).all()
+        else:
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+            
+            temp_deactivated_suppliers = []
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+            
+            if temp_deactivated_suppliers:
+                provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
+            else:
+                provider_mappings = all_provider_mappings
+
+        # Store all available provider names
+        have_provider_list = [pm.provider_name for pm in provider_mappings]
+
+        # Enhanced provider mappings with full details - FILTER by primary_photo
+        enhanced_provider_mappings = []
+        for pm in provider_mappings:
+            hotel_details = await get_hotel_details_internal(
+                supplier_code=pm.provider_name,
+                hotel_id=pm.provider_id,
+                current_user=current_user,
+                db=db
+            )
+            
+            # Only include if full_details exists and has primary_photo
+            if hotel_details and isinstance(hotel_details, dict) and hotel_details.get("primary_photo"):
+                pm_data = {
+                    "id": pm.id,
+                    "ittid": pm.ittid,
+                    "provider_name": pm.provider_name,
+                    "provider_id": pm.provider_id,
+                    "updated_at": pm.updated_at,
+                    "full_details": hotel_details
+                }
+                enhanced_provider_mappings.append(pm_data)
+
+        # Serialize the response
+        response_data = {
+            "total_supplier": len(enhanced_provider_mappings),
+            "have_provider_list": have_provider_list,
+            "hotel": serialize_datetime_objects(hotel),
+            "provider_mappings": enhanced_provider_mappings,
+            "locations": [serialize_datetime_objects(loc) for loc in locations],
+            "contacts": [serialize_datetime_objects(contact) for contact in contacts],
+        }
+
+        # Point deduction only on successful request
+        if current_user.role == models.UserRole.GENERAL_USER:
+            deduct_points_for_general_user(current_user, db)
+            print(f"💸 Points deducted for successful request by general user: {current_user.email}")
+        elif current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+        
+        return response_data
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing mapping data request: {str(e)}"
+        )
+
+
 @router.get("/get-all-basic-hotel-info", status_code=status.HTTP_200_OK)
 def get_all_hotels(
     http_request: Request,
@@ -1639,113 +1864,39 @@ def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
         return True
 
 
+
 @router.get("/get-all-ittid", status_code=status.HTTP_200_OK)
 def get_all_ittid(
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    """
-    Get All Hotel ITTIDs Based on User Permissions with Smart Caching
-    
-    Retrieves a list of all hotel ITTIDs that the current user has access to,
-    based on their role and provider permissions. Implements smart file caching
-    that checks for existing JSON files and only updates when the date changes.
-    
-    Features:
-    - IP whitelist validation for enhanced security
-    - Role-based access control for provider permissions
-    - Point deduction only for general users
-    - Comprehensive supplier and hotel count statistics
-    - Efficient ITTID-only response for performance
-    - Smart date-based caching system
-    
-    Caching Logic:
-    - First checks user's folder for existing JSON files
-    - Compares file date (from filename) with current date
-    - If file date < current date: Creates new file with fresh data from database
-    - If file date = current date: Returns complete cached response (no DB query)
-    - Only updates when day/month/year changes
-    - Saves complete response object: {total_supplier, total_ittid, ittid_list}
-    
-    File Structure:
-    - Path: static/read/itt_mapping_id/{user_id}/{timestamp}_itt_mapping_id.json
-    - Timestamp format: DDMMYYYYSS (day + month + year + seconds)
-    - Example: static/read/itt_mapping_id/1a203ccda4/1511202545_itt_mapping_id.json
-    - Date comparison: 16/11/2025 > 15/11/2025 → triggers update
-    
-    Access Control:
-        - IP Whitelist: User must access from whitelisted IP (if configured)
-        - GENERAL_USER: Only sees ITTIDs from permitted providers, points deducted
-        - SUPER_USER/ADMIN_USER: Can see all hotel ITTIDs, no point deduction
-    
-    Args:
-        request: FastAPI request object for IP extraction
-        current_user: Currently authenticated user (injected by dependency)
-        db (Session): Database session (injected by dependency)
-    
-    Returns:
-        dict: Hotel ITTID data including:
-            - total_supplier: Number of unique suppliers/providers
-            - total_ittid: Total count of accessible hotel ITTIDs
-            - ittid_list: List of hotel ITTID strings
-            - file_saved: Boolean indicating if new JSON file was created
-            - file_from_cache: Boolean indicating if data loaded from existing file
-            - file_path: Path to JSON file (cached or newly created)
-    
-    Error Handling:
-        - 403: IP not whitelisted, no provider permissions, or access denied
-        - 500: Database or internal server errors
-    
-    Example Response (New File):
-        {
-            "total_supplier": 2,
-            "total_ittid": 1213213,
-            "ittid_list": ["1221", "454", "789", ...],
-            "file_saved": true,
-            "file_from_cache": false,
-            "file_path": "static/read/itt_mapping_id/1a203ccda4/1611202530_itt_mapping_id.json"
-        }
-    
-    Example Response (Cached):
-        {
-            "total_supplier": 2,
-            "total_ittid": 1213213,
-            "ittid_list": ["1221", "454", "789", ...],
-            "file_saved": false,
-            "file_from_cache": true,
-            "file_path": "static/read/itt_mapping_id/1a203ccda4/1511202545_itt_mapping_id.json"
-        }
-    """
-    print(f"🎯 get_all_ittid function called for user: {current_user.id}")
-    
-    # 🔒 IP WHITELIST VALIDATION
-    print(f"🚀 About to call IP whitelist check for user: {current_user.id} in get-all-ittid")
+    print(f"🎯 get_all_ittid → User: {current_user.id}")
+
+    # ---------------------------------------------------------
+    # 1️⃣ IP WHITELIST CHECK
+    # ---------------------------------------------------------
+    print(f"🚀 Checking IP whitelist for user {current_user.id}")
     if not check_ip_whitelist(current_user.id, request, db):
-        # Extract client IP for error message using middleware
         client_ip = get_client_ip(request) or "unknown"
-            
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "error": True,
                 "message": "Access denied: IP address not whitelisted",
                 "error_code": "IP_NOT_WHITELISTED",
-                "details": {
-                    "status_code": 403,
-                    "client_ip": client_ip,
-                    "user_id": current_user.id,
-                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
-                },
+                "details": {"client_ip": client_ip, "user_id": current_user.id},
                 "timestamp": datetime.utcnow().isoformat()
             }
         )
-    
+
+    # ---------------------------------------------------------
+    # 2️⃣ PERMISSION RESOLUTION
+    # ---------------------------------------------------------
     try:
-        # 🚫 NO POINT DEDUCTION for super_user and admin_user
-        # Only deduct points for general_user
         if current_user.role == UserRole.GENERAL_USER:
             deduct_points_for_general_user(current_user, db)
+
             allowed_providers = [
                 p.provider_name
                 for p in db.query(UserProviderPermission)
@@ -1754,151 +1905,122 @@ def get_all_ittid(
             ]
             if not allowed_providers:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You do not have any permission for this request. Please contact your administrator."
+                    status_code=403,
+                    detail="No provider permissions assigned. Contact admin."
                 )
-        elif current_user.role in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
-            print(f"🔓 Point deduction skipped for {current_user.role}: {current_user.email}")
+
+        else:  # SUPER_USER / ADMIN_USER
+            print(f"🔓 No point deduction for role: {current_user.role}")
             allowed_providers = None
-        else:
-            allowed_providers = None
-    except HTTPException:
-        raise
+
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail=f"Error processing user permissions: {str(e)}"
         )
 
+    # ---------------------------------------------------------
+    # 3️⃣ HOTEL ITTID FETCH LOGIC
+    # ---------------------------------------------------------
     try:
-        # Get hotel ITTIDs based on user permissions
-        if allowed_providers is not None:
-            # General user - filter by allowed providers
-            hotel_ittids = db.query(ProviderMapping.ittid).filter(
-                ProviderMapping.provider_name.in_(allowed_providers)
-            ).distinct().all()
-            
-            # Get supplier count for this user
+        if allowed_providers:
+            # Permissions restricted
+            records = (
+                db.query(ProviderMapping.ittid)
+                .filter(ProviderMapping.provider_name.in_(allowed_providers))
+                .distinct()
+                .all()
+            )
             supplier_count = len(allowed_providers)
-            
         else:
-            # Super/admin users - get all hotel ITTIDs
-            hotel_ittids = db.query(Hotel.ittid).distinct().all()
-            
-            # Get total supplier count
-            supplier_count = db.query(ProviderMapping.provider_name).distinct().count()
+            # Fetch all
+            records = db.query(Hotel.ittid).distinct().all()
+            supplier_count = (
+                db.query(ProviderMapping.provider_name).distinct().count()
+            )
 
-        # Extract ITTID strings from query result
-        ittid_list = [ittid[0] for ittid in hotel_ittids if ittid[0]]
-        
-        print(f"📊 Returning {len(ittid_list)} ITTIDs from {supplier_count} suppliers for user {current_user.id}")
+        ittid_list = [row[0] for row in records if row[0]]
 
-        
-        # Check for existing JSON and compare dates
-        file_saved = False
-        file_path = None
-        file_from_cache = False
-        try:
-            # Create user-specific directory if it doesn't exist
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            save_dir = os.path.join(base_dir, "static", "read", "itt_mapping_id", current_user.id)
-            os.makedirs(save_dir, exist_ok=True)
-            
-            # Get current date info
-            now = datetime.utcnow()
-            current_date_str = now.strftime('%d%m%Y')  # DDMMYYYY format
-            
-            # Check for existing JSON files in user directory
-            existing_files = []
-            if os.path.exists(save_dir):
-                existing_files = [f for f in os.listdir(save_dir) if f.endswith('_itt_mapping_id.json')]
-            
-            # Find the most recent file and check its date
-            should_update = True
-            latest_file = None
-            
-            if existing_files:
-                # Sort files by name (timestamp) to get the latest
-                existing_files.sort(reverse=True)
-                latest_file = existing_files[0]
-                
-                # Extract date from filename (first 8 characters: DDMMYYYY)
-                try:
-                    file_date_str = latest_file[:8]  # Extract DDMMYYYY
-                    file_day = int(file_date_str[:2])
-                    file_month = int(file_date_str[2:4])
-                    file_year = int(file_date_str[4:8])
-                    
-                    current_day = now.day
-                    current_month = now.month
-                    current_year = now.year
-                    
-                    # Compare dates: only update if current date is newer
-                    if (current_year > file_year or 
-                        (current_year == file_year and current_month > file_month) or
-                        (current_year == file_year and current_month == file_month and current_day > file_day)):
-                        should_update = True
-                        print(f"📅 File date ({file_day}/{file_month}/{file_year}) is older than current date ({current_day}/{current_month}/{current_year}). Will update.")
-                    else:
-                        should_update = False
-                        # Load existing file data (complete response object)
-                        existing_file_path = os.path.join(save_dir, latest_file)
-                        with open(existing_file_path, 'r', encoding='utf-8') as f:
-                            cached_data = json.load(f)
-                        
-                        # Extract data from cached response
-                        if isinstance(cached_data, dict):
-                            supplier_count = cached_data.get("total_supplier", supplier_count)
-                            ittid_list = cached_data.get("ittid_list", ittid_list)
-                        else:
-                            # Old format (just array), keep current data
-                            ittid_list = cached_data if isinstance(cached_data, list) else ittid_list
-                        
-                        file_path = existing_file_path
-                        file_from_cache = True
-                        print(f"📂 Using cached file: {latest_file} (same date)")
-                        
-                except (ValueError, IndexError) as e:
-                    print(f"⚠️ Error parsing date from filename {latest_file}: {str(e)}")
-                    should_update = True
-            
-            # Save new file if needed
-            if should_update:
-                timestamp = f"{current_date_str}{now.second:02d}"
-                filename = f"{timestamp}_itt_mapping_id.json"
-                file_path = os.path.join(save_dir, filename)
-                
-                # Save complete response object
-                response_data = {
-                    "total_supplier": supplier_count,
-                    "total_ittid": len(ittid_list),
-                    "ittid_list": ittid_list
-                }
-                
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(response_data, f, indent=4)
-                file_saved = True
-                print(f"💾 Saved {len(ittid_list)} ITTIDs to {file_path}")
-                
-        except Exception as e:
-            print(f"⚠️ Error managing ITTID file: {str(e)}")
-            # Don't raise exception, just log the error
-
-        return {
-            "total_supplier": supplier_count,
-            "total_ittid": len(ittid_list),
-            "ittid_list": ittid_list,
-            "file_saved": file_saved,
-            "file_from_cache": file_from_cache,
-            "file_path": file_path.replace(base_dir + os.sep, "") if file_path else None
-        }
+        print(f"📊 Found {len(ittid_list)} ITTIDs from {supplier_count} suppliers")
 
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving hotel ITTIDs: {str(e)}"
+            status_code=500,
+            detail=f"Error retrieving database data: {str(e)}"
         )
 
+    # ---------------------------------------------------------
+    # 4️⃣ SMART CACHING LOGIC
+    # ---------------------------------------------------------
+    now = datetime.utcnow()
+    today_key = now.strftime("%d%m%Y")  # e.g., 16112025
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    user_dir = os.path.join(base_dir, "static", "read", "itt_mapping_id", current_user.id)
+    os.makedirs(user_dir, exist_ok=True)
+
+    file_saved = False
+    file_from_cache = False
+    latest_file_path = None
+
+    # Scan existing JSONs
+    existing_files = [
+        f for f in os.listdir(user_dir)
+        if f.endswith("_itt_mapping_id.json")
+    ]
+
+    if existing_files:
+        latest_file = sorted(existing_files, reverse=True)[0]
+        file_date_str = latest_file[:8]  # DDMMYYYY
+
+        # Compare file date vs today's date
+        if file_date_str == today_key:
+            # 🎉 Cached
+            latest_file_path = os.path.join(user_dir, latest_file)
+            with open(latest_file_path, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+
+            ittid_list = cached.get("ittid_list", ittid_list)
+            supplier_count = cached.get("total_supplier", supplier_count)
+            file_from_cache = True
+
+            print(f"📂 Using cache → {latest_file}")
+
+        else:
+            # ❗Older → must update
+            latest_file_path = None
+
+    # If no valid cache, write fresh file
+    if not file_from_cache:
+        timestamp = f"{today_key}{now.second:02d}"
+        filename = f"{timestamp}_itt_mapping_id.json"
+        latest_file_path = os.path.join(user_dir, filename)
+
+        new_payload = {
+            "total_supplier": supplier_count,
+            "total_ittid": len(ittid_list),
+            "ittid_list": ittid_list,
+        }
+
+        with open(latest_file_path, "w", encoding="utf-8") as f:
+            json.dump(new_payload, f, indent=4)
+
+        file_saved = True
+        print(f"💾 New file saved → {filename}")
+
+    # ---------------------------------------------------------
+    # 5️⃣ FINAL RESPONSE
+    # ---------------------------------------------------------
+    response_path = latest_file_path.replace(base_dir + os.sep, "") if latest_file_path else None
+
+    return {
+        "total_supplier": supplier_count,
+        "total_ittid": len(ittid_list),
+        "ittid_list": ittid_list,
+        "file_saved": file_saved,
+        "file_from_cache": file_from_cache,
+        "file_path": response_path,
+    }
 
 @router.get(
     "/get-all-basic-info-using-a-supplier",
