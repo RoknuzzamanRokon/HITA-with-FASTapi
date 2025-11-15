@@ -102,6 +102,7 @@ class ApiKeyCheckResponse(BaseModel):
     identity: dict
     status: dict
     security: dict
+    apiKeyInfo: dict
     timestamps: dict
 
 
@@ -1271,6 +1272,14 @@ async def check_api_key_status(
         "security": {
             "apiKey": "ak_272bc8a2facf49abb9597080cb355ba2"
         },
+        "apiKeyInfo": {
+            "hasApiKey": true,
+            "isExpired": false,
+            "status": "active",
+            "generatedAt": "2025-11-13T10:30:00Z",
+            "expiresAt": "2025-11-15T10:30:00Z",
+            "daysUntilExpiration": 2
+        },
         "timestamps": {
             "createdAt": "2025-05-16T18:26:31Z",
             "updatedAt": "2025-10-09T11:46:39Z"
@@ -1308,6 +1317,53 @@ async def check_api_key_status(
     created_at_iso = current_user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
     updated_at_iso = current_user.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
     
+    # Calculate API key information
+    has_api_key = bool(current_user.api_key)
+    api_key_info = {
+        "hasApiKey": has_api_key,
+        "isExpired": False,
+        "status": "not_generated",
+        "generatedAt": None,
+        "expiresAt": None,
+        "daysUntilExpiration": None
+    }
+    
+    if has_api_key:
+        # Check if API key has expiration
+        if current_user.api_key_expires_at:
+            expires_at_iso = current_user.api_key_expires_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+            is_expired = current_user.api_key_expires_at < datetime.utcnow()
+            
+            # Calculate days until expiration
+            if not is_expired:
+                time_diff = current_user.api_key_expires_at - datetime.utcnow()
+                days_until_expiration = time_diff.days
+            else:
+                days_until_expiration = 0
+            
+            # Determine generated date (use updated_at as proxy if not stored separately)
+            generated_at_iso = current_user.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+            
+            api_key_info = {
+                "hasApiKey": True,
+                "isExpired": is_expired,
+                "status": "expired" if is_expired else "active",
+                "generatedAt": generated_at_iso,
+                "expiresAt": expires_at_iso,
+                "daysUntilExpiration": days_until_expiration
+            }
+        else:
+            # API key exists but no expiration (permanent key)
+            generated_at_iso = current_user.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+            api_key_info = {
+                "hasApiKey": True,
+                "isExpired": False,
+                "status": "active_permanent",
+                "generatedAt": generated_at_iso,
+                "expiresAt": None,
+                "daysUntilExpiration": None
+            }
+    
     # Return structured response
     return ApiKeyCheckResponse(
         id=current_user.id,
@@ -1322,6 +1378,7 @@ async def check_api_key_status(
         security={
             "apiKey": current_user.api_key if current_user.api_key else "Contact your admin to get API key access"
         },
+        apiKeyInfo=api_key_info,
         timestamps={
             "createdAt": created_at_iso,
             "updatedAt": updated_at_iso
