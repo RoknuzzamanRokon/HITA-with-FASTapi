@@ -567,7 +567,10 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 
 
 @router.post("/search-hotel-with-location", response_model=HotelSearchResponse)
-async def search_hotel_with_location(request: HotelSearchRequest):
+async def search_hotel_with_location(
+    request: HotelSearchRequest,
+    db: Session = Depends(get_db)
+):
     """
     Search hotels within a specified radius from a given location.
     
@@ -575,13 +578,26 @@ async def search_hotel_with_location(request: HotelSearchRequest):
     Searches for hotels from specified suppliers within a given radius of coordinates.
     Uses JSON files stored in static/countryJson/{supplier}/{country_code}.json
     
-    **Request body:**
+    **Request body examples:**
+    
+    **Example 1: Specific supplier**
     ```json
     {
         "lat": "25.2048493",
         "lon": "55.2707828",
         "radius": "10",
         "supplier": ["agoda"],
+        "country_code": "AI"
+    }
+    ```
+    
+    **Example 2: All suppliers (NEW FEATURE)**
+    ```json
+    {
+        "lat": "25.2048493",
+        "lon": "55.2707828",
+        "radius": "10",
+        "supplier": ["All"],
         "country_code": "AI"
     }
     ```
@@ -611,8 +627,17 @@ async def search_hotel_with_location(request: HotelSearchRequest):
     - lat: Latitude of search center
     - lon: Longitude of search center
     - radius: Search radius in kilometers
-    - supplier: List of suppliers to search (e.g., ["agoda"])
+    - supplier: List of suppliers to search
+      * Specific suppliers: ["agoda", "booking", "expedia"]
+      * All suppliers: ["All"] or ["all"] (case-insensitive)
+      * Mixed: ["All", "ean"] - searches all suppliers (specific ones are ignored when "All" is present)
     - country_code: ISO country code (e.g., "AI")
+    
+    **Supplier "All" Feature:**
+    When "All" or "all" is included in the supplier list:
+    - Searches ALL suppliers available in the system (from supplier_summary table)
+    - Case-insensitive: "All", "all", "ALL" all work
+    - If "All" is present, other specific suppliers in the list are ignored
     """
     
     try:
@@ -623,8 +648,23 @@ async def search_hotel_with_location(request: HotelSearchRequest):
         
         all_hotels = []
         
+        # Check if "All" or "all" is in the supplier list
+        use_all_suppliers = any(s.lower() == "all" for s in request.supplier)
+        
+        # Determine which suppliers to search
+        suppliers_to_search = []
+        
+        if use_all_suppliers:
+            # Get all available suppliers from the system
+            all_system_suppliers = db.query(models.SupplierSummary.provider_name).all()
+            suppliers_to_search = [supplier[0] for supplier in all_system_suppliers]
+            print(f"✅ Searching ALL suppliers: {len(suppliers_to_search)} suppliers")
+        else:
+            # Use the specific suppliers requested
+            suppliers_to_search = request.supplier
+        
         # Process each supplier
-        for supplier in request.supplier:
+        for supplier in suppliers_to_search:
             # Construct file path
             json_file_path = Path(f"static/countryJson/{supplier}/{request.country_code}.json")
             
@@ -712,13 +752,37 @@ async def search_hotel_with_location(
     - If price[0].total = 83.17 and price[1].total = 0.0, returns price[0]
     - If price[0].total = 0.0 and price[1].total = 116.15, returns price[1]
     
-    **Request body:**
+    **Request body examples:**
+    
+    **Example 1: Specific suppliers**
     ```json
     {
         "lat": "42.5081",
         "lon": "1.53423",
         "radius": "10",
         "supplier": ["agoda"],
+        "country_code": "AI"
+    }
+    ```
+    
+    **Example 2: All suppliers (NEW FEATURE)**
+    ```json
+    {
+        "lat": "42.5081",
+        "lon": "1.53423",
+        "radius": "10",
+        "supplier": ["All"],
+        "country_code": "AI"
+    }
+    ```
+    
+    **Example 3: Mix of All and specific suppliers**
+    ```json
+    {
+        "lat": "42.5081",
+        "lon": "1.53423",
+        "radius": "10",
+        "supplier": ["All", "ean"],
         "country_code": "AI"
     }
     ```
@@ -749,11 +813,21 @@ async def search_hotel_with_location(
     ```
     
     **Parameters:**
-    - lat: Latitude of search center
-    - lon: Longitude of search center
-    - radius: Search radius in kilometers
-    - supplier: List of suppliers to search (e.g., ["agoda"])
-    - country_code: ISO country code (e.g., "AI")
+    - lat: Latitude of search center (required)
+    - lon: Longitude of search center (required)
+    - radius: Search radius in kilometers (required)
+    - supplier: List of suppliers to search (required)
+      * Specific suppliers: ["agoda", "booking", "expedia"]
+      * All suppliers: ["All"] or ["all"] (case-insensitive)
+      * Mixed: ["All", "ean"] - searches all suppliers (specific ones are ignored when "All" is present)
+    - country_code: ISO country code (required, e.g., "AI")
+    
+    **Supplier "All" Feature:**
+    When "All" or "all" is included in the supplier list:
+    - **Super User/Admin User**: Searches ALL suppliers in the system (from supplier_summary table)
+    - **General User**: Searches ALL suppliers they have permission for
+    - Case-insensitive: "All", "all", "ALL" all work
+    - If "All" is present, other specific suppliers in the list are ignored
     
     **Response fields:**
     - a: Hotel latitude
@@ -762,18 +836,23 @@ async def search_hotel_with_location(
     - addr: Hotel address
     - type: Property type (Hotel, Villa, etc.)
     - photo: Hotel photo URL
-    - star: Star rating
+    - star: Star rating (0.0 to 5.0)
     - rName: Room name (from selected price)
     - total: Total price (highest available)
     - fare: Base fare
     - tax: Tax amount
     - fees: Additional fees
     - ittid: ITT hotel ID
-    - agoda: List of Agoda property IDs
+    - {supplier}: List of supplier-specific property IDs (e.g., "agoda": ["128414"])
     
-    **Security:**
-    - Super User/Admin User: Access to all requested suppliers
-    - General User: Only searches suppliers with explicit permissions (unauthorized suppliers are silently filtered out)
+    **Security & Access Control:**
+    - **Super User/Admin User**: 
+      * Can access all requested suppliers
+      * "All" returns results from all system suppliers
+    - **General User**: 
+      * Only searches suppliers with explicit permissions
+      * "All" returns results from all permitted suppliers only
+      * Unauthorized suppliers are silently filtered out (no error thrown)
     
     **Supplier Filtering:**
     If a user requests multiple suppliers but only has permission for some, the endpoint will:
@@ -781,6 +860,25 @@ async def search_hotel_with_location(
     - Return results from authorized suppliers only
     - Silently skip unauthorized suppliers (no error thrown)
     - Return empty result if no suppliers are authorized
+    
+    **Examples:**
+    
+    1. **Search specific supplier:**
+       - Request: `{"supplier": ["agoda"]}`
+       - Result: Hotels from Agoda only
+    
+    2. **Search all suppliers (Admin/Super):**
+       - Request: `{"supplier": ["All"]}`
+       - Result: Hotels from all system suppliers (agoda, booking, expedia, etc.)
+    
+    3. **Search all suppliers (General User):**
+       - Request: `{"supplier": ["All"]}`
+       - User has permissions: agoda, booking
+       - Result: Hotels from agoda and booking only
+    
+    4. **Mixed request (All + specific):**
+       - Request: `{"supplier": ["All", "ean"]}`
+       - Result: Same as ["All"] - searches all suppliers (specific ones ignored)
     """
 
     
@@ -805,24 +903,42 @@ async def search_hotel_with_location(
         )
     
     # 🔒 SUPPLIER PERMISSION VALIDATION & FILTERING
-    # Super users and admin users have access to all suppliers
+    # Check if "All" or "all" is in the supplier list
+    use_all_suppliers = any(s.lower() == "all" for s in request.supplier)
+    
     allowed_suppliers = []
     
-    if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
-        # Admin and super users can access all requested suppliers
-        allowed_suppliers = request.supplier
+    if use_all_suppliers:
+        # User requested all suppliers
+        if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            # Admin and super users: get all available suppliers from the system
+            all_system_suppliers = db.query(models.SupplierSummary.provider_name).all()
+            allowed_suppliers = [supplier[0] for supplier in all_system_suppliers]
+            print(f"✅ Admin/Super user requested ALL suppliers: {len(allowed_suppliers)} suppliers")
+        else:
+            # General users: get all suppliers they have permission for
+            user_permissions = db.query(models.UserProviderPermission.provider_name).filter(
+                models.UserProviderPermission.user_id == current_user.id
+            ).all()
+            allowed_suppliers = [perm[0] for perm in user_permissions]
+            print(f"✅ General user requested ALL suppliers: {len(allowed_suppliers)} permitted suppliers")
     else:
-        # General users: filter suppliers based on permissions
-        for supplier in request.supplier:
-            user_supplier_permission = db.query(models.UserProviderPermission).filter(
-                models.UserProviderPermission.user_id == current_user.id,
-                models.UserProviderPermission.provider_name == supplier
-            ).first()
-            
-            if user_supplier_permission:
-                allowed_suppliers.append(supplier)
-            else:
-                print(f"⚠️ User {current_user.id} does not have permission for supplier '{supplier}' - skipping")
+        # User requested specific suppliers
+        if current_user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            # Admin and super users can access all requested suppliers
+            allowed_suppliers = request.supplier
+        else:
+            # General users: filter suppliers based on permissions
+            for supplier in request.supplier:
+                user_supplier_permission = db.query(models.UserProviderPermission).filter(
+                    models.UserProviderPermission.user_id == current_user.id,
+                    models.UserProviderPermission.provider_name == supplier
+                ).first()
+                
+                if user_supplier_permission:
+                    allowed_suppliers.append(supplier)
+                else:
+                    print(f"⚠️ User {current_user.id} does not have permission for supplier '{supplier}' - skipping")
     
     # If no suppliers are allowed, return empty result
     if not allowed_suppliers:
@@ -830,6 +946,8 @@ async def search_hotel_with_location(
             "total_hotels": 0,
             "hotels": []
         }
+    
+    print(f"🔍 Searching {len(allowed_suppliers)} suppliers: {allowed_suppliers}")
     
     try:
         # Convert input parameters
