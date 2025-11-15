@@ -2,16 +2,20 @@
 Dashboard Routes - User statistics and analytics for admin and superuser
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
+from sqlalchemy.exc import OperationalError
 from typing import Dict, Any
 from datetime import datetime, timedelta
+from fastapi_cache.decorator import cache
+import asyncio
 
 from database import get_db
 from routes.auth import get_current_active_user
 import models
 from models import UserRole
+from schemas import NewUserDashboardResponse
 
 router = APIRouter(
     prefix="/v1.0/dashboard",
@@ -2433,4 +2437,1268 @@ async def get_current_active_user_info(
                 "details": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }
+        )
+
+# ============================================================================
+# HELPER FUNCTIONS FOR NEW USER DASHBOARD
+# ============================================================================
+
+@cache(expire=60)  # 1-minute cache
+async def get_user_account_info(db: Session, user: models.User) -> Dict[str, Any]:
+    """
+    Retrieve user account details and calculate account status.
+    
+    Args:
+        db: Database session
+        user: User object
+    
+    Returns:
+        Dictionary with account information including:
+        - user_id, username, email
+        - account_status (pending_activation, active, suspended)
+        - created_at, days_since_registration
+    """
+    # Calculate days since registration
+    days_since_registration = 0
+    if user.created_at:
+        days_since_registration = (datetime.utcnow() - user.created_at).days
+    
+    # Determine account status based on suppliers and points
+    supplier_count = db.query(func.count(models.UserProviderPermission.id)).filter(
+        models.UserProviderPermission.user_id == user.id
+    ).scalar() or 0
+    
+    point_balance = 0
+    try:
+        user_point = db.query(models.UserPoint).filter(
+            models.UserPoint.user_id == user.id
+        ).first()
+        if user_point:
+            point_balance = user_point.current_points or 0
+    except Exception:
+        pass
+    
+    # Determine account status
+    if not user.is_active:
+        account_status = "suspended"
+    elif supplier_count == 0 or point_balance == 0:
+        account_status = "pending_activation"
+    else:
+        account_status = "active"
+    
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "account_status": account_status,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "days_since_registration": days_since_registration
+    }
+
+
+def calculate_onboarding_progress(user: models.User, db: Session) -> Dict[str, Any]:
+    """
+    Calculate onboarding progress and generate pending actions.
+    
+    Args:
+        user: User object
+        db: Database session
+    
+    Returns:
+        Dictionary with:
+        - completion_percentage (0-100)
+        - completed_steps (list of strings)
+        - pending_steps (list of dicts with action, description, estimated_time)
+    """
+    completed_steps = []
+    pending_steps = []
+    
+    # Step 1: Account created (always completed if user exists)
+    completed_steps.append("Account created")
+    
+    # Step 2: Supplier permissions assigned
+    supplier_count = db.query(func.count(models.UserProviderPermission.id)).filter(
+        models.UserProviderPermission.user_id == user.id
+    ).scalar() or 0
+    
+    if supplier_count > 0:
+        completed_steps.append("Supplier permissions assigned")
+    else:
+        pending_steps.append({
+            "action": "Get supplier access",
+            "description": "Contact administrator to assign supplier permissions",
+            "estimated_time": "1-2 business days"
+        })
+    
+    # Step 3: Points allocated
+    point_balance = 0
+    try:
+        user_point = db.query(models.UserPoint).filter(
+            models.UserPoint.user_id == user.id
+        ).first()
+        if user_point and user_point.total_points > 0:
+            point_balance = user_point.total_points
+            completed_steps.append("Points allocated")
+        else:
+            pending_steps.append({
+                "action": "Request point allocation",
+                "description": "Contact administrator to receive point package",
+                "estimated_time": "1-2 business days"
+            })
+    except Exception:
+        pending_steps.append({
+            "action": "Request point allocation",
+            "description": "Contact administrator to receive point package",
+            "estimated_time": "1-2 business days"
+        })
+    
+    # Calculate completion percentage
+    total_steps = 3  # Account created, suppliers assigned, points allocated
+    completion_percentage = int((len(completed_steps) / total_steps) * 100)
+    
+    return {
+        "completion_percentage": completion_percentage,
+        "completed_steps": completed_steps,
+        "pending_steps": pending_steps
+    }
+
+
+@cache(expire=300)  # 5-minute cache
+async def get_available_suppliers(db: Session) -> list:
+    """
+    Query SupplierSummary table for all available suppliers.
+    
+    Args:
+        db: Database session
+    
+    Returns:
+        List of supplier dictionaries with name, hotel_count, last_updated
+    """
+    try:
+        suppliers = db.query(models.SupplierSummary).all()
+        
+        return [
+            {
+                "name": supplier.provider_name,
+                "hotel_count": supplier.total_hotels or 0,
+                "mapping_count": supplier.total_mappings or 0,
+                "last_updated": supplier.last_updated.isoformat() if supplier.last_updated else None
+            }
+            for supplier in suppliers
+        ]
+    except Exception as e:
+        dashboard_logger.warning(f"Error fetching suppliers: {e}")
+        return []
+
+
+def get_available_packages() -> list:
+    """
+    Define static information for all point package types.
+    
+    Returns:
+        List of package dictionaries with type, description, example_points
+    """
+    return [
+        {
+            "type": "admin_user_package",
+            "name": "Admin User Package",
+            "description": "Unlimited access package for administrative users",
+            "example_points": "1000000",
+            "features": ["Unlimited API calls", "All suppliers access", "Priority support"]
+        },
+        {
+            "type": "one_year_package",
+            "name": "One Year Package",
+            "description": "Annual subscription with generous point allocation",
+            "example_points": "100000",
+            "features": ["Valid for 1 year", "High volume usage", "Standard support"]
+        },
+        {
+            "type": "one_month_package",
+            "name": "One Month Package",
+            "description": "Monthly subscription for regular usage",
+            "example_points": "10000",
+            "features": ["Valid for 1 month", "Medium volume usage", "Standard support"]
+        },
+        {
+            "type": "per_request_point",
+            "name": "Per Request Package",
+            "description": "Pay-as-you-go point allocation",
+            "example_points": "1000",
+            "features": ["Flexible usage", "No expiration", "Basic support"]
+        },
+        {
+            "type": "guest_point",
+            "name": "Guest Package",
+            "description": "Trial package for new users",
+            "example_points": "100",
+            "features": ["Limited trial access", "Basic features", "Community support"]
+        }
+    ]
+
+
+def fill_time_series_gaps(data: list, days: int = 30) -> list:
+    """
+    Fill missing dates in time-series data with zero values.
+    
+    Args:
+        data: List of dicts with 'date' and 'value' keys
+        days: Number of days to include in the series
+    
+    Returns:
+        Complete time-series list with all dates filled
+    """
+    # Generate complete date range
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=days - 1)
+    
+    # Create a dictionary from existing data for quick lookup
+    data_dict = {item["date"]: item["value"] for item in data}
+    
+    # Generate complete series
+    complete_series = []
+    current_date = start_date
+    
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        complete_series.append({
+            "date": date_str,
+            "value": data_dict.get(date_str, 0)
+        })
+        current_date += timedelta(days=1)
+    
+    return complete_series
+
+
+@cache(expire=60)  # 1-minute cache
+async def get_user_login_time_series(db: Session, user_id: str, days: int = 30) -> Dict[str, Any]:
+    """
+    Query UserActivityLog for login events and generate time-series data.
+    
+    Args:
+        db: Database session
+        user_id: User ID to filter by
+        days: Number of days to include (default 30)
+    
+    Returns:
+        Dictionary with time_series data and data_available flag
+    """
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        # Query login events - wrapped in try-except for graceful degradation
+        login_data = db.query(
+            func.date(models.UserActivityLog.created_at).label('date'),
+            func.count(models.UserActivityLog.id).label('value')
+        ).filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.action == 'login',
+            models.UserActivityLog.created_at >= start_date
+        ).group_by(
+            func.date(models.UserActivityLog.created_at)
+        ).all()
+        
+        # Convert to list of dicts
+        data = [
+            {"date": str(row.date), "value": row.value}
+            for row in login_data
+        ]
+        
+        # Fill gaps and return with data_available flag
+        return {
+            "time_series": fill_time_series_gaps(data, days),
+            "data_available": True
+        }
+        
+    except Exception as e:
+        # Log warning for missing table or query errors
+        dashboard_logger.warning(f"UserActivityLog table may not exist or be accessible for user {user_id}: {e}")
+        # Return empty series with zeros and data_available flag set to false
+        return {
+            "time_series": fill_time_series_gaps([], days),
+            "data_available": False
+        }
+
+
+@cache(expire=300)  # 5-minute cache
+async def get_platform_registration_trends(db: Session, days: int = 30) -> Dict[str, Any]:
+    """
+    Query User table for registration dates and generate time-series data.
+    
+    Args:
+        db: Database session
+        days: Number of days to include (default 30)
+    
+    Returns:
+        Dictionary with time_series data and data_available flag
+    """
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        # Query registration data
+        registration_data = db.query(
+            func.date(models.User.created_at).label('date'),
+            func.count(models.User.id).label('value')
+        ).filter(
+            models.User.created_at >= start_date
+        ).group_by(
+            func.date(models.User.created_at)
+        ).all()
+        
+        # Convert to list of dicts
+        data = [
+            {"date": str(row.date), "value": row.value}
+            for row in registration_data
+        ]
+        
+        # Fill gaps and return with data_available flag
+        return {
+            "time_series": fill_time_series_gaps(data, days),
+            "data_available": True
+        }
+        
+    except Exception as e:
+        dashboard_logger.warning(f"User table may not be accessible for registration trends: {e}")
+        # Return empty series with zeros and data_available flag set to false
+        return {
+            "time_series": fill_time_series_gaps([], days),
+            "data_available": False
+        }
+
+
+@cache(expire=300)  # 5-minute cache
+async def get_hotel_update_trends(db: Session, days: int = 30) -> Dict[str, Any]:
+    """
+    Query Hotel table for update timestamps and generate time-series data.
+    
+    Args:
+        db: Database session
+        days: Number of days to include (default 30)
+    
+    Returns:
+        Dictionary with time_series data and data_available flag
+    """
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        # Query hotel update data
+        hotel_update_data = db.query(
+            func.date(models.Hotel.updated_at).label('date'),
+            func.count(models.Hotel.id).label('value')
+        ).filter(
+            models.Hotel.updated_at >= start_date
+        ).group_by(
+            func.date(models.Hotel.updated_at)
+        ).all()
+        
+        # Convert to list of dicts
+        data = [
+            {"date": str(row.date), "value": row.value}
+            for row in hotel_update_data
+        ]
+        
+        # Fill gaps and return with data_available flag
+        return {
+            "time_series": fill_time_series_gaps(data, days),
+            "data_available": True
+        }
+        
+    except Exception as e:
+        dashboard_logger.warning(f"Hotel table may not be accessible for update trends: {e}")
+        # Return empty series with zeros and data_available flag set to false
+        return {
+            "time_series": fill_time_series_gaps([], days),
+            "data_available": False
+        }
+
+
+def generate_recommendations(user: models.User, db: Session) -> Dict[str, Any]:
+    """
+    Analyze user's current state and generate prioritized recommendations.
+    
+    Args:
+        user: User object
+        db: Database session
+    
+    Returns:
+        Dictionary with next_steps and estimated_activation_time
+    """
+    next_steps = []
+    priority = 1
+    
+    # Check supplier permissions
+    supplier_count = db.query(func.count(models.UserProviderPermission.id)).filter(
+        models.UserProviderPermission.user_id == user.id
+    ).scalar() or 0
+    
+    if supplier_count == 0:
+        next_steps.append({
+            "priority": priority,
+            "action": "Request Supplier Access",
+            "description": "Contact your administrator to assign supplier permissions. This will allow you to access hotel data from various providers.",
+            "contact_info": "Email: admin@hita-system.com or contact your system administrator",
+            "estimated_time": "1-2 business days"
+        })
+        priority += 1
+    
+    # Check point allocation
+    point_balance = 0
+    try:
+        user_point = db.query(models.UserPoint).filter(
+            models.UserPoint.user_id == user.id
+        ).first()
+        if user_point:
+            point_balance = user_point.current_points or 0
+    except Exception:
+        pass
+    
+    if point_balance == 0:
+        next_steps.append({
+            "priority": priority,
+            "action": "Request Point Allocation",
+            "description": "Contact your administrator to receive a point package. Points are required to make API requests.",
+            "contact_info": "Email: admin@hita-system.com or contact your system administrator",
+            "estimated_time": "1-2 business days"
+        })
+        priority += 1
+    
+    # If both are missing, provide combined guidance
+    if supplier_count == 0 and point_balance == 0:
+        next_steps.append({
+            "priority": priority,
+            "action": "Review Documentation",
+            "description": "While waiting for activation, review the API documentation and integration guides.",
+            "contact_info": "Documentation: /docs",
+            "estimated_time": "30 minutes"
+        })
+        estimated_activation = "2-3 business days"
+    elif supplier_count == 0 or point_balance == 0:
+        estimated_activation = "1-2 business days"
+    else:
+        next_steps.append({
+            "priority": 1,
+            "action": "Start Using the API",
+            "description": "Your account is fully activated! You can now start making API requests.",
+            "contact_info": "API Documentation: /docs",
+            "estimated_time": "Ready now"
+        })
+        estimated_activation = "Account is active"
+    
+    return {
+        "next_steps": next_steps,
+        "estimated_activation_time": estimated_activation
+    }
+
+
+# ============================================================================
+# NEW USER DASHBOARD ENDPOINT
+# ============================================================================
+
+async def _get_new_user_dashboard_data(
+    request: Request,
+    current_user: models.User,
+    db: Session
+) -> Dict[str, Any]:
+    """
+    Internal function to gather dashboard data with timeout protection.
+    
+    This function contains the main logic for gathering dashboard data and is wrapped
+    by the endpoint handler with timeout protection.
+    """
+    # ====================================================================
+    # SUBTASK 2.2: User Authentication and Validation
+    # ====================================================================
+    
+    # Validate current_user object is not None
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User authentication required"
+        )
+    
+    # ====================================================================
+    # SUBTASK 4.2: Add Audit Logging for Dashboard Access
+    # ====================================================================
+    
+    # Extract IP address from request
+    client_ip = "unknown"
+    if hasattr(request.state, 'real_ip') and request.state.real_ip:
+        client_ip = request.state.real_ip
+    elif request.client:
+        client_ip = request.client.host
+    
+    # Log all dashboard access attempts with comprehensive user details
+    dashboard_logger.info(
+        f"📊 New User Dashboard Access - "
+        f"Timestamp: {datetime.utcnow().isoformat()} | "
+        f"User ID: {current_user.id} | "
+        f"Username: {current_user.username} | "
+        f"Email: {current_user.email} | "
+        f"Role: {current_user.role} | "
+        f"IP Address: {client_ip}"
+    )
+    
+    # ====================================================================
+    # SUBTASK 2.3: Gather User Account Information
+    # ====================================================================
+    
+    try:
+        # Initialize cache status tracking
+        cache_failures = []
+        
+        # Call get_user_account_info() with db session and current user with cache fallback
+        account_info_base = {}
+        try:
+            account_info_base = await get_user_account_info(db, current_user)
+        except Exception as e:
+            dashboard_logger.warning(f"Cache unavailable for user account info, falling back to direct query: {e}")
+            cache_failures.append("user_account_info")
+            # Fallback to direct calculation
+            days_since_registration = 0
+            if current_user.created_at:
+                days_since_registration = (datetime.utcnow() - current_user.created_at).days
+            
+            supplier_count = db.query(func.count(models.UserProviderPermission.id)).filter(
+                models.UserProviderPermission.user_id == current_user.id
+            ).scalar() or 0
+            
+            point_balance = 0
+            try:
+                user_point = db.query(models.UserPoint).filter(
+                    models.UserPoint.user_id == current_user.id
+                ).first()
+                if user_point:
+                    point_balance = user_point.current_points or 0
+            except Exception:
+                pass
+            
+            if not current_user.is_active:
+                account_status = "suspended"
+            elif supplier_count == 0 or point_balance == 0:
+                account_status = "pending_activation"
+            else:
+                account_status = "active"
+            
+            account_info_base = {
+                "user_id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "account_status": account_status,
+                "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+                "days_since_registration": days_since_registration
+            }
+        
+        # Call calculate_onboarding_progress() for progress metrics
+        onboarding_progress = calculate_onboarding_progress(current_user, db)
+        
+        # Combine results into account_info response section
+        account_info = {
+            **account_info_base,
+            "onboarding_progress": onboarding_progress
+        }
+        
+        # ====================================================================
+        # SUBTASK 2.4: Gather User Resource Information
+        # ====================================================================
+        
+        # Query UserProviderPermission table to count active suppliers for user
+        supplier_count = db.query(func.count(models.UserProviderPermission.id)).filter(
+            models.UserProviderPermission.user_id == current_user.id
+        ).scalar() or 0
+        
+        # Get assigned supplier names
+        assigned_suppliers = []
+        try:
+            supplier_permissions = db.query(models.UserProviderPermission).filter(
+                models.UserProviderPermission.user_id == current_user.id
+            ).all()
+            assigned_suppliers = [perm.provider_name for perm in supplier_permissions]
+        except Exception as e:
+            dashboard_logger.warning(f"Error fetching assigned suppliers: {e}")
+        
+        # Query UserPoint table to get current point balance
+        point_balance = 0
+        total_allocated = 0
+        package_type = None
+        try:
+            user_point = db.query(models.UserPoint).filter(
+                models.UserPoint.user_id == current_user.id
+            ).first()
+            if user_point:
+                point_balance = user_point.current_points or 0
+                total_allocated = user_point.total_points or 0
+                # Infer package type from total points (simplified logic)
+                if total_allocated >= 1000000:
+                    package_type = "admin_user_package"
+                elif total_allocated >= 100000:
+                    package_type = "one_year_package"
+                elif total_allocated >= 10000:
+                    package_type = "one_month_package"
+                elif total_allocated >= 1000:
+                    package_type = "per_request_point"
+                elif total_allocated > 0:
+                    package_type = "guest_point"
+        except Exception as e:
+            dashboard_logger.warning(f"Error fetching user points: {e}")
+        
+        # Determine if supplier assignment is pending (count == 0)
+        supplier_pending = (supplier_count == 0)
+        
+        # Determine if point allocation is pending (balance == 0)
+        points_pending = (point_balance == 0)
+        
+        # Get total available suppliers
+        total_available_suppliers = db.query(func.count(models.SupplierSummary.id)).scalar() or 0
+        
+        # Format into user_resources response section
+        user_resources = {
+            "suppliers": {
+                "active_count": supplier_count,
+                "total_available": total_available_suppliers,
+                "assigned_suppliers": assigned_suppliers,
+                "pending_assignment": supplier_pending
+            },
+            "points": {
+                "current_balance": point_balance,
+                "total_allocated": total_allocated,
+                "package_type": package_type,
+                "pending_allocation": points_pending
+            }
+        }
+        
+        # ====================================================================
+        # SUBTASK 2.5: Gather Platform Overview Statistics
+        # ====================================================================
+        
+        # Query User table for total user count
+        total_users = db.query(func.count(models.User.id)).scalar() or 0
+        
+        # Query Hotel table for total hotel count
+        total_hotels = db.query(func.count(models.Hotel.id)).scalar() or 0
+        
+        # Query ProviderMapping table for total mapping count
+        total_mappings = db.query(func.count(models.ProviderMapping.id)).scalar() or 0
+        
+        # Call get_available_suppliers() for supplier list with cache fallback
+        available_suppliers = []
+        try:
+            available_suppliers = await get_available_suppliers(db)
+        except Exception as e:
+            dashboard_logger.warning(f"Cache unavailable for suppliers, falling back to direct query: {e}")
+            cache_failures.append("available_suppliers")
+            # Fallback to direct database query
+            try:
+                suppliers = db.query(models.SupplierSummary).all()
+                available_suppliers = [
+                    {
+                        "name": supplier.provider_name,
+                        "hotel_count": supplier.total_hotels or 0,
+                        "mapping_count": supplier.total_mappings or 0,
+                        "last_updated": supplier.last_updated.isoformat() if supplier.last_updated else None
+                    }
+                    for supplier in suppliers
+                ]
+            except Exception as fallback_error:
+                dashboard_logger.error(f"Fallback query for suppliers failed: {fallback_error}")
+                available_suppliers = []
+    
+        # Call get_available_packages() for package information
+        available_packages = get_available_packages()
+    
+        # Format into platform_overview response section
+        platform_overview = {
+        "total_users": total_users,
+        "total_hotels": total_hotels,
+        "total_mappings": total_mappings,
+        "available_suppliers": available_suppliers,
+        "available_packages": available_packages
+        }
+    
+        # ====================================================================
+        # SUBTASK 2.6: Gather User Activity Metrics
+        # ====================================================================
+    
+        # Call get_user_login_time_series() for login history with cache fallback
+        login_time_series_result = {"time_series": [], "data_available": False}
+        try:
+            login_time_series_result = await get_user_login_time_series(db, current_user.id, days=30)
+        except Exception as e:
+            dashboard_logger.warning(f"Cache unavailable for user login time series, falling back to direct query: {e}")
+            cache_failures.append("user_login_time_series")
+            # Fallback to direct database query with graceful degradation
+            try:
+                end_date = datetime.utcnow()
+                start_date = end_date - timedelta(days=30)
+                login_data = db.query(
+                    func.date(models.UserActivityLog.created_at).label('date'),
+                    func.count(models.UserActivityLog.id).label('value')
+                ).filter(
+                    models.UserActivityLog.user_id == current_user.id,
+                    models.UserActivityLog.action == 'login',
+                    models.UserActivityLog.created_at >= start_date
+                ).group_by(
+                    func.date(models.UserActivityLog.created_at)
+                ).all()
+                data = [{"date": str(row.date), "value": row.value} for row in login_data]
+                login_time_series_result = {
+                    "time_series": fill_time_series_gaps(data, 30),
+                    "data_available": True
+                }
+            except Exception as fallback_error:
+                dashboard_logger.warning(f"UserActivityLog table not accessible: {fallback_error}")
+                login_time_series_result = {
+                    "time_series": fill_time_series_gaps([], 30),
+                    "data_available": False
+                }
+    
+        # Query UserActivityLog for total login count with graceful degradation
+        total_login_count = 0
+        last_login = None
+        activity_log_available = True
+        try:
+            total_login_count = db.query(func.count(models.UserActivityLog.id)).filter(
+                models.UserActivityLog.user_id == current_user.id,
+                models.UserActivityLog.action == 'login'
+            ).scalar() or 0
+            
+            # Get last login timestamp from UserSession table
+            last_session = db.query(models.UserSession).filter(
+                models.UserSession.user_id == current_user.id
+            ).order_by(models.UserSession.created_at.desc()).first()
+            
+            if last_session:
+                last_login = last_session.created_at.isoformat()
+        except Exception as e:
+            dashboard_logger.warning(f"UserActivityLog or UserSession table not accessible: {e}")
+            activity_log_available = False
+    
+        # Create API request time-series with zero values (new users have no API usage)
+        api_request_time_series = fill_time_series_gaps([], days=30)
+    
+        # Format into activity_metrics response section with data_available flags
+        activity_metrics = {
+        "user_logins": {
+            "total_count": total_login_count,
+            "last_login": last_login,
+            "time_series": login_time_series_result["time_series"],
+            "data_available": login_time_series_result["data_available"] and activity_log_available
+        },
+        "api_requests": {
+            "total_count": 0,  # New users have no API usage
+            "time_series": api_request_time_series,
+            "data_available": True  # Always available as it's generated with zeros
+        }
+        }
+    
+        # ====================================================================
+        # SUBTASK 2.7: Gather Platform Trend Data
+        # ====================================================================
+    
+        # Call get_platform_registration_trends() for user registration time-series with cache fallback
+        registration_result = {"time_series": [], "data_available": False}
+        try:
+            registration_result = await get_platform_registration_trends(db, days=30)
+        except Exception as e:
+            dashboard_logger.warning(f"Cache unavailable for registration trends, falling back to direct query: {e}")
+            cache_failures.append("platform_registration_trends")
+            # Fallback to direct database query with graceful degradation
+            try:
+                end_date = datetime.utcnow()
+                start_date = end_date - timedelta(days=30)
+                registration_data = db.query(
+                    func.date(models.User.created_at).label('date'),
+                    func.count(models.User.id).label('value')
+                ).filter(
+                    models.User.created_at >= start_date
+                ).group_by(
+                    func.date(models.User.created_at)
+                ).all()
+                data = [{"date": str(row.date), "value": row.value} for row in registration_data]
+                registration_result = {
+                    "time_series": fill_time_series_gaps(data, 30),
+                    "data_available": True
+                }
+            except Exception as fallback_error:
+                dashboard_logger.warning(f"User table not accessible for registration trends: {fallback_error}")
+                registration_result = {
+                    "time_series": fill_time_series_gaps([], 30),
+                    "data_available": False
+                }
+    
+        # Call get_hotel_update_trends() for hotel update time-series with cache fallback
+        hotel_update_result = {"time_series": [], "data_available": False}
+        try:
+            hotel_update_result = await get_hotel_update_trends(db, days=30)
+        except Exception as e:
+            dashboard_logger.warning(f"Cache unavailable for hotel update trends, falling back to direct query: {e}")
+            cache_failures.append("hotel_update_trends")
+            # Fallback to direct database query with graceful degradation
+            try:
+                end_date = datetime.utcnow()
+                start_date = end_date - timedelta(days=30)
+                hotel_update_data = db.query(
+                    func.date(models.Hotel.updated_at).label('date'),
+                    func.count(models.Hotel.id).label('value')
+                ).filter(
+                    models.Hotel.updated_at >= start_date
+                ).group_by(
+                    func.date(models.Hotel.updated_at)
+                ).all()
+                data = [{"date": str(row.date), "value": row.value} for row in hotel_update_data]
+                hotel_update_result = {
+                    "time_series": fill_time_series_gaps(data, 30),
+                    "data_available": True
+                }
+            except Exception as fallback_error:
+                dashboard_logger.warning(f"Hotel table not accessible for update trends: {fallback_error}")
+                hotel_update_result = {
+                    "time_series": fill_time_series_gaps([], 30),
+                "data_available": False
+            }
+    
+        # Add metadata (title, unit, data_type) to each time-series with data_available flags
+        # Format into platform_trends response section
+        platform_trends = {
+        "user_registrations": {
+            "title": "New User Registrations",
+            "unit": "users",
+            "data_type": "count",
+            "time_series": registration_result["time_series"],
+            "data_available": registration_result["data_available"]
+        },
+        "hotel_updates": {
+            "title": "Hotel Data Updates",
+            "unit": "hotels",
+            "data_type": "count",
+            "time_series": hotel_update_result["time_series"],
+            "data_available": hotel_update_result["data_available"]
+        }
+        }
+    
+        # ====================================================================
+        # SUBTASK 2.8: Generate Recommendations
+        # ====================================================================
+    
+        # Call generate_recommendations() with user and db session
+        recommendations_data = generate_recommendations(current_user, db)
+    
+        # Format recommendations into response section
+        recommendations = recommendations_data
+    
+        # ====================================================================
+        # SUBTASK 2.9: Add Response Metadata
+        # ====================================================================
+    
+        # Add current timestamp in ISO 8601 format
+        current_timestamp = datetime.utcnow().isoformat()
+    
+        # Set cache status based on whether there were any cache failures
+        if len(cache_failures) > 0:
+            cache_status = "partial"  # Some cached data unavailable, used fallback
+            dashboard_logger.info(f"Cache failures for components: {', '.join(cache_failures)}")
+        else:
+            cache_status = "cached"  # All cached data successfully retrieved
+        
+        # Add data freshness timestamps for each component
+        data_freshness = {
+            "account_info": current_timestamp,
+            "user_resources": current_timestamp,
+        "platform_overview": current_timestamp,
+        "activity_metrics": current_timestamp,
+        "platform_trends": current_timestamp,
+        "recommendations": current_timestamp
+        }
+    
+        metadata = {
+        "timestamp": current_timestamp,
+        "cache_status": cache_status,
+        "cache_failures": cache_failures if cache_failures else None,
+        "data_freshness": data_freshness
+        }
+    
+        # ====================================================================
+        # COMPILE AND RETURN COMPLETE RESPONSE
+        # ====================================================================
+    
+        return {
+            "account_info": account_info,
+            "user_resources": user_resources,
+            "platform_overview": platform_overview,
+            "activity_metrics": activity_metrics,
+            "platform_trends": platform_trends,
+            "recommendations": recommendations,
+            "metadata": metadata
+        }
+
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
+    except Exception as e:
+        # ====================================================================
+        # SUBTASK 2.10: Implement Error Handling
+        # ====================================================================
+        
+        # Handle database errors with 500 status code
+        if isinstance(e, OperationalError):
+            dashboard_logger.error(f"Database error in new user dashboard: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection error"
+            )
+        
+        # Handle unexpected errors with logging and 500 status code
+        import traceback
+        dashboard_logger.error(f"Unexpected error in new user dashboard: {e}")
+        dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
+    )
+
+
+@router.get(
+    "/new-user",
+    response_model=NewUserDashboardResponse,
+    summary="Get New User Dashboard",
+    description="""
+    Provides a comprehensive dashboard specifically designed for newly registered users
+    who have not yet been assigned supplier permissions or point allocations.
+    
+    This endpoint displays meaningful metrics, onboarding guidance, and system information
+    to help new users understand the platform and take next steps toward activation.
+    
+    **Key Features:**
+    - User account status and onboarding progress tracking
+    - Available suppliers and point packages information
+    - Platform activity metrics and trends visualization
+    - User activity timeline and engagement metrics
+    - Personalized recommendations for account activation
+    - Time-series data formatted for graph rendering (30-day periods)
+    
+    **Dashboard Sections:**
+    - **Account Info**: User details, account status, onboarding progress percentage
+    - **User Resources**: Supplier permissions count, point balance, pending assignments
+    - **Platform Overview**: Total users/hotels/mappings, available suppliers and packages
+    - **Activity Metrics**: User login history, API usage patterns (time-series data)
+    - **Platform Trends**: Registration trends, hotel update patterns (time-series data)
+    - **Recommendations**: Personalized next steps, activation guidance, support contacts
+    
+    **Time-Series Data Format:**
+    All time-series data follows a consistent structure with daily granularity:
+    - Date format: YYYY-MM-DD
+    - Missing dates filled with zero values for continuous series
+    - Data sorted chronologically from oldest to newest
+    - 30-day period coverage
+    
+    **Performance:**
+    - Target response time: < 500ms for 95% of requests
+    - Query timeout: 30 seconds maximum
+    - System metrics cached for 5 minutes
+    - User-specific data cached for 1 minute
+    
+    **Access Control:**
+    - Requires valid JWT authentication (any authenticated user)
+    - No admin restriction - available to all users
+    - Dashboard access logged for audit purposes
+    """,
+    response_description="Comprehensive dashboard data with account info, resources, metrics, trends, and recommendations",
+    responses={
+        200: {
+            "description": "Successful response with complete dashboard data",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "account_info": {
+                            "user_id": "abc1234567",
+                            "username": "john_doe",
+                            "email": "john@example.com",
+                            "account_status": "pending_activation",
+                            "created_at": "2024-11-01T10:30:00",
+                            "days_since_registration": 14,
+                            "onboarding_progress": {
+                                "completion_percentage": 33,
+                                "completed_steps": ["account_created"],
+                                "pending_steps": [
+                                    {
+                                        "action": "supplier_assignment",
+                                        "description": "Contact administrator to request supplier access",
+                                        "estimated_time": "1-2 business days"
+                                    },
+                                    {
+                                        "action": "point_allocation",
+                                        "description": "Request point package assignment from administrator",
+                                        "estimated_time": "1-2 business days"
+                                    }
+                                ]
+                            }
+                        },
+                        "user_resources": {
+                            "suppliers": {
+                                "active_count": 0,
+                                "total_available": 5,
+                                "assigned_suppliers": [],
+                                "pending_assignment": True
+                            },
+                            "points": {
+                                "current_balance": 0,
+                                "total_allocated": 0,
+                                "package_type": None,
+                                "pending_allocation": True
+                            }
+                        },
+                        "platform_overview": {
+                            "total_users": 150,
+                            "total_hotels": 50000,
+                            "total_mappings": 45000,
+                            "available_suppliers": [
+                                {
+                                    "name": "Agoda",
+                                    "hotel_count": 12000,
+                                    "last_updated": "2024-11-15T08:00:00"
+                                },
+                                {
+                                    "name": "Booking",
+                                    "hotel_count": 15000,
+                                    "last_updated": "2024-11-15T08:00:00"
+                                }
+                            ],
+                            "available_packages": [
+                                {
+                                    "type": "admin_user_package",
+                                    "description": "Unlimited access for administrators",
+                                    "example_points": "Unlimited"
+                                },
+                                {
+                                    "type": "one_year_package",
+                                    "description": "Annual subscription with high point allocation",
+                                    "example_points": "100000"
+                                },
+                                {
+                                    "type": "one_month_package",
+                                    "description": "Monthly subscription with moderate point allocation",
+                                    "example_points": "10000"
+                                }
+                            ]
+                        },
+                        "activity_metrics": {
+                            "user_logins": {
+                                "total_count": 5,
+                                "last_login": "2024-11-15T09:30:00",
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 0},
+                                    {"date": "2024-10-17", "value": 1},
+                                    {"date": "2024-10-18", "value": 0},
+                                    {"date": "2024-11-14", "value": 2},
+                                    {"date": "2024-11-15", "value": 2}
+                                ]
+                            },
+                            "api_requests": {
+                                "total_count": 0,
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 0},
+                                    {"date": "2024-10-17", "value": 0}
+                                ]
+                            }
+                        },
+                        "platform_trends": {
+                            "user_registrations": {
+                                "title": "New User Registrations",
+                                "unit": "users",
+                                "data_type": "count",
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 2},
+                                    {"date": "2024-10-17", "value": 3},
+                                    {"date": "2024-11-14", "value": 1},
+                                    {"date": "2024-11-15", "value": 0}
+                                ]
+                            },
+                            "hotel_updates": {
+                                "title": "Hotel Data Updates",
+                                "unit": "hotels",
+                                "data_type": "count",
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 150},
+                                    {"date": "2024-10-17", "value": 200},
+                                    {"date": "2024-11-14", "value": 180},
+                                    {"date": "2024-11-15", "value": 220}
+                                ]
+                            }
+                        },
+                        "recommendations": {
+                            "next_steps": [
+                                {
+                                    "priority": 1,
+                                    "action": "Request Supplier Access",
+                                    "description": "Contact your administrator to request access to hotel suppliers",
+                                    "contact_info": "admin@hita-system.com",
+                                    "estimated_time": "1-2 business days"
+                                },
+                                {
+                                    "priority": 2,
+                                    "action": "Request Point Allocation",
+                                    "description": "Request a point package to enable API usage",
+                                    "contact_info": "admin@hita-system.com",
+                                    "estimated_time": "1-2 business days"
+                                }
+                            ],
+                            "estimated_activation_time": "2-3 business days"
+                        },
+                        "metadata": {
+                            "timestamp": "2024-11-15T10:00:00",
+                            "cache_status": "cached",
+                            "data_freshness": {
+                                "account_info": "2024-11-15T10:00:00",
+                                "platform_overview": "2024-11-15T09:55:00",
+                                "activity_metrics": "2024-11-15T09:59:00"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "User not authenticated - valid JWT token required",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "User authentication required"
+                    }
+                }
+            }
+        },
+        500: {
+            "description": "Internal server error - database connection failure or unexpected error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Database error occurred"
+                    }
+                }
+            }
+        },
+        504: {
+            "description": "Gateway timeout - request took longer than 30 seconds",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Request timeout - Dashboard data retrieval took too long. Please try again."
+                    }
+                }
+            }
+        }
+    },
+    tags=["Dashboard"]
+)
+async def get_new_user_dashboard(
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get Comprehensive Dashboard for New Users (All Authenticated Users)
+    
+    Provides a comprehensive dashboard specifically designed for newly registered users
+    who have not yet been assigned supplier permissions or point allocations. This endpoint
+    displays meaningful metrics, onboarding guidance, and system information to help new
+    users understand the platform and take next steps toward activation.
+    
+    Features:
+    - User account status and onboarding progress tracking
+    - Available suppliers and point packages information
+    - Platform activity metrics and trends visualization
+    - User activity timeline and engagement metrics
+    - Personalized recommendations for account activation
+    - Time-series data formatted for graph rendering
+    - Graceful handling of missing data tables
+    - Query timeout protection (30 seconds)
+    
+    Dashboard Sections:
+        - Account Info: User details, status, onboarding progress
+        - User Resources: Supplier permissions, point balance, pending assignments
+        - Platform Overview: System statistics, available resources
+        - Activity Metrics: User login history, API usage patterns
+        - Platform Trends: Registration trends, hotel update patterns
+        - Recommendations: Next steps, activation guidance, support contacts
+    
+    Args:
+        request: FastAPI request object for IP extraction
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+    
+    Returns:
+        dict: Comprehensive dashboard data including:
+            - account_info: User account details and onboarding progress
+            - user_resources: Supplier and point allocation status
+            - platform_overview: System-wide statistics and available resources
+            - activity_metrics: User activity timeline and engagement data
+            - platform_trends: Platform growth and update trends
+            - recommendations: Personalized next steps and guidance
+            - metadata: Response metadata, cache status, data freshness
+    
+    Access Control:
+        - Requires valid JWT authentication (any authenticated user)
+        - No admin restriction - available to all users
+        - Dashboard access logged for audit purposes
+    
+    Error Handling:
+        - 401: User not authenticated
+        - 500: Database errors or system failures
+        - 504: Query timeout (request took longer than 30 seconds)
+        - Graceful degradation when optional tables are missing
+        - Comprehensive error logging for troubleshooting
+    
+    Performance:
+        - Target response time: < 500ms for 95% of requests
+        - Query timeout: 30 seconds maximum
+        - System metrics cached for 5 minutes
+        - User-specific data cached for 1 minute
+        - Optimized database queries with proper indexing
+    
+    Use Cases:
+        - New user onboarding and orientation
+        - Account activation status monitoring
+        - Platform exploration and discovery
+        - Progress tracking and engagement
+        - Support and guidance for new users
+    """
+    # ====================================================================
+    # SUBTASK 4.3: Implement Query Timeout Handling
+    # ====================================================================
+    
+    try:
+        # Set query timeout to 30 seconds
+        result = await asyncio.wait_for(
+            _get_new_user_dashboard_data(request, current_user, db),
+            timeout=30.0
+        )
+        return result
+        
+    except asyncio.TimeoutError:
+        # Handle timeout exceptions with 504 status code
+        dashboard_logger.error(
+            f"⏱️ Dashboard query timeout for user {current_user.username} "
+            f"(ID: {current_user.id}) - Request exceeded 30 seconds"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Request timeout - Dashboard data retrieval took too long. Please try again."
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
+    except Exception as e:
+        # Log unexpected errors
+        import traceback
+        dashboard_logger.error(f"Unexpected error in dashboard endpoint wrapper: {e}")
+        dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing your request"
         )
