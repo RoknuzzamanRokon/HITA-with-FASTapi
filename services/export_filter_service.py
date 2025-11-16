@@ -11,7 +11,7 @@ Handles query building and filtering for export operations including:
 """
 
 from typing import List, Optional
-from sqlalchemy.orm import Session, Query, joinedload
+from sqlalchemy.orm import Session, Query, selectinload
 from sqlalchemy import func, and_, or_
 from datetime import datetime
 import logging
@@ -125,17 +125,17 @@ class ExportFilterService:
             query = self.db.query(Hotel)
             
             # Apply eager loading for relationships if requested
-            # Using joinedload reduces N+1 query problems
+            # Using selectinload reduces N+1 query problems and works with yield_per()
             if include_locations:
-                query = query.options(joinedload(Hotel.locations))
+                query = query.options(selectinload(Hotel.locations))
                 logger.debug("Added eager loading for locations")
             
             if include_contacts:
-                query = query.options(joinedload(Hotel.contacts))
+                query = query.options(selectinload(Hotel.contacts))
                 logger.debug("Added eager loading for contacts")
             
             if include_mappings:
-                query = query.options(joinedload(Hotel.provider_mappings))
+                query = query.options(selectinload(Hotel.provider_mappings))
                 logger.debug("Added eager loading for provider_mappings")
             
             # Filter by suppliers (required - user must have access)
@@ -248,7 +248,7 @@ class ExportFilterService:
         try:
             # Start with base query - eager load hotel relationship
             query = self.db.query(ProviderMapping).options(
-                joinedload(ProviderMapping.hotel)
+                selectinload(ProviderMapping.hotel)
             )
             
             # Filter by suppliers
