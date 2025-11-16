@@ -388,6 +388,13 @@ class ExportFilterService:
         """
         Validate filter parameters for consistency and correctness.
         
+        Validates:
+        - Date ranges (from < to, not in future)
+        - Rating ranges (0-5, min <= max)
+        - Pagination parameters
+        - Maximum export size (100,000 records)
+        - Empty list validations
+        
         Args:
             filters: Filter object (HotelExportFilters, MappingExportFilters, etc.)
             
@@ -402,12 +409,26 @@ class ExportFilterService:
                 if filters.date_from and filters.date_to:
                     if filters.date_from > filters.date_to:
                         return False, "date_from must be before date_to"
+                
+                # Check dates are not in the future
+                current_time = datetime.utcnow()
+                if filters.date_from and filters.date_from > current_time:
+                    return False, "date_from cannot be in the future"
+                if filters.date_to and filters.date_to > current_time:
+                    return False, "date_to cannot be in the future"
             
             # Check rating range validity
             if hasattr(filters, 'min_rating') and hasattr(filters, 'max_rating'):
-                if filters.min_rating is not None and filters.max_rating is not None:
-                    if filters.min_rating > filters.max_rating:
-                        return False, "min_rating must be less than or equal to max_rating"
+                if filters.min_rating is not None:
+                    if filters.min_rating < 0 or filters.min_rating > 5:
+                        return False, "min_rating must be between 0 and 5"
+                
+                if filters.max_rating is not None:
+                    if filters.max_rating < 0 or filters.max_rating > 5:
+                        return False, "max_rating must be between 0 and 5"
+                    
+                    if filters.min_rating is not None and filters.max_rating < filters.min_rating:
+                        return False, "max_rating must be greater than or equal to min_rating"
             
             # Check pagination validity
             if hasattr(filters, 'page') and hasattr(filters, 'page_size'):
@@ -415,6 +436,31 @@ class ExportFilterService:
                     return False, "page must be >= 1"
                 if filters.page_size < 1 or filters.page_size > 10000:
                     return False, "page_size must be between 1 and 10000"
+            
+            # Check maximum export size
+            if hasattr(filters, 'max_records'):
+                if filters.max_records is not None:
+                    if filters.max_records < 1:
+                        return False, "max_records must be at least 1"
+                    if filters.max_records > 100000:
+                        return False, "max_records cannot exceed 100,000. Please use more specific filters or pagination."
+            
+            # Check that list filters are not empty if provided
+            if hasattr(filters, 'suppliers'):
+                if filters.suppliers is not None and len(filters.suppliers) == 0:
+                    return False, "suppliers list cannot be empty if provided"
+            
+            if hasattr(filters, 'country_codes'):
+                if filters.country_codes is not None and len(filters.country_codes) == 0:
+                    return False, "country_codes list cannot be empty if provided"
+            
+            if hasattr(filters, 'ittids'):
+                if filters.ittids is not None and len(filters.ittids) == 0:
+                    return False, "ittids list cannot be empty if provided"
+            
+            if hasattr(filters, 'property_types'):
+                if filters.property_types is not None and len(filters.property_types) == 0:
+                    return False, "property_types list cannot be empty if provided"
             
             logger.debug("Filters validated successfully")
             return True, None
