@@ -250,41 +250,42 @@ class ExportFilterService:
             query = self.db.query(ProviderMapping).options(
                 joinedload(ProviderMapping.hotel)
             )
-        
-        # Filter by suppliers
-        if filters.suppliers and len(filters.suppliers) > 0:
-            # User specified specific suppliers - use intersection with allowed
-            requested_suppliers = set(filters.suppliers)
-            allowed_set = set(allowed_suppliers)
-            effective_suppliers = list(requested_suppliers.intersection(allowed_set))
             
-            if not effective_suppliers:
-                logger.warning("No overlap between requested and allowed suppliers")
-                # Return empty query
-                query = query.filter(ProviderMapping.id == None)
-                return query
+            # Filter by suppliers
+            if filters.suppliers and len(filters.suppliers) > 0:
+                # User specified specific suppliers - use intersection with allowed
+                requested_suppliers = set(filters.suppliers)
+                allowed_set = set(allowed_suppliers)
+                effective_suppliers = list(requested_suppliers.intersection(allowed_set))
+                
+                if not effective_suppliers:
+                    logger.warning("No overlap between requested and allowed suppliers")
+                    # Return empty query
+                    query = query.filter(ProviderMapping.id == None)
+                    return query
+                
+                logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
+                query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
+            else:
+                # No specific suppliers requested - use all allowed
+                logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
+                query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
             
-            logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
-            query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
-        else:
-            # No specific suppliers requested - use all allowed
-            logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
-            query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
-        
-        # Filter by specific ITTIDs if provided
-        if filters.ittids and len(filters.ittids) > 0:
-            logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
-            query = query.filter(ProviderMapping.ittid.in_(filters.ittids))
+            # Filter by specific ITTIDs if provided
+            if filters.ittids and len(filters.ittids) > 0:
+                logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
+                query = query.filter(ProviderMapping.ittid.in_(filters.ittids))
         
         # Filter by date range if provided
-        if filters.date_from is not None:
-            logger.debug(f"Filtering by date_from >= {filters.date_from}")
-            query = query.filter(ProviderMapping.updated_at >= filters.date_from)
-        
-        if filters.date_to is not None:
-            logger.debug(f"Filtering by date_to <= {filters.date_to}")
-            query = query.filter(ProviderMapping.updated_at <= filters.date_to)
-        
+            # Filter by date range if provided
+            if filters.date_from is not None:
+                logger.debug(f"Filtering by date_from >= {filters.date_from}")
+                query = query.filter(ProviderMapping.updated_at >= filters.date_from)
+            
+            if filters.date_to is not None:
+                logger.debug(f"Filtering by date_to <= {filters.date_to}")
+                query = query.filter(ProviderMapping.updated_at <= filters.date_to)
+            
             # Order by provider_name and ittid for consistent results
             query = query.order_by(ProviderMapping.provider_name, ProviderMapping.ittid)
             
@@ -324,32 +325,32 @@ class ExportFilterService:
         try:
             # Start with base query
             query = self.db.query(SupplierSummary)
-        
-        # Filter by suppliers if provided
-        if filters.suppliers and len(filters.suppliers) > 0:
-            if allowed_suppliers:
-                # User specified specific suppliers - use intersection with allowed
-                requested_suppliers = set(filters.suppliers)
-                allowed_set = set(allowed_suppliers)
-                effective_suppliers = list(requested_suppliers.intersection(allowed_set))
-                
-                if not effective_suppliers:
-                    logger.warning("No overlap between requested and allowed suppliers")
-                    # Return empty query
-                    query = query.filter(SupplierSummary.id == None)
-                    return query
-                
-                logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
-                query = query.filter(SupplierSummary.provider_name.in_(effective_suppliers))
-            else:
-                # No allowed suppliers restriction (admin/super user)
-                logger.debug(f"Filtering by {len(filters.suppliers)} requested suppliers")
-                query = query.filter(SupplierSummary.provider_name.in_(filters.suppliers))
-        elif allowed_suppliers:
-            # No specific suppliers requested but user has restrictions
-            logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
-            query = query.filter(SupplierSummary.provider_name.in_(allowed_suppliers))
-        
+            
+            # Filter by suppliers if provided
+            if filters.suppliers and len(filters.suppliers) > 0:
+                if allowed_suppliers:
+                    # User specified specific suppliers - use intersection with allowed
+                    requested_suppliers = set(filters.suppliers)
+                    allowed_set = set(allowed_suppliers)
+                    effective_suppliers = list(requested_suppliers.intersection(allowed_set))
+                    
+                    if not effective_suppliers:
+                        logger.warning("No overlap between requested and allowed suppliers")
+                        # Return empty query
+                        query = query.filter(SupplierSummary.id == None)
+                        return query
+                    
+                    logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
+                    query = query.filter(SupplierSummary.provider_name.in_(effective_suppliers))
+                else:
+                    # No allowed suppliers restriction (admin/super user)
+                    logger.debug(f"Filtering by {len(filters.suppliers)} requested suppliers")
+                    query = query.filter(SupplierSummary.provider_name.in_(filters.suppliers))
+            elif allowed_suppliers:
+                # No specific suppliers requested but user has restrictions
+                logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
+                query = query.filter(SupplierSummary.provider_name.in_(allowed_suppliers))
+            
             # Order by provider_name for consistent results
             query = query.order_by(SupplierSummary.provider_name)
             

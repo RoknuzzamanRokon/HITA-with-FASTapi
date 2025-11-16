@@ -734,6 +734,232 @@ Comprehensive error handling with standardized HTTP status codes:
 - Supplier access reporting
             """,
         },
+        {
+            "name": "Export",
+            "description": """
+## 📤 Content Export API
+
+**Comprehensive data export system for hotel data, provider mappings, and supplier statistics**
+
+This API module provides powerful export capabilities for extracting hotel data, provider mappings, and supplier summary statistics in multiple formats (CSV, JSON, Excel). It supports both synchronous and asynchronous export processing with role-based access control and comprehensive audit logging.
+
+### 🔑 Key Features
+
+**📊 Multiple Export Types:**
+- Hotel data export with locations, contacts, and provider mappings
+- Provider mapping export with Giata codes and Vervotech IDs
+- Supplier summary statistics with country breakdown
+- Flexible filtering and customization options
+
+**📁 Format Support:**
+- **CSV**: UTF-8 encoded, flattened structure for spreadsheet applications
+- **JSON**: Structured format with nested relationships and metadata
+- **Excel**: Multi-sheet workbooks with formatted headers and summary dashboards
+
+**⚡ Performance Optimization:**
+- Synchronous exports for small datasets (<5000 records)
+- Asynchronous background processing for large datasets (>=5000 records)
+- Streaming data processing to manage memory efficiently
+- Progress tracking and status monitoring for async exports
+
+**🔐 Security & Access Control:**
+- Role-based permissions with supplier access validation
+- Point deduction for general users
+- IP whitelist validation
+- Comprehensive audit logging for compliance
+
+### 🎯 Available Operations
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1.0/export/hotels` | POST | Export hotel data with filters in specified format |
+| `/v1.0/export/mappings` | POST | Export provider mapping data with filters |
+| `/v1.0/export/supplier-summary` | POST | Export supplier summary statistics |
+| `/v1.0/export/status/{job_id}` | GET | Check status of asynchronous export job |
+| `/v1.0/export/download/{job_id}` | GET | Download completed export file |
+
+### 🔄 Export Workflow
+
+1. **Request Export** → Submit export request with filters and format
+2. **Permission Validation** → Verify user access to requested suppliers
+3. **Point Deduction** → Deduct points for general users (if applicable)
+4. **Processing** → Generate export synchronously or asynchronously
+5. **Download** → Retrieve completed export file
+
+**Synchronous Flow (<5000 records):**
+- Immediate file generation and download
+- Direct FileResponse with export data
+- Suitable for quick exports and small datasets
+
+**Asynchronous Flow (>=5000 records):**
+- Background job creation with unique job ID
+- Progress tracking and status updates
+- File storage for 24 hours after completion
+- Download via job ID when ready
+
+### 📋 Export Filters
+
+**Hotel Export Filters:**
+- Supplier/provider names (multiple selection)
+- Country codes (ISO format)
+- Rating range (min/max)
+- Date range (created_at, updated_at)
+- ITTID list (specific hotel IDs)
+- Property types
+- Include/exclude locations, contacts, mappings
+
+**Mapping Export Filters:**
+- Supplier/provider names
+- ITTID list
+- Date range for mapping creation/updates
+
+**Supplier Summary Filters:**
+- Supplier names
+- Include country breakdown (optional)
+
+### 🔐 Role-Based Access
+
+**Super User & Admin User:**
+- Access to all suppliers in the system
+- No point deduction for exports
+- Unlimited export capabilities
+- Full access to all export types
+
+**General User:**
+- Limited to assigned supplier permissions
+- Point deduction per export operation
+- Supplier access validation required
+- IP whitelist validation enforced
+
+### 📊 Export Formats
+
+**CSV Format:**
+- UTF-8 encoding with BOM for Excel compatibility
+- Comma-delimited with double-quote text qualifiers
+- Flattened structure (one row per hotel)
+- Comprehensive headers with all data fields
+- Suitable for spreadsheet applications and data analysis
+
+**JSON Format:**
+- UTF-8 encoding with pretty-printing
+- Nested structure preserving relationships
+- ISO 8601 datetime formatting
+- Export metadata header (timestamp, user, filters, record count)
+- Suitable for API integration and data processing
+
+**Excel Format:**
+- XLSX format (OpenXML)
+- Multiple sheets: Hotels, Locations, Contacts, Mappings, Summary
+- Formatted headers with bold text and colored backgrounds
+- Auto-sized columns for readability
+- Freeze panes on header rows
+- Summary dashboard sheet with key metrics
+- Suitable for business reporting and presentations
+
+### 📈 Export Limits & Performance
+
+**Size Limits:**
+- Maximum export size: 100,000 records per request
+- Synchronous threshold: 5,000 records
+- Batch processing: 1,000 records per iteration
+- Memory management: Streaming data processing
+
+**Performance Targets:**
+- 1,000 records: <5 seconds
+- 10,000 records: <30 seconds
+- 50,000 records: <3 minutes (async)
+- Memory usage: <500MB for any export size
+
+**File Retention:**
+- Export files stored for 24 hours
+- Automatic cleanup of expired files
+- Download available immediately after completion
+
+### 🔍 Job Status Tracking
+
+**Status Values:**
+- **pending**: Job created, waiting to start
+- **processing**: Export in progress
+- **completed**: Export finished, file ready for download
+- **failed**: Export encountered an error
+
+**Progress Information:**
+- Progress percentage (0-100%)
+- Processed record count
+- Total record count
+- Estimated completion time
+- Error messages (if failed)
+
+### 🚨 Error Handling
+
+Comprehensive error handling with standardized error codes:
+
+- **UNAUTHORIZED** (401): Invalid or expired authentication token
+- **IP_NOT_WHITELISTED** (403): User IP not in whitelist
+- **INSUFFICIENT_PERMISSIONS** (403): No access to requested suppliers
+- **INSUFFICIENT_POINTS** (402): Not enough points for export
+- **INVALID_FORMAT** (400): Unsupported export format
+- **INVALID_FILTERS** (400): Invalid filter parameters
+- **EXPORT_TOO_LARGE** (400): Exceeds maximum export size
+- **JOB_NOT_FOUND** (404): Export job ID not found
+- **JOB_EXPIRED** (410): Export file has expired (>24 hours)
+- **EXPORT_FAILED** (500): Internal export processing error
+
+### 📊 Audit Logging
+
+All export operations are logged with:
+- User ID and role
+- Export type and format
+- Filters applied
+- Record count and file size
+- IP address and user agent
+- Timestamp and duration
+- Success/failure status
+- Error details (if applicable)
+
+Logs are retained for 90 days for compliance and audit purposes.
+
+### 🔍 Use Cases
+
+**Data Analysis:**
+- Export hotel data for offline analysis
+- Generate reports on hotel coverage and quality
+- Analyze supplier performance and statistics
+- Create custom dashboards and visualizations
+
+**Integration:**
+- Export data for external system integration
+- Synchronize hotel data with third-party platforms
+- Backup hotel and mapping data
+- Data migration and transformation
+
+**Reporting:**
+- Generate business intelligence reports
+- Create supplier performance summaries
+- Analyze geographic distribution of hotels
+- Track data quality and completeness metrics
+
+### 💡 Best Practices
+
+**Optimize Export Performance:**
+- Use specific filters to reduce dataset size
+- Request only necessary data (exclude unused relationships)
+- Use asynchronous exports for large datasets
+- Monitor job status for long-running exports
+
+**Manage Export Files:**
+- Download files promptly (24-hour retention)
+- Store exports securely if needed long-term
+- Use appropriate format for your use case
+- Compress large files for storage or transmission
+
+**Security Considerations:**
+- Validate supplier permissions before exporting
+- Monitor point balance for general users
+- Review audit logs regularly
+- Protect exported files containing sensitive data
+            """,
+        },
     ]
     
     # Add tags to the schema
