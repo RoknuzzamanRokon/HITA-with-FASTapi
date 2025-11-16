@@ -11,10 +11,13 @@ from database import get_db
 import secrets
 import models
 import redis
+from dotenv import load_dotenv()
+import os
 
+load_dotenv()
 blacklist = redis.Redis(host="localhost", port=6379, db=0)
 
-PER_REQUEST_POINT_DEDUCTION = 10  
+PER_REQUEST_POINT_DEDUCTION = os.getenv("PER_REQUEST_POINT_DEDUCTION")
 
 def is_exempt_from_point_deduction(user: models.User) -> bool:
     """Check if user is exempt from point deductions (super_user and admin_user)."""

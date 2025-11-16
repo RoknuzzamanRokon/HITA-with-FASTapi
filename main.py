@@ -78,7 +78,7 @@ app.add_middleware(
 )
 
 
-# ——————— Initialize Redis cache on startup ———————
+# ——————— Initialize Redis cache and Export Worker on startup ———————
 @app.on_event("startup")
 async def startup():
     # Create Redis connection (adjust URL if needed)
@@ -88,6 +88,18 @@ async def startup():
     )
     # Initialize FastAPI-Cache with a prefix
     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+    
+    # Initialize dedicated export worker
+    from services.export_worker import get_export_worker
+    worker = get_export_worker()
+    logger.info("Export worker initialized")
+
+@app.on_event("shutdown")
+async def shutdown():
+    # Shutdown export worker gracefully
+    from services.export_worker import shutdown_export_worker
+    shutdown_export_worker()
+    logger.info("Export worker shutdown complete")
 # ————————————————————————————————————————————————
 
 

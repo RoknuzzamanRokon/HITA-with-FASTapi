@@ -139,18 +139,25 @@ class ExportPermissionService:
             allowed_suppliers = user_suppliers
             denied_suppliers = []
         else:
+            # Normalize supplier names to lowercase for case-insensitive comparison
+            user_suppliers_lower = {s.lower(): s for s in user_suppliers}
+            deactivated_suppliers_lower = {s.lower() for s in deactivated_suppliers}
+            
             # Validate each requested supplier
             allowed_suppliers = []
             denied_suppliers = []
             
             for supplier in requested_suppliers:
+                supplier_lower = supplier.lower()
+                
                 # Check if supplier is temporarily deactivated
-                if supplier in deactivated_suppliers:
+                if supplier_lower in deactivated_suppliers_lower:
                     denied_suppliers.append(supplier)
                     logger.warning(f"Supplier {supplier} is temporarily deactivated for user {user.id}")
-                # Check if user has access to supplier
-                elif supplier in user_suppliers:
-                    allowed_suppliers.append(supplier)
+                # Check if user has access to supplier (case-insensitive)
+                elif supplier_lower in user_suppliers_lower:
+                    # Use the original supplier name from user's permissions
+                    allowed_suppliers.append(user_suppliers_lower[supplier_lower])
                 else:
                     denied_suppliers.append(supplier)
                     logger.warning(f"User {user.id} does not have access to supplier {supplier}")

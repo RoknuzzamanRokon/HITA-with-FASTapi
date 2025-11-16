@@ -160,8 +160,7 @@ class HotelItem(BaseModel):
     type: Optional[str] = "" 
     photo: str
     star: Optional[float] = None
-    vervotech: Optional[str] = None
-    giata: Optional[str] = None
+    ittid: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -615,8 +614,7 @@ async def search_hotel_with_location(
                 "type": "Villa",
                 "photo": "https://...",
                 "star": 4.0,
-                "vervotech": "15392205",
-                "giata": "291678",
+                "ittid": "10121450",
                 "agoda": ["55395643"]
             }
         ]
@@ -698,8 +696,7 @@ async def search_hotel_with_location(
                         "type": hotel.get('ptype') or '',
                         "photo": hotel.get('photo') or '',
                         "star": hotel.get('star', 0.0),
-                        "vervotech": hotel.get('vervotech') or '',
-                        "giata": hotel.get('giata'),
+                        "ittid": hotel.get('ittid') or '',
                     }
                     
                     # Add supplier-specific IDs

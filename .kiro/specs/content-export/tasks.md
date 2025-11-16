@@ -218,7 +218,7 @@
   - Handle expired export file scenarios
   - _Requirements: 5.3, 9.2, 9.3_
 
-- [-] 11. Optimize database queries and when finish, commit with only headlin.
+- [x] 11. Optimize database queries and when finish, commit with only headlin.
 
   - Add database indexes on frequently filtered columns
   - Implement query result streaming with yield_per
@@ -228,7 +228,7 @@
   - Test query performance with EXPLAIN ANALYZE
   - _Requirements: 10.1, 10.4, 10.5_
 
-- [ ] 12. Register export router in main application and when finish, commit with only headlin.
+- [x] 12. Register export router in main application and when finish, commit with only headlin.
 
   - Import export router in main.py
   - Register router with app.include_router

@@ -51,3 +51,9 @@ utils/mapping_progress.json
 
 
 utils/usage/
+
+
+/exports
+
+
+.env.example

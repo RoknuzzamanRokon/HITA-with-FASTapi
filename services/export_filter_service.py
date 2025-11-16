@@ -12,7 +12,7 @@ Handles query building and filtering for export operations including:
 
 from typing import List, Optional
 from sqlalchemy.orm import Session, Query, selectinload
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, Float
 from datetime import datetime
 import logging
 import hashlib
@@ -144,10 +144,17 @@ class ExportFilterService:
             
             # Determine which suppliers to filter by
             if filters.suppliers and len(filters.suppliers) > 0:
-                # User specified specific suppliers - use intersection with allowed
-                requested_suppliers = set(filters.suppliers)
-                allowed_set = set(allowed_suppliers)
-                effective_suppliers = list(requested_suppliers.intersection(allowed_set))
+                # User specified specific suppliers - use intersection with allowed (case-insensitive)
+                # Normalize to lowercase for comparison
+                requested_lower = {s.lower() for s in filters.suppliers}
+                allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
+                
+                # Find intersection and use original allowed supplier names
+                effective_suppliers = [
+                    allowed_lower_map[s_lower] 
+                    for s_lower in requested_lower 
+                    if s_lower in allowed_lower_map
+                ]
                 
                 if not effective_suppliers:
                     logger.warning("No overlap between requested and allowed suppliers")
@@ -180,13 +187,13 @@ class ExportFilterService:
                 logger.debug(f"Filtering by min_rating >= {filters.min_rating}")
                 # Convert rating to float for comparison
                 query = query.filter(
-                    func.cast(Hotel.rating, func.Float) >= filters.min_rating
+                    func.cast(Hotel.rating, Float) >= filters.min_rating
                 )
             
             if filters.max_rating is not None:
                 logger.debug(f"Filtering by max_rating <= {filters.max_rating}")
                 query = query.filter(
-                    func.cast(Hotel.rating, func.Float) <= filters.max_rating
+                    func.cast(Hotel.rating, Float) <= filters.max_rating
                 )
             
             # Filter by property types if provided
@@ -253,10 +260,17 @@ class ExportFilterService:
             
             # Filter by suppliers
             if filters.suppliers and len(filters.suppliers) > 0:
-                # User specified specific suppliers - use intersection with allowed
-                requested_suppliers = set(filters.suppliers)
-                allowed_set = set(allowed_suppliers)
-                effective_suppliers = list(requested_suppliers.intersection(allowed_set))
+                # User specified specific suppliers - use intersection with allowed (case-insensitive)
+                # Normalize to lowercase for comparison
+                requested_lower = {s.lower() for s in filters.suppliers}
+                allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
+                
+                # Find intersection and use original allowed supplier names
+                effective_suppliers = [
+                    allowed_lower_map[s_lower] 
+                    for s_lower in requested_lower 
+                    if s_lower in allowed_lower_map
+                ]
                 
                 if not effective_suppliers:
                     logger.warning("No overlap between requested and allowed suppliers")
@@ -329,10 +343,17 @@ class ExportFilterService:
             # Filter by suppliers if provided
             if filters.suppliers and len(filters.suppliers) > 0:
                 if allowed_suppliers:
-                    # User specified specific suppliers - use intersection with allowed
-                    requested_suppliers = set(filters.suppliers)
-                    allowed_set = set(allowed_suppliers)
-                    effective_suppliers = list(requested_suppliers.intersection(allowed_set))
+                    # User specified specific suppliers - use intersection with allowed (case-insensitive)
+                    # Normalize to lowercase for comparison
+                    requested_lower = {s.lower() for s in filters.suppliers}
+                    allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
+                    
+                    # Find intersection and use original allowed supplier names
+                    effective_suppliers = [
+                        allowed_lower_map[s_lower] 
+                        for s_lower in requested_lower 
+                        if s_lower in allowed_lower_map
+                    ]
                     
                     if not effective_suppliers:
                         logger.warning("No overlap between requested and allowed suppliers")
@@ -392,8 +413,9 @@ class ExportFilterService:
         
         try:
             # Remove any limit/offset for counting
+            # Use SQLAlchemy 2.0 syntax: with_only_columns expects positional args
             count_query = query.statement.with_only_columns(
-                [func.count()]
+                func.count()
             ).order_by(None)
             
             count = self.db.execute(count_query).scalar()

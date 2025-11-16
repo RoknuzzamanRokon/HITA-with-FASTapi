@@ -14,6 +14,7 @@ Features:
 """
 
 import os
+import uuid
 import logging
 from typing import Annotated, Optional
 from datetime import datetime, timedelta
@@ -37,6 +38,7 @@ from export_schemas import (
 from services.export_permission_service import ExportPermissionService
 from services.export_filter_service import ExportFilterService
 from services.export_engine import ExportEngine
+from services.export_worker import get_export_worker
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 from utils import deduct_points_for_general_user
 
@@ -65,8 +67,11 @@ async def export_hotels(
     """
     Export hotel data with filters in specified format.
     
-    - **Synchronous**: Returns file directly for <5000 records
-    - **Asynchronous**: Returns job ID for >=5000 records
+    ALL exports are processed asynchronously in the background to ensure
+    zero impact on other API endpoints.
+    
+    Returns job_id immediately. Use /status/{job_id} to check progress
+    and /download/{job_id} to download when complete.
     
     Requires authentication and appropriate supplier permissions.
     General users will have points deducted.
@@ -169,9 +174,9 @@ async def export_hotels(
             include_mappings=export_request.include_mappings
         )
         
-        # Step 5: Estimate result count
-        estimated_count = filter_service.estimate_result_count(query)
-        logger.info(f"Estimated {estimated_count} records for export")
+        # Step 5: Skip exact count (slow query) - use rough estimate
+        estimated_count = 1000  # Rough estimate, actual count done in worker
+        logger.info(f"Estimated {estimated_count} records for export (rough estimate)")
         
         # Check maximum export size
         MAX_EXPORT_SIZE = 100000
@@ -200,88 +205,101 @@ async def export_hotels(
             "include_mappings": export_request.include_mappings
         }
         
-        # Step 7: Decide sync vs async based on record count
-        if estimated_count < export_engine.async_threshold:
-            # Synchronous export
-            logger.info(f"Processing synchronous export for {estimated_count} records")
-            
-            file_response = export_engine.export_hotels_sync(
-                query=query,
-                format=export_request.format,
-                user=current_user,
-                include_locations=export_request.include_locations,
-                include_contacts=export_request.include_contacts,
-                include_mappings=export_request.include_mappings
-            )
-            
-            # Log successful export
-            audit_logger.log_activity(
-                activity_type=ActivityType.EXPORT_DATA,
-                user_id=current_user.id,
-                details={
-                    "export_type": "hotels",
-                    "format": export_request.format.value,
-                    "record_count": estimated_count,
-                    "sync": True,
-                    "filters": filters_applied
-                },
-                request=request,
-                security_level=SecurityLevel.HIGH,
-                success=True
-            )
-            
-            return file_response
+        # Step 7: Always use asynchronous export to avoid blocking other endpoints
+        # Asynchronous export using dedicated worker
+        logger.info(f"Processing asynchronous export for {estimated_count} records")
         
+        # Create export job record
+        job_id = f"exp_{uuid.uuid4().hex[:16]}"
+        export_job = ExportJob(
+            id=job_id,
+            user_id=current_user.id,
+            export_type="hotels",
+            format=export_request.format.value,
+            filters=filters_applied,
+            status="pending",
+            progress_percentage=0,
+            processed_records=0,
+            total_records=estimated_count,
+            file_path=None,
+            file_size_bytes=None,
+            error_message=None,
+            created_at=datetime.utcnow(),
+            started_at=None,
+            completed_at=None,
+            expires_at=None
+        )
+        
+        db.add(export_job)
+        db.commit()
+        db.refresh(export_job)
+        
+        # Submit to dedicated export worker
+        worker = get_export_worker()
+        query_params = {
+            'filters': {
+                'suppliers': export_request.filters.suppliers,
+                'country_codes': export_request.filters.country_codes,
+                'min_rating': export_request.filters.min_rating,
+                'max_rating': export_request.filters.max_rating,
+                'date_from': export_request.filters.date_from.isoformat() if export_request.filters.date_from else None,
+                'date_to': export_request.filters.date_to.isoformat() if export_request.filters.date_to else None,
+                'ittids': export_request.filters.ittids,
+                'property_types': export_request.filters.property_types
+            },
+            'allowed_suppliers': permission_result.allowed_suppliers,
+            'include_locations': export_request.include_locations,
+            'include_contacts': export_request.include_contacts,
+            'include_mappings': export_request.include_mappings
+        }
+        
+        worker.submit_export_job(
+            job_id=job_id,
+            export_type="hotels",
+            query_params=query_params,
+            format=export_request.format,
+            user_data={'id': current_user.id, 'username': current_user.username},
+            filters_applied=filters_applied,
+            include_locations=export_request.include_locations,
+            include_contacts=export_request.include_contacts,
+            include_mappings=export_request.include_mappings
+        )
+        
+        # Log async export job creation
+        audit_logger.log_activity(
+            activity_type=ActivityType.EXPORT_DATA,
+            user_id=current_user.id,
+            details={
+                "export_type": "hotels",
+                "format": export_request.format.value,
+                "job_id": export_job.id,
+                "estimated_records": estimated_count,
+                "sync": False,
+                "status": "pending",
+                "filters": filters_applied
+            },
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=True
+        )
+        
+        # Calculate estimated completion time
+        # Rough estimate: 1000 records per second
+        estimated_seconds = estimated_count / 1000
+        if estimated_seconds < 60:
+            estimated_time = f"{int(estimated_seconds)} seconds"
         else:
-            # Asynchronous export
-            logger.info(f"Processing asynchronous export for {estimated_count} records")
-            
-            export_job = export_engine.export_hotels_async(
-                query=query,
-                format=export_request.format,
-                user=current_user,
-                background_tasks=background_tasks,
-                filters_applied=filters_applied,
-                include_locations=export_request.include_locations,
-                include_contacts=export_request.include_contacts,
-                include_mappings=export_request.include_mappings
-            )
-            
-            # Log async export job creation
-            audit_logger.log_activity(
-                activity_type=ActivityType.EXPORT_DATA,
-                user_id=current_user.id,
-                details={
-                    "export_type": "hotels",
-                    "format": export_request.format.value,
-                    "job_id": export_job.id,
-                    "estimated_records": estimated_count,
-                    "sync": False,
-                    "status": "pending",
-                    "filters": filters_applied
-                },
-                request=request,
-                security_level=SecurityLevel.HIGH,
-                success=True
-            )
-            
-            # Calculate estimated completion time
-            # Rough estimate: 1000 records per second
-            estimated_seconds = estimated_count / 1000
-            if estimated_seconds < 60:
-                estimated_time = f"{int(estimated_seconds)} seconds"
-            else:
-                estimated_minutes = int(estimated_seconds / 60)
-                estimated_time = f"{estimated_minutes} minutes"
-            
-            return ExportJobResponse(
-                job_id=export_job.id,
-                status=export_job.status,
-                estimated_records=estimated_count,
-                estimated_completion_time=estimated_time,
-                created_at=export_job.created_at,
-                message="Export job created successfully. Use the job_id to check status and download when complete."
-            )
+            estimated_minutes = int(estimated_seconds / 60)
+            estimated_time = f"{estimated_minutes} minutes"
+        
+        return ExportJobResponse(
+            job_id=export_job.id,
+            status=export_job.status,
+            estimated_records=estimated_count,
+            estimated_completion_time=estimated_time,
+            created_at=export_job.created_at,
+            message="Export job created successfully. Use the job_id to check status and download when complete."
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -355,8 +373,11 @@ async def export_mappings(
     """
     Export provider mapping data with filters in specified format.
     
-    - **Synchronous**: Returns file directly for <5000 records
-    - **Asynchronous**: Returns job ID for >=5000 records
+    ALL exports are processed asynchronously in the background to ensure
+    zero impact on other API endpoints.
+    
+    Returns job_id immediately. Use /status/{job_id} to check progress
+    and /download/{job_id} to download when complete.
     
     Includes Giata codes and Vervotech IDs in the export.
     Requires authentication and appropriate supplier permissions.
@@ -426,9 +447,9 @@ async def export_mappings(
             allowed_suppliers=permission_result.allowed_suppliers
         )
         
-        # Step 4: Estimate result count
-        estimated_count = filter_service.estimate_result_count(query)
-        logger.info(f"Estimated {estimated_count} mapping records for export")
+        # Step 4: Skip exact count (slow query) - use rough estimate  
+        estimated_count = 1000  # Rough estimate, actual count done in worker
+        logger.info(f"Estimated {estimated_count} mapping records for export (rough estimate)")
         
         # Check maximum export size
         MAX_EXPORT_SIZE = 100000
@@ -450,81 +471,90 @@ async def export_mappings(
             "date_to": export_request.filters.date_to.isoformat() if export_request.filters.date_to else None
         }
         
-        # Step 6: Decide sync vs async based on record count
-        if estimated_count < export_engine.async_threshold:
-            # Synchronous export
-            logger.info(f"Processing synchronous mapping export for {estimated_count} records")
-            
-            file_response = export_engine.export_mappings_sync(
-                query=query,
-                format=export_request.format,
-                user=current_user
-            )
-            
-            # Log successful export
-            audit_logger.log_activity(
-                activity_type=ActivityType.EXPORT_DATA,
-                user_id=current_user.id,
-                details={
-                    "export_type": "mappings",
-                    "format": export_request.format.value,
-                    "record_count": estimated_count,
-                    "sync": True,
-                    "filters": filters_applied
-                },
-                request=request,
-                security_level=SecurityLevel.HIGH,
-                success=True
-            )
-            
-            return file_response
+        # Step 6: Always use asynchronous export to avoid blocking other endpoints
+        # Asynchronous export using dedicated worker
+        logger.info(f"Processing asynchronous mapping export for {estimated_count} records")
         
+        # Create export job record
+        job_id = f"exp_{uuid.uuid4().hex[:16]}"
+        export_job = ExportJob(
+            id=job_id,
+            user_id=current_user.id,
+            export_type="mappings",
+            format=export_request.format.value,
+            filters=filters_applied,
+            status="pending",
+            progress_percentage=0,
+            processed_records=0,
+            total_records=estimated_count,
+            file_path=None,
+            file_size_bytes=None,
+            error_message=None,
+            created_at=datetime.utcnow(),
+            started_at=None,
+            completed_at=None,
+            expires_at=None
+        )
+        
+        db.add(export_job)
+        db.commit()
+        db.refresh(export_job)
+        
+        # Submit to dedicated export worker
+        worker = get_export_worker()
+        query_params = {
+            'filters': {
+                'suppliers': export_request.filters.suppliers,
+                'ittids': export_request.filters.ittids,
+                'date_from': export_request.filters.date_from.isoformat() if export_request.filters.date_from else None,
+                'date_to': export_request.filters.date_to.isoformat() if export_request.filters.date_to else None
+            },
+            'allowed_suppliers': permission_result.allowed_suppliers
+        }
+        
+        worker.submit_export_job(
+            job_id=job_id,
+            export_type="mappings",
+            query_params=query_params,
+            format=export_request.format,
+            user_data={'id': current_user.id, 'username': current_user.username},
+            filters_applied=filters_applied
+        )
+        
+        # Log async export job creation
+        audit_logger.log_activity(
+            activity_type=ActivityType.EXPORT_DATA,
+            user_id=current_user.id,
+            details={
+                "export_type": "mappings",
+                "format": export_request.format.value,
+                "job_id": export_job.id,
+                "estimated_records": estimated_count,
+                "sync": False,
+                "status": "pending",
+                "filters": filters_applied
+            },
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=True
+        )
+        
+        # Calculate estimated completion time
+        estimated_seconds = estimated_count / 1000
+        if estimated_seconds < 60:
+            estimated_time = f"{int(estimated_seconds)} seconds"
         else:
-            # Asynchronous export
-            logger.info(f"Processing asynchronous mapping export for {estimated_count} records")
-            
-            export_job = export_engine.export_mappings_async(
-                query=query,
-                format=export_request.format,
-                user=current_user,
-                background_tasks=background_tasks,
-                filters_applied=filters_applied
-            )
-            
-            # Log async export job creation
-            audit_logger.log_activity(
-                activity_type=ActivityType.EXPORT_DATA,
-                user_id=current_user.id,
-                details={
-                    "export_type": "mappings",
-                    "format": export_request.format.value,
-                    "job_id": export_job.id,
-                    "estimated_records": estimated_count,
-                    "sync": False,
-                    "status": "pending",
-                    "filters": filters_applied
-                },
-                request=request,
-                security_level=SecurityLevel.HIGH,
-                success=True
-            )
-            
-            # Calculate estimated completion time
-            estimated_seconds = estimated_count / 1000
-            if estimated_seconds < 60:
-                estimated_time = f"{int(estimated_seconds)} seconds"
-            else:
-                estimated_minutes = int(estimated_seconds / 60)
-                estimated_time = f"{estimated_minutes} minutes"
-            
-            return ExportJobResponse(
-                job_id=export_job.id,
-                status=export_job.status,
-                estimated_records=estimated_count,
-                estimated_completion_time=estimated_time,
-                created_at=export_job.created_at,
-                message="Mapping export job created successfully. Use the job_id to check status and download when complete."
-            )
+            estimated_minutes = int(estimated_seconds / 60)
+            estimated_time = f"{estimated_minutes} minutes"
+        
+        return ExportJobResponse(
+            job_id=export_job.id,
+            status=export_job.status,
+            estimated_records=estimated_count,
+            estimated_completion_time=estimated_time,
+            created_at=export_job.created_at,
+            message="Mapping export job created successfully. Use the job_id to check status and download when complete."
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -598,8 +628,11 @@ async def export_supplier_summary(
     """
     Export supplier summary statistics in specified format.
     
-    - **Synchronous**: Returns file directly for <5000 records
-    - **Asynchronous**: Returns job ID for >=5000 records
+    ALL exports are processed asynchronously in the background to ensure
+    zero impact on other API endpoints.
+    
+    Returns job_id immediately. Use /status/{job_id} to check progress
+    and /download/{job_id} to download when complete.
     
     Includes total hotels, total mappings, and last update timestamps per supplier.
     Optionally includes country breakdown if requested.
@@ -667,21 +700,12 @@ async def export_supplier_summary(
             allowed_suppliers=allowed_suppliers
         )
         
-        # Step 3: Estimate result count
-        estimated_count = filter_service.estimate_result_count(query)
+        # Step 3: Estimate result count (quick estimate, not exact)
+        estimated_count = 10  # Supplier summary is always small, just estimate
         logger.info(f"Estimated {estimated_count} supplier summary records for export")
         
-        # Step 4: Get country breakdown if requested
-        country_breakdown = None
-        if export_request.filters.include_country_breakdown:
-            if allowed_suppliers:
-                country_breakdown = filter_service.get_country_breakdown(allowed_suppliers)
-            else:
-                # Get all suppliers for breakdown
-                all_suppliers = permission_service.get_all_system_suppliers()
-                country_breakdown = filter_service.get_country_breakdown(all_suppliers)
-            
-            logger.info(f"Country breakdown included for {len(country_breakdown)} suppliers")
+        # Step 4: Skip country breakdown here - let worker handle it
+        # (Country breakdown query is slow and would block the response)
         
         # Step 5: Prepare filters for logging
         filters_applied = {
@@ -689,68 +713,88 @@ async def export_supplier_summary(
             "include_country_breakdown": export_request.filters.include_country_breakdown
         }
         
-        # Step 6: Decide sync vs async based on record count
-        if estimated_count < export_engine.async_threshold:
-            # Synchronous export
-            logger.info(f"Processing synchronous supplier summary export for {estimated_count} records")
-            
-            file_response = export_engine.export_supplier_summary_sync(
-                query=query,
-                format=export_request.format,
-                user=current_user,
-                country_breakdown=country_breakdown
-            )
-            
-            # Log successful export
-            audit_logger.log_activity(
-                activity_type=ActivityType.EXPORT_DATA,
-                user_id=current_user.id,
-                details={
-                    "export_type": "supplier_summary",
-                    "format": export_request.format.value,
-                    "record_count": estimated_count,
-                    "sync": True,
-                    "filters": filters_applied
-                },
-                request=request,
-                security_level=SecurityLevel.HIGH,
-                success=True
-            )
-            
-            return file_response
+        # Step 6: Always use asynchronous export to avoid blocking other endpoints
+        # Asynchronous export using dedicated worker
+        logger.info(f"Processing asynchronous supplier summary export for {estimated_count} records")
         
+        # Create export job record
+        job_id = f"exp_{uuid.uuid4().hex[:16]}"
+        export_job = ExportJob(
+            id=job_id,
+            user_id=current_user.id,
+            export_type="supplier_summary",
+            format=export_request.format.value,
+            filters=filters_applied,
+            status="pending",
+            progress_percentage=0,
+            processed_records=0,
+            total_records=estimated_count,
+            file_path=None,
+            file_size_bytes=None,
+            error_message=None,
+            created_at=datetime.utcnow(),
+            started_at=None,
+            completed_at=None,
+            expires_at=None
+        )
+        
+        db.add(export_job)
+        db.commit()
+        db.refresh(export_job)
+        
+        # Submit to dedicated export worker
+        worker = get_export_worker()
+        query_params = {
+            'filters': {
+                'suppliers': export_request.filters.suppliers,
+                'include_country_breakdown': export_request.filters.include_country_breakdown
+            },
+            'allowed_suppliers': allowed_suppliers
+        }
+        
+        worker.submit_export_job(
+            job_id=job_id,
+            export_type="supplier_summary",
+            query_params=query_params,
+            format=export_request.format,
+            user_data={'id': current_user.id, 'username': current_user.username},
+            filters_applied=filters_applied
+        )
+        
+        # Log async export job creation
+        audit_logger.log_activity(
+            activity_type=ActivityType.EXPORT_DATA,
+            user_id=current_user.id,
+            details={
+                "export_type": "supplier_summary",
+                "format": export_request.format.value,
+                "job_id": export_job.id,
+                "estimated_records": estimated_count,
+                "sync": False,
+                "status": "pending",
+                "filters": filters_applied
+            },
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=True
+        )
+        
+        # Calculate estimated completion time
+        estimated_seconds = max(1, estimated_count / 1000)
+        if estimated_seconds < 60:
+            estimated_time = f"{int(estimated_seconds)} seconds"
         else:
-            # Asynchronous export (unlikely for supplier summary, but supported)
-            logger.info(f"Processing asynchronous supplier summary export for {estimated_count} records")
-            
-            # Note: export_supplier_summary_async would need to be implemented in ExportEngine
-            # For now, we'll use synchronous even for large datasets since supplier summary is typically small
-            logger.warning("Supplier summary export count exceeds threshold but using sync export")
-            
-            file_response = export_engine.export_supplier_summary_sync(
-                query=query,
-                format=export_request.format,
-                user=current_user,
-                country_breakdown=country_breakdown
-            )
-            
-            # Log successful export
-            audit_logger.log_activity(
-                activity_type=ActivityType.EXPORT_DATA,
-                user_id=current_user.id,
-                details={
-                    "export_type": "supplier_summary",
-                    "format": export_request.format.value,
-                    "record_count": estimated_count,
-                    "sync": True,
-                    "filters": filters_applied
-                },
-                request=request,
-                security_level=SecurityLevel.HIGH,
-                success=True
-            )
-            
-            return file_response
+            estimated_minutes = int(estimated_seconds / 60)
+            estimated_time = f"{estimated_minutes} minutes"
+        
+        return ExportJobResponse(
+            job_id=export_job.id,
+            status=export_job.status,
+            estimated_records=estimated_count,
+            estimated_completion_time=estimated_time,
+            created_at=export_job.created_at,
+            message="Supplier summary export job created successfully. Use the job_id to check status and download when complete."
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -1023,3 +1067,56 @@ async def download_export(
                 "message": "An error occurred while downloading the export file"
             }
         )
+
+
+@router.delete("/cancel/{job_id}")
+async def cancel_export_job(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """
+    Cancel a stuck or processing export job.
+    
+    Useful for cleaning up jobs that got stuck due to server restarts.
+    Only the user who created the job (or admin/super users) can cancel it.
+    """
+    logger.info(f"Cancel export job requested for {job_id} by user {current_user.id}")
+    
+    # Get export job
+    export_job = db.query(ExportJob).filter(ExportJob.id == job_id).first()
+    
+    if not export_job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Export job {job_id} not found"
+        )
+    
+    # Check permissions - only job owner or admin can cancel
+    if export_job.user_id != current_user.id:
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only cancel your own export jobs"
+            )
+    
+    # Can only cancel pending or processing jobs
+    if export_job.status not in ["pending", "processing"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot cancel job with status: {export_job.status}"
+        )
+    
+    # Mark as failed/cancelled
+    export_job.status = "failed"
+    export_job.error_message = "Cancelled by user"
+    export_job.completed_at = datetime.utcnow()
+    db.commit()
+    
+    logger.info(f"Export job {job_id} cancelled successfully")
+    
+    return {
+        "success": True,
+        "message": f"Export job {job_id} has been cancelled",
+        "job_id": job_id
+    }
