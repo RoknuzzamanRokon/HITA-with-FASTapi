@@ -26,6 +26,11 @@ from models import ExportJob, User
 from export_schemas import ExportFormat, ExportMetadata
 from services.export_format_handler import ExportFormatHandler
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+import sys
+import os
+# Add utils directory to path for import
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'utils'))
+from export_file_storage import ExportFileStorage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -56,13 +61,9 @@ class ExportEngine:
         self.async_threshold = 5000
         self.format_handler = ExportFormatHandler()
         
-        # Set up storage path
-        if storage_path is None:
-            storage_path = os.path.join(os.getcwd(), "exports")
-        self.storage_path = storage_path
-        
-        # Ensure storage directory exists
-        Path(self.storage_path).mkdir(parents=True, exist_ok=True)
+        # Initialize file storage manager
+        self.file_storage = ExportFileStorage(storage_path)
+        self.storage_path = self.file_storage.base_storage_path
         
         logger.info(f"ExportEngine initialized with storage path: {self.storage_path}")
 
@@ -142,16 +143,23 @@ class ExportEngine:
         logger.info(f"Starting synchronous hotel export for user {user.id} in {format.value} format")
         
         try:
-            # Generate unique filename
+            # Generate unique job ID for tracking
+            job_id = f"exp_{uuid.uuid4().hex[:16]}"
+            
+            # Generate file path using storage manager
             timestamp = datetime.utcnow()
-            filename = self.format_handler.get_filename("hotels", format.value, timestamp)
-            output_path = os.path.join(self.storage_path, filename)
+            output_path = self.file_storage.get_file_path(
+                job_id=job_id,
+                export_type="hotels",
+                format=format.value,
+                timestamp=timestamp
+            )
             
             logger.debug(f"Export file path: {output_path}")
             
             # Create metadata
             metadata = ExportMetadata(
-                export_id=str(uuid.uuid4()),
+                export_id=job_id,
                 generated_at=timestamp,
                 generated_by=user.username,
                 user_id=user.id,
@@ -197,12 +205,18 @@ class ExportEngine:
             else:
                 raise ValueError(f"Unsupported export format: {format}")
             
+            # Set file permissions for security
+            self.file_storage.set_file_permissions(output_path)
+            
             # Get file size
-            file_size = os.path.getsize(output_path)
+            file_size = self.file_storage.get_file_size(output_path)
             logger.info(f"Export file generated: {output_path} ({file_size} bytes)")
             
             # Get content type
             content_type = self.format_handler.get_content_type(format.value)
+            
+            # Get filename for response
+            filename = os.path.basename(output_path)
             
             # Return file response
             return FileResponse(
@@ -247,16 +261,23 @@ class ExportEngine:
         logger.info(f"Starting synchronous mapping export for user {user.id} in {format.value} format")
         
         try:
-            # Generate unique filename
+            # Generate unique job ID for tracking
+            job_id = f"exp_{uuid.uuid4().hex[:16]}"
+            
+            # Generate file path using storage manager
             timestamp = datetime.utcnow()
-            filename = self.format_handler.get_filename("mappings", format.value, timestamp)
-            output_path = os.path.join(self.storage_path, filename)
+            output_path = self.file_storage.get_file_path(
+                job_id=job_id,
+                export_type="mappings",
+                format=format.value,
+                timestamp=timestamp
+            )
             
             logger.debug(f"Export file path: {output_path}")
             
             # Create metadata
             metadata = ExportMetadata(
-                export_id=str(uuid.uuid4()),
+                export_id=job_id,
                 generated_at=timestamp,
                 generated_by=user.username,
                 user_id=user.id,
@@ -299,12 +320,18 @@ class ExportEngine:
             else:
                 raise ValueError(f"Unsupported export format: {format}")
             
+            # Set file permissions for security
+            self.file_storage.set_file_permissions(output_path)
+            
             # Get file size
-            file_size = os.path.getsize(output_path)
+            file_size = self.file_storage.get_file_size(output_path)
             logger.info(f"Mapping export file generated: {output_path} ({file_size} bytes)")
             
             # Get content type
             content_type = self.format_handler.get_content_type(format.value)
+            
+            # Get filename for response
+            filename = os.path.basename(output_path)
             
             # Return file response
             return FileResponse(
@@ -351,16 +378,23 @@ class ExportEngine:
         logger.info(f"Starting synchronous supplier summary export for user {user.id} in {format.value} format")
         
         try:
-            # Generate unique filename
+            # Generate unique job ID for tracking
+            job_id = f"exp_{uuid.uuid4().hex[:16]}"
+            
+            # Generate file path using storage manager
             timestamp = datetime.utcnow()
-            filename = self.format_handler.get_filename("supplier_summary", format.value, timestamp)
-            output_path = os.path.join(self.storage_path, filename)
+            output_path = self.file_storage.get_file_path(
+                job_id=job_id,
+                export_type="supplier_summary",
+                format=format.value,
+                timestamp=timestamp
+            )
             
             logger.debug(f"Export file path: {output_path}")
             
             # Create metadata
             metadata = ExportMetadata(
-                export_id=str(uuid.uuid4()),
+                export_id=job_id,
                 generated_at=timestamp,
                 generated_by=user.username,
                 user_id=user.id,
@@ -403,12 +437,18 @@ class ExportEngine:
             else:
                 raise ValueError(f"Unsupported export format: {format}")
             
+            # Set file permissions for security
+            self.file_storage.set_file_permissions(output_path)
+            
             # Get file size
-            file_size = os.path.getsize(output_path)
+            file_size = self.file_storage.get_file_size(output_path)
             logger.info(f"Supplier summary export file generated: {output_path} ({file_size} bytes)")
             
             # Get content type
             content_type = self.format_handler.get_content_type(format.value)
+            
+            # Get filename for response
+            filename = os.path.basename(output_path)
             
             # Return file response
             return FileResponse(
@@ -572,10 +612,14 @@ class ExportEngine:
             
             logger.info(f"Export job {job_id} status updated to processing")
             
-            # Generate filename
+            # Generate file path using storage manager
             timestamp = datetime.utcnow()
-            filename = self.format_handler.get_filename("hotels", format.value, timestamp)
-            output_path = os.path.join(self.storage_path, filename)
+            output_path = self.file_storage.get_file_path(
+                job_id=job_id,
+                export_type="hotels",
+                format=format.value,
+                timestamp=timestamp
+            )
             
             logger.debug(f"Export file path: {output_path}")
             
@@ -645,8 +689,11 @@ class ExportEngine:
             else:
                 raise ValueError(f"Unsupported export format: {format}")
             
+            # Set file permissions for security
+            self.file_storage.set_file_permissions(output_path)
+            
             # Get file size
-            file_size = os.path.getsize(output_path)
+            file_size = self.file_storage.get_file_size(output_path)
             
             # Update job as completed
             export_job.status = "completed"
@@ -830,10 +877,14 @@ class ExportEngine:
             
             logger.info(f"Export job {job_id} status updated to processing")
             
-            # Generate filename
+            # Generate file path using storage manager
             timestamp = datetime.utcnow()
-            filename = self.format_handler.get_filename("mappings", format.value, timestamp)
-            output_path = os.path.join(self.storage_path, filename)
+            output_path = self.file_storage.get_file_path(
+                job_id=job_id,
+                export_type="mappings",
+                format=format.value,
+                timestamp=timestamp
+            )
             
             logger.debug(f"Export file path: {output_path}")
             
@@ -903,8 +954,11 @@ class ExportEngine:
             else:
                 raise ValueError(f"Unsupported export format: {format}")
             
+            # Set file permissions for security
+            self.file_storage.set_file_permissions(output_path)
+            
             # Get file size
-            file_size = os.path.getsize(output_path)
+            file_size = self.file_storage.get_file_size(output_path)
             
             # Update job as completed
             export_job.status = "completed"
@@ -1093,10 +1147,14 @@ class ExportEngine:
             
             logger.info(f"Export job {job_id} status updated to processing")
             
-            # Generate filename
+            # Generate file path using storage manager
             timestamp = datetime.utcnow()
-            filename = self.format_handler.get_filename("supplier_summary", format.value, timestamp)
-            output_path = os.path.join(self.storage_path, filename)
+            output_path = self.file_storage.get_file_path(
+                job_id=job_id,
+                export_type="supplier_summary",
+                format=format.value,
+                timestamp=timestamp
+            )
             
             logger.debug(f"Export file path: {output_path}")
             
@@ -1166,8 +1224,11 @@ class ExportEngine:
             else:
                 raise ValueError(f"Unsupported export format: {format}")
             
+            # Set file permissions for security
+            self.file_storage.set_file_permissions(output_path)
+            
             # Get file size
-            file_size = os.path.getsize(output_path)
+            file_size = self.file_storage.get_file_size(output_path)
             
             # Update job as completed
             export_job.status = "completed"
