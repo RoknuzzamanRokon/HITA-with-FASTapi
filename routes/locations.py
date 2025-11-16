@@ -133,7 +133,7 @@ class HotelItemRate(BaseModel):
     addr: str
     type: Optional[str] = "" 
     photo: str
-    star: float
+    star: Optional[float] = None
     ittid: Optional[str] = None
     rName: Optional[str] = None
     total: Optional[float] = None
@@ -159,7 +159,7 @@ class HotelItem(BaseModel):
     addr: str
     type: Optional[str] = "" 
     photo: str
-    star: float
+    star: Optional[float] = None
     vervotech: Optional[str] = None
     giata: Optional[str] = None
     

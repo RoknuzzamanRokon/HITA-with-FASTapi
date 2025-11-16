@@ -32,6 +32,7 @@ from routes.cache_management import router as cache_router
 from routes.cached_user_routes import router as cache_users_router
 from routes.audit_dashboard import router as audit_router
 from routes.dashboard import router as dashboard_router
+from routes.export import router as export_router
 
 from routes.hotelRawData import router as raw_content_data
 from routes.hotelFormattingData import router as hotel_formatting_data
@@ -143,6 +144,7 @@ app.include_router(cache_router)
 app.include_router(cache_users_router)
 app.include_router(audit_router)
 app.include_router(dashboard_router)
+app.include_router(export_router)
 
 
 app.include_router(raw_content_data)

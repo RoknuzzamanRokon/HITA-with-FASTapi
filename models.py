@@ -362,3 +362,28 @@ class SupplierSummary(Base):
     total_mappings = Column(Integer, nullable=False, default=0)
     last_updated = Column(DateTime, nullable=True)
     summary_generated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+# Export Job Model
+class ExportJob(Base):
+    __tablename__ = "export_jobs"
+
+    id = Column(String(50), primary_key=True, index=True)
+    user_id = Column(String(10), ForeignKey("users.id"), nullable=False, index=True)
+    export_type = Column(String(50), nullable=False)  # "hotels", "mappings", "supplier_summary"
+    format = Column(String(10), nullable=False)  # "csv", "json", "excel"
+    filters = Column(JSON, nullable=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)  # "pending", "processing", "completed", "failed"
+    progress_percentage = Column(Integer, default=0)
+    processed_records = Column(Integer, default=0)
+    total_records = Column(Integer, nullable=True)
+    file_path = Column(String(500), nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+
+    # Relationships
+    user = relationship("User", backref="export_jobs")
