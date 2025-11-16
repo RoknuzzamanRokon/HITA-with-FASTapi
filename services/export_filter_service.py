@@ -123,89 +123,89 @@ class ExportFilterService:
         try:
             # Start with base query
             query = self.db.query(Hotel)
-        
-        # Apply eager loading for relationships if requested
-        # Using joinedload reduces N+1 query problems
-        if include_locations:
-            query = query.options(joinedload(Hotel.locations))
-            logger.debug("Added eager loading for locations")
-        
-        if include_contacts:
-            query = query.options(joinedload(Hotel.contacts))
-            logger.debug("Added eager loading for contacts")
-        
-        if include_mappings:
-            query = query.options(joinedload(Hotel.provider_mappings))
-            logger.debug("Added eager loading for provider_mappings")
-        
-        # Filter by suppliers (required - user must have access)
-        # Join with provider_mappings to filter by supplier
-        query = query.join(Hotel.provider_mappings)
-        
-        # Determine which suppliers to filter by
-        if filters.suppliers and len(filters.suppliers) > 0:
-            # User specified specific suppliers - use intersection with allowed
-            requested_suppliers = set(filters.suppliers)
-            allowed_set = set(allowed_suppliers)
-            effective_suppliers = list(requested_suppliers.intersection(allowed_set))
             
-            if not effective_suppliers:
-                logger.warning("No overlap between requested and allowed suppliers")
-                # Return empty query
-                query = query.filter(Hotel.ittid == None)
-                return query
+            # Apply eager loading for relationships if requested
+            # Using joinedload reduces N+1 query problems
+            if include_locations:
+                query = query.options(joinedload(Hotel.locations))
+                logger.debug("Added eager loading for locations")
             
-            logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
-            query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
-        else:
-            # No specific suppliers requested - use all allowed
-            logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
-            query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
-        
-        # Filter by specific ITTIDs if provided
-        if filters.ittids and len(filters.ittids) > 0:
-            logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
-            query = query.filter(Hotel.ittid.in_(filters.ittids))
-        
-        # Filter by country codes if provided
-        if filters.country_codes and len(filters.country_codes) > 0:
-            logger.debug(f"Filtering by country codes: {filters.country_codes}")
-            # Join with locations table to filter by country
-            query = query.join(Hotel.locations).filter(
-                Location.country_code.in_(filters.country_codes)
-            )
-        
-        # Filter by rating range if provided
-        if filters.min_rating is not None:
-            logger.debug(f"Filtering by min_rating >= {filters.min_rating}")
-            # Convert rating to float for comparison
-            query = query.filter(
-                func.cast(Hotel.rating, func.Float) >= filters.min_rating
-            )
-        
-        if filters.max_rating is not None:
-            logger.debug(f"Filtering by max_rating <= {filters.max_rating}")
-            query = query.filter(
-                func.cast(Hotel.rating, func.Float) <= filters.max_rating
-            )
-        
-        # Filter by property types if provided
-        if filters.property_types and len(filters.property_types) > 0:
-            logger.debug(f"Filtering by property types: {filters.property_types}")
-            query = query.filter(Hotel.property_type.in_(filters.property_types))
-        
-        # Filter by date range if provided
-        if filters.date_from is not None:
-            logger.debug(f"Filtering by date_from >= {filters.date_from}")
-            query = query.filter(Hotel.updated_at >= filters.date_from)
-        
-        if filters.date_to is not None:
-            logger.debug(f"Filtering by date_to <= {filters.date_to}")
-            query = query.filter(Hotel.updated_at <= filters.date_to)
-        
-        # Remove duplicates (hotels may appear multiple times due to joins)
-        query = query.distinct()
-        
+            if include_contacts:
+                query = query.options(joinedload(Hotel.contacts))
+                logger.debug("Added eager loading for contacts")
+            
+            if include_mappings:
+                query = query.options(joinedload(Hotel.provider_mappings))
+                logger.debug("Added eager loading for provider_mappings")
+            
+            # Filter by suppliers (required - user must have access)
+            # Join with provider_mappings to filter by supplier
+            query = query.join(Hotel.provider_mappings)
+            
+            # Determine which suppliers to filter by
+            if filters.suppliers and len(filters.suppliers) > 0:
+                # User specified specific suppliers - use intersection with allowed
+                requested_suppliers = set(filters.suppliers)
+                allowed_set = set(allowed_suppliers)
+                effective_suppliers = list(requested_suppliers.intersection(allowed_set))
+                
+                if not effective_suppliers:
+                    logger.warning("No overlap between requested and allowed suppliers")
+                    # Return empty query
+                    query = query.filter(Hotel.ittid == None)
+                    return query
+                
+                logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
+                query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
+            else:
+                # No specific suppliers requested - use all allowed
+                logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
+                query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
+            
+            # Filter by specific ITTIDs if provided
+            if filters.ittids and len(filters.ittids) > 0:
+                logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
+                query = query.filter(Hotel.ittid.in_(filters.ittids))
+            
+            # Filter by country codes if provided
+            if filters.country_codes and len(filters.country_codes) > 0:
+                logger.debug(f"Filtering by country codes: {filters.country_codes}")
+                # Join with locations table to filter by country
+                query = query.join(Hotel.locations).filter(
+                    Location.country_code.in_(filters.country_codes)
+                )
+            
+            # Filter by rating range if provided
+            if filters.min_rating is not None:
+                logger.debug(f"Filtering by min_rating >= {filters.min_rating}")
+                # Convert rating to float for comparison
+                query = query.filter(
+                    func.cast(Hotel.rating, func.Float) >= filters.min_rating
+                )
+            
+            if filters.max_rating is not None:
+                logger.debug(f"Filtering by max_rating <= {filters.max_rating}")
+                query = query.filter(
+                    func.cast(Hotel.rating, func.Float) <= filters.max_rating
+                )
+            
+            # Filter by property types if provided
+            if filters.property_types and len(filters.property_types) > 0:
+                logger.debug(f"Filtering by property types: {filters.property_types}")
+                query = query.filter(Hotel.property_type.in_(filters.property_types))
+            
+            # Filter by date range if provided
+            if filters.date_from is not None:
+                logger.debug(f"Filtering by date_from >= {filters.date_from}")
+                query = query.filter(Hotel.updated_at >= filters.date_from)
+            
+            if filters.date_to is not None:
+                logger.debug(f"Filtering by date_to <= {filters.date_to}")
+                query = query.filter(Hotel.updated_at <= filters.date_to)
+            
+            # Remove duplicates (hotels may appear multiple times due to joins)
+            query = query.distinct()
+            
             # Apply pagination
             offset = (filters.page - 1) * filters.page_size
             query = query.offset(offset).limit(filters.page_size)
