@@ -230,6 +230,16 @@ class ExportEngine:
                 }
             )
             
+        except IOError as e:
+            logger.error(f"File I/O error in synchronous hotel export: {str(e)}")
+            # Clean up file if it exists
+            if 'output_path' in locals() and os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                    logger.debug(f"Cleaned up failed export file: {output_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up file: {str(cleanup_error)}")
+            raise Exception(f"File I/O error during export: {str(e)}")
         except Exception as e:
             logger.error(f"Error in synchronous hotel export: {str(e)}")
             # Clean up file if it exists
@@ -239,7 +249,7 @@ class ExportEngine:
                     logger.debug(f"Cleaned up failed export file: {output_path}")
                 except Exception as cleanup_error:
                     logger.error(f"Error cleaning up file: {str(cleanup_error)}")
-            raise
+            raise Exception(f"Export processing failed: {str(e)}")
 
     def export_mappings_sync(
         self,
@@ -345,6 +355,16 @@ class ExportEngine:
                 }
             )
             
+        except IOError as e:
+            logger.error(f"File I/O error in synchronous mapping export: {str(e)}")
+            # Clean up file if it exists
+            if 'output_path' in locals() and os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                    logger.debug(f"Cleaned up failed export file: {output_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up file: {str(cleanup_error)}")
+            raise Exception(f"File I/O error during export: {str(e)}")
         except Exception as e:
             logger.error(f"Error in synchronous mapping export: {str(e)}")
             # Clean up file if it exists
@@ -354,7 +374,7 @@ class ExportEngine:
                     logger.debug(f"Cleaned up failed export file: {output_path}")
                 except Exception as cleanup_error:
                     logger.error(f"Error cleaning up file: {str(cleanup_error)}")
-            raise
+            raise Exception(f"Export processing failed: {str(e)}")
 
     def export_supplier_summary_sync(
         self,
@@ -462,6 +482,16 @@ class ExportEngine:
                 }
             )
             
+        except IOError as e:
+            logger.error(f"File I/O error in synchronous supplier summary export: {str(e)}")
+            # Clean up file if it exists
+            if 'output_path' in locals() and os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                    logger.debug(f"Cleaned up failed export file: {output_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up file: {str(cleanup_error)}")
+            raise Exception(f"File I/O error during export: {str(e)}")
         except Exception as e:
             logger.error(f"Error in synchronous supplier summary export: {str(e)}")
             # Clean up file if it exists
@@ -471,7 +501,7 @@ class ExportEngine:
                     logger.debug(f"Cleaned up failed export file: {output_path}")
                 except Exception as cleanup_error:
                     logger.error(f"Error cleaning up file: {str(cleanup_error)}")
-            raise
+            raise Exception(f"Export processing failed: {str(e)}")
 
     def export_hotels_async(
         self,
@@ -563,8 +593,13 @@ class ExportEngine:
             return export_job
             
         except Exception as e:
-            logger.error(f"Error creating async hotel export job: {str(e)}")
-            raise
+            logger.error(f"Database error creating async hotel export job: {str(e)}")
+            # Rollback transaction if needed
+            try:
+                self.db.rollback()
+            except:
+                pass
+            raise Exception(f"Failed to create export job: {str(e)}")
 
     def process_async_hotel_export(
         self,
@@ -838,8 +873,13 @@ class ExportEngine:
             return export_job
             
         except Exception as e:
-            logger.error(f"Error creating async mapping export job: {str(e)}")
-            raise
+            logger.error(f"Database error creating async mapping export job: {str(e)}")
+            # Rollback transaction if needed
+            try:
+                self.db.rollback()
+            except:
+                pass
+            raise Exception(f"Failed to create export job: {str(e)}")
 
     def process_async_mapping_export(
         self,
@@ -1106,8 +1146,13 @@ class ExportEngine:
             return export_job
             
         except Exception as e:
-            logger.error(f"Error creating async supplier summary export job: {str(e)}")
-            raise
+            logger.error(f"Database error creating async supplier summary export job: {str(e)}")
+            # Rollback transaction if needed
+            try:
+                self.db.rollback()
+            except:
+                pass
+            raise Exception(f"Failed to create export job: {str(e)}")
 
     def process_async_supplier_summary_export(
         self,

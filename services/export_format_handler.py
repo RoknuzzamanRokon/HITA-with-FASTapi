@@ -107,9 +107,12 @@ class ExportFormatHandler:
             logger.info(f"CSV export completed: {total_rows} rows written to {output_path}")
             return output_path
             
+        except IOError as e:
+            logger.error(f"File I/O error generating CSV export: {str(e)}")
+            raise IOError(f"Failed to write CSV file: {str(e)}")
         except Exception as e:
             logger.error(f"Error generating CSV export: {str(e)}")
-            raise
+            raise Exception(f"CSV generation failed: {str(e)}")
 
     def flatten_hotel_data(self, hotel: Hotel) -> Dict[str, Any]:
         """
@@ -371,9 +374,12 @@ class ExportFormatHandler:
             logger.info(f"JSON export completed: {total_records} records written to {output_path}")
             return output_path
             
+        except IOError as e:
+            logger.error(f"File I/O error generating JSON export: {str(e)}")
+            raise IOError(f"Failed to write JSON file: {str(e)}")
         except Exception as e:
             logger.error(f"Error generating JSON export: {str(e)}")
-            raise
+            raise Exception(f"JSON generation failed: {str(e)}")
 
     def _model_to_json_dict(self, model: Any) -> Dict[str, Any]:
         """
@@ -630,9 +636,12 @@ class ExportFormatHandler:
         except ImportError:
             logger.error("openpyxl library not installed. Cannot generate Excel export.")
             raise ImportError("openpyxl is required for Excel export. Install with: pip install openpyxl")
+        except IOError as e:
+            logger.error(f"File I/O error generating Excel export: {str(e)}")
+            raise IOError(f"Failed to write Excel file: {str(e)}")
         except Exception as e:
             logger.error(f"Error generating Excel export: {str(e)}")
-            raise
+            raise Exception(f"Excel generation failed: {str(e)}")
 
     def _add_summary_sheet(self, workbook: Any, metadata: ExportMetadata) -> None:
         """

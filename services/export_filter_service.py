@@ -72,14 +72,18 @@ class ExportFilterService:
             
         Returns:
             SQLAlchemy Query object with filters applied
+            
+        Raises:
+            Exception: If query building fails
         """
         logger.info("Building hotel query with filters")
         logger.debug(f"Filters: suppliers={filters.suppliers}, countries={filters.country_codes}, "
                     f"ratings={filters.min_rating}-{filters.max_rating}, "
                     f"dates={filters.date_from} to {filters.date_to}")
         
-        # Start with base query
-        query = self.db.query(Hotel)
+        try:
+            # Start with base query
+            query = self.db.query(Hotel)
         
         # Apply eager loading for relationships if requested
         if include_locations:
@@ -162,13 +166,17 @@ class ExportFilterService:
         # Remove duplicates (hotels may appear multiple times due to joins)
         query = query.distinct()
         
-        # Apply pagination
-        offset = (filters.page - 1) * filters.page_size
-        query = query.offset(offset).limit(filters.page_size)
-        
-        logger.info(f"Hotel query built successfully with pagination: page={filters.page}, size={filters.page_size}")
-        
-        return query
+            # Apply pagination
+            offset = (filters.page - 1) * filters.page_size
+            query = query.offset(offset).limit(filters.page_size)
+            
+            logger.info(f"Hotel query built successfully with pagination: page={filters.page}, size={filters.page_size}")
+            
+            return query
+            
+        except Exception as e:
+            logger.error(f"Error building hotel query: {str(e)}")
+            raise Exception(f"Failed to build hotel query: {str(e)}")
 
     def build_mapping_query(
         self,
@@ -189,15 +197,19 @@ class ExportFilterService:
             
         Returns:
             SQLAlchemy Query object with filters applied
+            
+        Raises:
+            Exception: If query building fails
         """
         logger.info("Building mapping query with filters")
         logger.debug(f"Filters: suppliers={filters.suppliers}, ittids={filters.ittids}, "
                     f"dates={filters.date_from} to {filters.date_to}")
         
-        # Start with base query - eager load hotel relationship
-        query = self.db.query(ProviderMapping).options(
-            joinedload(ProviderMapping.hotel)
-        )
+        try:
+            # Start with base query - eager load hotel relationship
+            query = self.db.query(ProviderMapping).options(
+                joinedload(ProviderMapping.hotel)
+            )
         
         # Filter by suppliers
         if filters.suppliers and len(filters.suppliers) > 0:
@@ -233,12 +245,16 @@ class ExportFilterService:
             logger.debug(f"Filtering by date_to <= {filters.date_to}")
             query = query.filter(ProviderMapping.updated_at <= filters.date_to)
         
-        # Order by provider_name and ittid for consistent results
-        query = query.order_by(ProviderMapping.provider_name, ProviderMapping.ittid)
-        
-        logger.info("Mapping query built successfully")
-        
-        return query
+            # Order by provider_name and ittid for consistent results
+            query = query.order_by(ProviderMapping.provider_name, ProviderMapping.ittid)
+            
+            logger.info("Mapping query built successfully")
+            
+            return query
+            
+        except Exception as e:
+            logger.error(f"Error building mapping query: {str(e)}")
+            raise Exception(f"Failed to build mapping query: {str(e)}")
 
     def build_supplier_summary_query(
         self,
@@ -257,13 +273,17 @@ class ExportFilterService:
             
         Returns:
             SQLAlchemy Query object with filters applied
+            
+        Raises:
+            Exception: If query building fails
         """
         logger.info("Building supplier summary query with filters")
         logger.debug(f"Filters: suppliers={filters.suppliers}, "
                     f"include_country_breakdown={filters.include_country_breakdown}")
         
-        # Start with base query
-        query = self.db.query(SupplierSummary)
+        try:
+            # Start with base query
+            query = self.db.query(SupplierSummary)
         
         # Filter by suppliers if provided
         if filters.suppliers and len(filters.suppliers) > 0:
@@ -290,12 +310,16 @@ class ExportFilterService:
             logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
             query = query.filter(SupplierSummary.provider_name.in_(allowed_suppliers))
         
-        # Order by provider_name for consistent results
-        query = query.order_by(SupplierSummary.provider_name)
-        
-        logger.info("Supplier summary query built successfully")
-        
-        return query
+            # Order by provider_name for consistent results
+            query = query.order_by(SupplierSummary.provider_name)
+            
+            logger.info("Supplier summary query built successfully")
+            
+            return query
+            
+        except Exception as e:
+            logger.error(f"Error building supplier summary query: {str(e)}")
+            raise Exception(f"Failed to build supplier summary query: {str(e)}")
 
     def estimate_result_count(self, query: Query) -> int:
         """
@@ -309,6 +333,9 @@ class ExportFilterService:
             
         Returns:
             Estimated number of results
+            
+        Raises:
+            Exception: If count query fails completely
         """
         logger.debug("Estimating result count for query")
         
@@ -332,8 +359,8 @@ class ExportFilterService:
                 return count
             except Exception as e2:
                 logger.error(f"Error in fallback count: {str(e2)}")
-                # If all else fails, return 0
-                return 0
+                # If all else fails, raise exception
+                raise Exception(f"Failed to estimate result count: {str(e2)}")
 
     def get_country_breakdown(
         self,

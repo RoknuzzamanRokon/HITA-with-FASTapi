@@ -286,22 +286,53 @@ async def export_hotels(
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
+    except IOError as e:
+        logger.error(f"File I/O error in hotel export for user {current_user.id}: {str(e)}")
+        
+        # Log error
+        try:
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=current_user.id,
+                details={
+                    "export_type": "hotels",
+                    "format": export_request.format.value,
+                    "error": "FILE_IO_ERROR",
+                    "error_details": str(e)
+                },
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
+            )
+        except:
+            pass
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "FILE_IO_ERROR",
+                "message": "An error occurred while writing the export file"
+            }
+        )
     except Exception as e:
         logger.error(f"Error in hotel export for user {current_user.id}: {str(e)}")
         
         # Log error
-        audit_logger.log_activity(
-            activity_type=ActivityType.EXPORT_DATA,
-            user_id=current_user.id,
-            details={
-                "export_type": "hotels",
-                "format": export_request.format.value,
-                "error": str(e)
-            },
-            request=request,
-            security_level=SecurityLevel.HIGH,
-            success=False
-        )
+        try:
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=current_user.id,
+                details={
+                    "export_type": "hotels",
+                    "format": export_request.format.value,
+                    "error": str(e)
+                },
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
+            )
+        except:
+            pass
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -498,22 +529,53 @@ async def export_mappings(
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
+    except IOError as e:
+        logger.error(f"File I/O error in mapping export for user {current_user.id}: {str(e)}")
+        
+        # Log error
+        try:
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=current_user.id,
+                details={
+                    "export_type": "mappings",
+                    "format": export_request.format.value,
+                    "error": "FILE_IO_ERROR",
+                    "error_details": str(e)
+                },
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
+            )
+        except:
+            pass
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "FILE_IO_ERROR",
+                "message": "An error occurred while writing the export file"
+            }
+        )
     except Exception as e:
         logger.error(f"Error in mapping export for user {current_user.id}: {str(e)}")
         
         # Log error
-        audit_logger.log_activity(
-            activity_type=ActivityType.EXPORT_DATA,
-            user_id=current_user.id,
-            details={
-                "export_type": "mappings",
-                "format": export_request.format.value,
-                "error": str(e)
-            },
-            request=request,
-            security_level=SecurityLevel.HIGH,
-            success=False
-        )
+        try:
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=current_user.id,
+                details={
+                    "export_type": "mappings",
+                    "format": export_request.format.value,
+                    "error": str(e)
+                },
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
+            )
+        except:
+            pass
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -693,22 +755,53 @@ async def export_supplier_summary(
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
+    except IOError as e:
+        logger.error(f"File I/O error in supplier summary export for user {current_user.id}: {str(e)}")
+        
+        # Log error
+        try:
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=current_user.id,
+                details={
+                    "export_type": "supplier_summary",
+                    "format": export_request.format.value,
+                    "error": "FILE_IO_ERROR",
+                    "error_details": str(e)
+                },
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
+            )
+        except:
+            pass
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "FILE_IO_ERROR",
+                "message": "An error occurred while writing the export file"
+            }
+        )
     except Exception as e:
         logger.error(f"Error in supplier summary export for user {current_user.id}: {str(e)}")
         
         # Log error
-        audit_logger.log_activity(
-            activity_type=ActivityType.EXPORT_DATA,
-            user_id=current_user.id,
-            details={
-                "export_type": "supplier_summary",
-                "format": export_request.format.value,
-                "error": str(e)
-            },
-            request=request,
-            security_level=SecurityLevel.HIGH,
-            success=False
-        )
+        try:
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=current_user.id,
+                details={
+                    "export_type": "supplier_summary",
+                    "format": export_request.format.value,
+                    "error": str(e)
+                },
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
+            )
+        except:
+            pass
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

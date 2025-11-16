@@ -88,27 +88,50 @@ class ExportPermissionService:
         """
         logger.info(f"Validating export access for user {user.id} (role: {user.role})")
         
-        # Step 1: IP Whitelist Validation
-        if not self.check_ip_whitelist(user.id, request):
-            client_ip = get_client_ip(request) or "unknown"
-            error_msg = f"IP address {client_ip} is not whitelisted for user {user.username}"
-            logger.warning(f"IP whitelist check failed: {error_msg}")
-            
+        try:
+            # Step 1: IP Whitelist Validation
+            if not self.check_ip_whitelist(user.id, request):
+                client_ip = get_client_ip(request) or "unknown"
+                error_msg = f"IP address {client_ip} is not whitelisted for user {user.username}"
+                logger.warning(f"IP whitelist check failed: {error_msg}")
+                
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error": "IP_NOT_WHITELISTED",
+                        "message": error_msg,
+                        "client_ip": client_ip
+                    }
+                )
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Error checking IP whitelist for user {user.id}: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
-                    "error": "IP_NOT_WHITELISTED",
-                    "message": error_msg,
-                    "client_ip": client_ip
+                    "error": "PERMISSION_CHECK_FAILED",
+                    "message": "An error occurred while validating permissions"
                 }
             )
         
         # Step 2: Get user's active suppliers
-        user_suppliers = self.get_user_suppliers(user.id, user.role)
-        deactivated_suppliers = self._get_deactivated_suppliers(user.id)
-        
-        logger.debug(f"User {user.id} has {len(user_suppliers)} active suppliers")
-        logger.debug(f"User {user.id} has {len(deactivated_suppliers)} deactivated suppliers")
+        try:
+            user_suppliers = self.get_user_suppliers(user.id, user.role)
+            deactivated_suppliers = self._get_deactivated_suppliers(user.id)
+            
+            logger.debug(f"User {user.id} has {len(user_suppliers)} active suppliers")
+            logger.debug(f"User {user.id} has {len(deactivated_suppliers)} deactivated suppliers")
+        except Exception as e:
+            logger.error(f"Error retrieving user suppliers for user {user.id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "DATABASE_ERROR",
+                    "message": "An error occurred while retrieving user permissions"
+                }
+            )
         
         # Step 3: Determine allowed suppliers based on request
         if requested_suppliers is None or len(requested_suppliers) == 0:
@@ -224,6 +247,9 @@ class ExportPermissionService:
             
         Returns:
             List of active supplier names
+            
+        Raises:
+            Exception: If database query fails
         """
         logger.debug(f"Getting suppliers for user {user_id} with role {user_role}")
         
@@ -273,8 +299,8 @@ class ExportPermissionService:
                 return active_suppliers
                 
         except Exception as e:
-            logger.error(f"Error getting suppliers for user {user_id}: {str(e)}")
-            raise
+            logger.error(f"Database error getting suppliers for user {user_id}: {str(e)}")
+            raise Exception(f"Failed to retrieve user suppliers: {str(e)}")
 
     def _get_deactivated_suppliers(self, user_id: str) -> List[str]:
         """
