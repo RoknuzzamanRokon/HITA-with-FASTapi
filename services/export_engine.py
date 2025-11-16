@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse
 from models import ExportJob, User
 from export_schemas import ExportFormat, ExportMetadata
 from services.export_format_handler import ExportFormatHandler
+from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -659,6 +660,25 @@ class ExportEngine:
             
             logger.info(f"Export job {job_id} completed successfully: {file_size} bytes, {processed_records} records")
             
+            # Log export completion
+            audit_logger = AuditLogger(db)
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=user.id,
+                details={
+                    "export_type": "hotels",
+                    "format": format.value,
+                    "job_id": job_id,
+                    "record_count": processed_records,
+                    "file_size_bytes": file_size,
+                    "sync": False,
+                    "status": "completed"
+                },
+                request=None,
+                security_level=SecurityLevel.HIGH,
+                success=True
+            )
+            
         except Exception as e:
             logger.error(f"Error processing async hotel export job {job_id}: {str(e)}")
             
@@ -671,6 +691,24 @@ class ExportEngine:
                     export_job.completed_at = datetime.utcnow()
                     db.commit()
                     logger.info(f"Export job {job_id} marked as failed")
+                    
+                    # Log export failure
+                    audit_logger = AuditLogger(db)
+                    audit_logger.log_activity(
+                        activity_type=ActivityType.EXPORT_DATA,
+                        user_id=user.id,
+                        details={
+                            "export_type": "hotels",
+                            "format": format.value,
+                            "job_id": job_id,
+                            "error": str(e),
+                            "sync": False,
+                            "status": "failed"
+                        },
+                        request=None,
+                        security_level=SecurityLevel.HIGH,
+                        success=False
+                    )
             except Exception as update_error:
                 logger.error(f"Error updating failed job status: {str(update_error)}")
         
@@ -880,6 +918,25 @@ class ExportEngine:
             
             logger.info(f"Export job {job_id} completed successfully: {file_size} bytes, {processed_records} records")
             
+            # Log export completion
+            audit_logger = AuditLogger(db)
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=user.id,
+                details={
+                    "export_type": "mappings",
+                    "format": format.value,
+                    "job_id": job_id,
+                    "record_count": processed_records,
+                    "file_size_bytes": file_size,
+                    "sync": False,
+                    "status": "completed"
+                },
+                request=None,
+                security_level=SecurityLevel.HIGH,
+                success=True
+            )
+            
         except Exception as e:
             logger.error(f"Error processing async mapping export job {job_id}: {str(e)}")
             
@@ -892,6 +949,24 @@ class ExportEngine:
                     export_job.completed_at = datetime.utcnow()
                     db.commit()
                     logger.info(f"Export job {job_id} marked as failed")
+                    
+                    # Log export failure
+                    audit_logger = AuditLogger(db)
+                    audit_logger.log_activity(
+                        activity_type=ActivityType.EXPORT_DATA,
+                        user_id=user.id,
+                        details={
+                            "export_type": "mappings",
+                            "format": format.value,
+                            "job_id": job_id,
+                            "error": str(e),
+                            "sync": False,
+                            "status": "failed"
+                        },
+                        request=None,
+                        security_level=SecurityLevel.HIGH,
+                        success=False
+                    )
             except Exception as update_error:
                 logger.error(f"Error updating failed job status: {str(update_error)}")
         
@@ -1106,6 +1181,25 @@ class ExportEngine:
             
             logger.info(f"Export job {job_id} completed successfully: {file_size} bytes, {processed_records} records")
             
+            # Log export completion
+            audit_logger = AuditLogger(db)
+            audit_logger.log_activity(
+                activity_type=ActivityType.EXPORT_DATA,
+                user_id=user.id,
+                details={
+                    "export_type": "supplier_summary",
+                    "format": format.value,
+                    "job_id": job_id,
+                    "record_count": processed_records,
+                    "file_size_bytes": file_size,
+                    "sync": False,
+                    "status": "completed"
+                },
+                request=None,
+                security_level=SecurityLevel.HIGH,
+                success=True
+            )
+            
         except Exception as e:
             logger.error(f"Error processing async supplier summary export job {job_id}: {str(e)}")
             
@@ -1118,6 +1212,24 @@ class ExportEngine:
                     export_job.completed_at = datetime.utcnow()
                     db.commit()
                     logger.info(f"Export job {job_id} marked as failed")
+                    
+                    # Log export failure
+                    audit_logger = AuditLogger(db)
+                    audit_logger.log_activity(
+                        activity_type=ActivityType.EXPORT_DATA,
+                        user_id=user.id,
+                        details={
+                            "export_type": "supplier_summary",
+                            "format": format.value,
+                            "job_id": job_id,
+                            "error": str(e),
+                            "sync": False,
+                            "status": "failed"
+                        },
+                        request=None,
+                        security_level=SecurityLevel.HIGH,
+                        success=False
+                    )
             except Exception as update_error:
                 logger.error(f"Error updating failed job status: {str(update_error)}")
         

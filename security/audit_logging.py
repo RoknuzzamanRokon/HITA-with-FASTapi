@@ -57,6 +57,7 @@ class ActivityType(str, Enum):
     # System activities
     BULK_OPERATION = "bulk_operation"
     DATA_EXPORT = "data_export"
+    EXPORT_DATA = "export_data"  # Alias for DATA_EXPORT
     SYSTEM_CONFIGURATION_CHANGE = "system_configuration_change"
     
     # API activities

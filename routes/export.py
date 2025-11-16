@@ -93,17 +93,17 @@ async def export_hotels(
             
             # Log failed attempt
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="failed",
+                user_id=current_user.id,
                 details={
                     "export_type": "hotels",
                     "format": export_request.format.value,
                     "error": "INSUFFICIENT_PERMISSIONS",
                     "denied_suppliers": permission_result.denied_suppliers
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
             )
             
             raise HTTPException(
@@ -128,16 +128,16 @@ async def export_hotels(
                 
                 # Log failed attempt
                 audit_logger.log_activity(
-                    user_id=current_user.id,
                     activity_type=ActivityType.EXPORT_DATA,
-                    security_level=SecurityLevel.HIGH,
-                    status="failed",
+                    user_id=current_user.id,
                     details={
                         "export_type": "hotels",
                         "format": export_request.format.value,
                         "error": "INSUFFICIENT_POINTS"
                     },
-                    ip_address=request.client.host if request.client else None
+                    request=request,
+                    security_level=SecurityLevel.HIGH,
+                    success=False
                 )
                 
                 raise HTTPException(
@@ -216,10 +216,8 @@ async def export_hotels(
             
             # Log successful export
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="success",
+                user_id=current_user.id,
                 details={
                     "export_type": "hotels",
                     "format": export_request.format.value,
@@ -227,7 +225,9 @@ async def export_hotels(
                     "sync": True,
                     "filters": filters_applied
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=True
             )
             
             return file_response
@@ -249,19 +249,20 @@ async def export_hotels(
             
             # Log async export job creation
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="pending",
+                user_id=current_user.id,
                 details={
                     "export_type": "hotels",
                     "format": export_request.format.value,
                     "job_id": export_job.id,
                     "estimated_records": estimated_count,
                     "sync": False,
+                    "status": "pending",
                     "filters": filters_applied
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=True
             )
             
             # Calculate estimated completion time
@@ -290,16 +291,16 @@ async def export_hotels(
         
         # Log error
         audit_logger.log_activity(
-            user_id=current_user.id,
             activity_type=ActivityType.EXPORT_DATA,
-            security_level=SecurityLevel.HIGH,
-            status="failed",
+            user_id=current_user.id,
             details={
                 "export_type": "hotels",
                 "format": export_request.format.value,
                 "error": str(e)
             },
-            ip_address=request.client.host if request.client else None
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=False
         )
         
         raise HTTPException(
@@ -351,17 +352,17 @@ async def export_mappings(
             
             # Log failed attempt
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="failed",
+                user_id=current_user.id,
                 details={
                     "export_type": "mappings",
                     "format": export_request.format.value,
                     "error": "INSUFFICIENT_PERMISSIONS",
                     "denied_suppliers": permission_result.denied_suppliers
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=False
             )
             
             raise HTTPException(
@@ -431,10 +432,8 @@ async def export_mappings(
             
             # Log successful export
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="success",
+                user_id=current_user.id,
                 details={
                     "export_type": "mappings",
                     "format": export_request.format.value,
@@ -442,7 +441,9 @@ async def export_mappings(
                     "sync": True,
                     "filters": filters_applied
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=True
             )
             
             return file_response
@@ -461,19 +462,20 @@ async def export_mappings(
             
             # Log async export job creation
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="pending",
+                user_id=current_user.id,
                 details={
                     "export_type": "mappings",
                     "format": export_request.format.value,
                     "job_id": export_job.id,
                     "estimated_records": estimated_count,
                     "sync": False,
+                    "status": "pending",
                     "filters": filters_applied
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=True
             )
             
             # Calculate estimated completion time
@@ -501,16 +503,16 @@ async def export_mappings(
         
         # Log error
         audit_logger.log_activity(
-            user_id=current_user.id,
             activity_type=ActivityType.EXPORT_DATA,
-            security_level=SecurityLevel.HIGH,
-            status="failed",
+            user_id=current_user.id,
             details={
                 "export_type": "mappings",
                 "format": export_request.format.value,
                 "error": str(e)
             },
-            ip_address=request.client.host if request.client else None
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=False
         )
         
         raise HTTPException(
@@ -570,17 +572,17 @@ async def export_supplier_summary(
                 
                 # Log failed attempt
                 audit_logger.log_activity(
-                    user_id=current_user.id,
                     activity_type=ActivityType.EXPORT_DATA,
-                    security_level=SecurityLevel.HIGH,
-                    status="failed",
+                    user_id=current_user.id,
                     details={
                         "export_type": "supplier_summary",
                         "format": export_request.format.value,
                         "error": "INSUFFICIENT_PERMISSIONS",
                         "denied_suppliers": permission_result.denied_suppliers
                     },
-                    ip_address=request.client.host if request.client else None
+                    request=request,
+                    security_level=SecurityLevel.HIGH,
+                    success=False
                 )
                 
                 raise HTTPException(
@@ -639,10 +641,8 @@ async def export_supplier_summary(
             
             # Log successful export
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="success",
+                user_id=current_user.id,
                 details={
                     "export_type": "supplier_summary",
                     "format": export_request.format.value,
@@ -650,7 +650,9 @@ async def export_supplier_summary(
                     "sync": True,
                     "filters": filters_applied
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=True
             )
             
             return file_response
@@ -672,10 +674,8 @@ async def export_supplier_summary(
             
             # Log successful export
             audit_logger.log_activity(
-                user_id=current_user.id,
                 activity_type=ActivityType.EXPORT_DATA,
-                security_level=SecurityLevel.HIGH,
-                status="success",
+                user_id=current_user.id,
                 details={
                     "export_type": "supplier_summary",
                     "format": export_request.format.value,
@@ -683,7 +683,9 @@ async def export_supplier_summary(
                     "sync": True,
                     "filters": filters_applied
                 },
-                ip_address=request.client.host if request.client else None
+                request=request,
+                security_level=SecurityLevel.HIGH,
+                success=True
             )
             
             return file_response
@@ -696,16 +698,16 @@ async def export_supplier_summary(
         
         # Log error
         audit_logger.log_activity(
-            user_id=current_user.id,
             activity_type=ActivityType.EXPORT_DATA,
-            security_level=SecurityLevel.HIGH,
-            status="failed",
+            user_id=current_user.id,
             details={
                 "export_type": "supplier_summary",
                 "format": export_request.format.value,
                 "error": str(e)
             },
-            ip_address=request.client.host if request.client else None
+            request=request,
+            security_level=SecurityLevel.HIGH,
+            success=False
         )
         
         raise HTTPException(
