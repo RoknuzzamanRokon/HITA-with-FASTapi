@@ -11,7 +11,7 @@ from database import get_db
 import secrets
 import models
 import redis
-from dotenv import load_dotenv()
+from dotenv import load_dotenv
 import os
 
 load_dotenv()

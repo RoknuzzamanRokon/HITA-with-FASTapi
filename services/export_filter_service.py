@@ -143,44 +143,56 @@ class ExportFilterService:
             query = query.join(Hotel.provider_mappings)
             
             # Determine which suppliers to filter by
-            if filters.suppliers and len(filters.suppliers) > 0:
-                # User specified specific suppliers - use intersection with allowed (case-insensitive)
-                # Normalize to lowercase for comparison
-                requested_lower = {s.lower() for s in filters.suppliers}
-                allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
-                
-                # Find intersection and use original allowed supplier names
-                effective_suppliers = [
-                    allowed_lower_map[s_lower] 
-                    for s_lower in requested_lower 
-                    if s_lower in allowed_lower_map
-                ]
-                
-                if not effective_suppliers:
-                    logger.warning("No overlap between requested and allowed suppliers")
-                    # Return empty query
-                    query = query.filter(Hotel.ittid == None)
-                    return query
-                
-                logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
-                query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
+            if filters.suppliers:
+                # Check if "All" keyword is used
+                if isinstance(filters.suppliers, str) and filters.suppliers.lower() == "all":
+                    # Use all allowed suppliers
+                    logger.debug(f"Supplier filter set to 'All' - using all {len(allowed_suppliers)} allowed suppliers")
+                    query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
+                elif isinstance(filters.suppliers, list) and len(filters.suppliers) > 0:
+                    # User specified specific suppliers - use intersection with allowed (case-insensitive)
+                    # Normalize to lowercase for comparison
+                    requested_lower = {s.lower() for s in filters.suppliers}
+                    allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
+                    
+                    # Find intersection and use original allowed supplier names
+                    effective_suppliers = [
+                        allowed_lower_map[s_lower] 
+                        for s_lower in requested_lower 
+                        if s_lower in allowed_lower_map
+                    ]
+                    
+                    if not effective_suppliers:
+                        logger.warning("No overlap between requested and allowed suppliers")
+                        # Return empty query
+                        query = query.filter(Hotel.ittid == None)
+                        return query
+                    
+                    logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
+                    query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
             else:
                 # No specific suppliers requested - use all allowed
                 logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
                 query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
             
-            # Filter by specific ITTIDs if provided
-            if filters.ittids and len(filters.ittids) > 0:
-                logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
-                query = query.filter(Hotel.ittid.in_(filters.ittids))
+            # Filter by specific ITTIDs if provided (skip if "All")
+            if filters.ittids:
+                if isinstance(filters.ittids, str) and filters.ittids.lower() == "all":
+                    logger.debug("ITTID filter set to 'All' - including all hotels")
+                elif isinstance(filters.ittids, list) and len(filters.ittids) > 0:
+                    logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
+                    query = query.filter(Hotel.ittid.in_(filters.ittids))
             
-            # Filter by country codes if provided
-            if filters.country_codes and len(filters.country_codes) > 0:
-                logger.debug(f"Filtering by country codes: {filters.country_codes}")
-                # Join with locations table to filter by country
-                query = query.join(Hotel.locations).filter(
-                    Location.country_code.in_(filters.country_codes)
-                )
+            # Filter by country codes if provided (skip if "All")
+            if filters.country_codes:
+                if isinstance(filters.country_codes, str) and filters.country_codes.lower() == "all":
+                    logger.debug("Country codes filter set to 'All' - including all countries")
+                elif isinstance(filters.country_codes, list) and len(filters.country_codes) > 0:
+                    logger.debug(f"Filtering by country codes: {filters.country_codes}")
+                    # Join with locations table to filter by country
+                    query = query.join(Hotel.locations).filter(
+                        Location.country_code.in_(filters.country_codes)
+                    )
             
             # Filter by rating range if provided
             if filters.min_rating is not None:
@@ -196,10 +208,13 @@ class ExportFilterService:
                     func.cast(Hotel.rating, Float) <= filters.max_rating
                 )
             
-            # Filter by property types if provided
-            if filters.property_types and len(filters.property_types) > 0:
-                logger.debug(f"Filtering by property types: {filters.property_types}")
-                query = query.filter(Hotel.property_type.in_(filters.property_types))
+            # Filter by property types if provided (skip if "All")
+            if filters.property_types:
+                if isinstance(filters.property_types, str) and filters.property_types.lower() == "all":
+                    logger.debug("Property types filter set to 'All' - including all property types")
+                elif isinstance(filters.property_types, list) and len(filters.property_types) > 0:
+                    logger.debug(f"Filtering by property types: {filters.property_types}")
+                    query = query.filter(Hotel.property_type.in_(filters.property_types))
             
             # Filter by date range if provided
             if filters.date_from is not None:
@@ -259,36 +274,45 @@ class ExportFilterService:
             )
             
             # Filter by suppliers
-            if filters.suppliers and len(filters.suppliers) > 0:
-                # User specified specific suppliers - use intersection with allowed (case-insensitive)
-                # Normalize to lowercase for comparison
-                requested_lower = {s.lower() for s in filters.suppliers}
-                allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
-                
-                # Find intersection and use original allowed supplier names
-                effective_suppliers = [
-                    allowed_lower_map[s_lower] 
-                    for s_lower in requested_lower 
-                    if s_lower in allowed_lower_map
-                ]
-                
-                if not effective_suppliers:
-                    logger.warning("No overlap between requested and allowed suppliers")
-                    # Return empty query
-                    query = query.filter(ProviderMapping.id == None)
-                    return query
-                
-                logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
-                query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
+            if filters.suppliers:
+                # Check if "All" keyword is used
+                if isinstance(filters.suppliers, str) and filters.suppliers.lower() == "all":
+                    # Use all allowed suppliers
+                    logger.debug(f"Supplier filter set to 'All' - using all {len(allowed_suppliers)} allowed suppliers")
+                    query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
+                elif isinstance(filters.suppliers, list) and len(filters.suppliers) > 0:
+                    # User specified specific suppliers - use intersection with allowed (case-insensitive)
+                    # Normalize to lowercase for comparison
+                    requested_lower = {s.lower() for s in filters.suppliers}
+                    allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
+                    
+                    # Find intersection and use original allowed supplier names
+                    effective_suppliers = [
+                        allowed_lower_map[s_lower] 
+                        for s_lower in requested_lower 
+                        if s_lower in allowed_lower_map
+                    ]
+                    
+                    if not effective_suppliers:
+                        logger.warning("No overlap between requested and allowed suppliers")
+                        # Return empty query
+                        query = query.filter(ProviderMapping.id == None)
+                        return query
+                    
+                    logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
+                    query = query.filter(ProviderMapping.provider_name.in_(effective_suppliers))
             else:
                 # No specific suppliers requested - use all allowed
                 logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
                 query = query.filter(ProviderMapping.provider_name.in_(allowed_suppliers))
             
-            # Filter by specific ITTIDs if provided
-            if filters.ittids and len(filters.ittids) > 0:
-                logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
-                query = query.filter(ProviderMapping.ittid.in_(filters.ittids))
+            # Filter by specific ITTIDs if provided (skip if "All")
+            if filters.ittids:
+                if isinstance(filters.ittids, str) and filters.ittids.lower() == "all":
+                    logger.debug("ITTID filter set to 'All' - including all mappings")
+                elif isinstance(filters.ittids, list) and len(filters.ittids) > 0:
+                    logger.debug(f"Filtering by {len(filters.ittids)} specific ITTIDs")
+                    query = query.filter(ProviderMapping.ittid.in_(filters.ittids))
         
         # Filter by date range if provided
             # Filter by date range if provided
@@ -341,32 +365,41 @@ class ExportFilterService:
             query = self.db.query(SupplierSummary)
             
             # Filter by suppliers if provided
-            if filters.suppliers and len(filters.suppliers) > 0:
-                if allowed_suppliers:
-                    # User specified specific suppliers - use intersection with allowed (case-insensitive)
-                    # Normalize to lowercase for comparison
-                    requested_lower = {s.lower() for s in filters.suppliers}
-                    allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
-                    
-                    # Find intersection and use original allowed supplier names
-                    effective_suppliers = [
-                        allowed_lower_map[s_lower] 
-                        for s_lower in requested_lower 
-                        if s_lower in allowed_lower_map
-                    ]
-                    
-                    if not effective_suppliers:
-                        logger.warning("No overlap between requested and allowed suppliers")
-                        # Return empty query
-                        query = query.filter(SupplierSummary.id == None)
-                        return query
-                    
-                    logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
-                    query = query.filter(SupplierSummary.provider_name.in_(effective_suppliers))
-                else:
-                    # No allowed suppliers restriction (admin/super user)
-                    logger.debug(f"Filtering by {len(filters.suppliers)} requested suppliers")
-                    query = query.filter(SupplierSummary.provider_name.in_(filters.suppliers))
+            if filters.suppliers:
+                # Check if "All" keyword is used
+                if isinstance(filters.suppliers, str) and filters.suppliers.lower() == "all":
+                    # Use all allowed suppliers (or all suppliers if admin/super user)
+                    if allowed_suppliers:
+                        logger.debug(f"Supplier filter set to 'All' - using all {len(allowed_suppliers)} allowed suppliers")
+                        query = query.filter(SupplierSummary.provider_name.in_(allowed_suppliers))
+                    else:
+                        logger.debug("Supplier filter set to 'All' - no restriction (admin/super user)")
+                elif isinstance(filters.suppliers, list) and len(filters.suppliers) > 0:
+                    if allowed_suppliers:
+                        # User specified specific suppliers - use intersection with allowed (case-insensitive)
+                        # Normalize to lowercase for comparison
+                        requested_lower = {s.lower() for s in filters.suppliers}
+                        allowed_lower_map = {s.lower(): s for s in allowed_suppliers}
+                        
+                        # Find intersection and use original allowed supplier names
+                        effective_suppliers = [
+                            allowed_lower_map[s_lower] 
+                            for s_lower in requested_lower 
+                            if s_lower in allowed_lower_map
+                        ]
+                        
+                        if not effective_suppliers:
+                            logger.warning("No overlap between requested and allowed suppliers")
+                            # Return empty query
+                            query = query.filter(SupplierSummary.id == None)
+                            return query
+                        
+                        logger.debug(f"Filtering by {len(effective_suppliers)} suppliers: {effective_suppliers}")
+                        query = query.filter(SupplierSummary.provider_name.in_(effective_suppliers))
+                    else:
+                        # No allowed suppliers restriction (admin/super user)
+                        logger.debug(f"Filtering by {len(filters.suppliers)} requested suppliers")
+                        query = query.filter(SupplierSummary.provider_name.in_(filters.suppliers))
             elif allowed_suppliers:
                 # No specific suppliers requested but user has restrictions
                 logger.debug(f"Filtering by all {len(allowed_suppliers)} allowed suppliers")
@@ -617,20 +650,40 @@ class ExportFilterService:
             
             # Check that list filters are not empty if provided
             if hasattr(filters, 'suppliers'):
-                if filters.suppliers is not None and len(filters.suppliers) == 0:
-                    return False, "suppliers list cannot be empty if provided"
+                if filters.suppliers is not None:
+                    # Accept "All" keyword or non-empty list
+                    if isinstance(filters.suppliers, str):
+                        if filters.suppliers.lower() != "all":
+                            return False, "suppliers must be a list or the keyword 'All'"
+                    elif isinstance(filters.suppliers, list) and len(filters.suppliers) == 0:
+                        return False, "suppliers list cannot be empty if provided"
             
             if hasattr(filters, 'country_codes'):
-                if filters.country_codes is not None and len(filters.country_codes) == 0:
-                    return False, "country_codes list cannot be empty if provided"
+                if filters.country_codes is not None:
+                    # Accept "All" keyword or non-empty list
+                    if isinstance(filters.country_codes, str):
+                        if filters.country_codes.lower() != "all":
+                            return False, "country_codes must be a list or the keyword 'All'"
+                    elif isinstance(filters.country_codes, list) and len(filters.country_codes) == 0:
+                        return False, "country_codes list cannot be empty if provided"
             
             if hasattr(filters, 'ittids'):
-                if filters.ittids is not None and len(filters.ittids) == 0:
-                    return False, "ittids list cannot be empty if provided"
+                if filters.ittids is not None:
+                    # Accept "All" keyword or non-empty list
+                    if isinstance(filters.ittids, str):
+                        if filters.ittids.lower() != "all":
+                            return False, "ittids must be a list or the keyword 'All'"
+                    elif isinstance(filters.ittids, list) and len(filters.ittids) == 0:
+                        return False, "ittids list cannot be empty if provided"
             
             if hasattr(filters, 'property_types'):
-                if filters.property_types is not None and len(filters.property_types) == 0:
-                    return False, "property_types list cannot be empty if provided"
+                if filters.property_types is not None:
+                    # Accept "All" keyword or non-empty list
+                    if isinstance(filters.property_types, str):
+                        if filters.property_types.lower() != "all":
+                            return False, "property_types must be a list or the keyword 'All'"
+                    elif isinstance(filters.property_types, list) and len(filters.property_types) == 0:
+                        return False, "property_types list cannot be empty if provided"
             
             logger.debug("Filters validated successfully")
             return True, None

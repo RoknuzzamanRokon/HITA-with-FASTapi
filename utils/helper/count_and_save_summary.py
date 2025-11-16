@@ -30,6 +30,15 @@ def count_and_save_summary():
         print("📊 COUNTING AND SAVING SUPPLIER SUMMARY")
         print("="*70)
         
+        # Step 0: Check if tables exist, create if needed
+        print("\n0️⃣  Checking database tables...")
+        from models import Base
+        from database import engine
+        
+        # Create all tables if they don't exist
+        Base.metadata.create_all(bind=engine)
+        print("   ✅ Database tables verified/created")
+        
         # Step 1: Count current data in provider_mappings
         print("\n1️⃣  Counting data in provider_mappings...")
         count_query = text("""
@@ -58,24 +67,43 @@ def count_and_save_summary():
         print("\n2️⃣  Updating supplier_summary data...")
         start_time = time.time()
         
-        # Use INSERT ... ON DUPLICATE KEY UPDATE to update existing or insert new
-        insert_query = text("""
-            INSERT INTO supplier_summary 
-                (provider_name, total_hotels, total_mappings, last_updated, summary_generated_at)
-            SELECT 
-                provider_name,
-                COUNT(DISTINCT ittid) as total_hotels,
-                COUNT(*) as total_mappings,
-                MAX(updated_at) as last_updated,
-                CURRENT_TIMESTAMP as summary_generated_at
-            FROM provider_mappings
-            GROUP BY provider_name
-            ON DUPLICATE KEY UPDATE
-                total_hotels = VALUES(total_hotels),
-                total_mappings = VALUES(total_mappings),
-                last_updated = VALUES(last_updated),
-                summary_generated_at = VALUES(summary_generated_at)
-        """)
+        # Detect database type
+        from database import engine
+        is_mysql = 'mysql' in str(engine.url)
+        
+        if is_mysql:
+            # MySQL-compatible UPSERT
+            insert_query = text("""
+                INSERT INTO supplier_summary 
+                    (provider_name, total_hotels, total_mappings, last_updated, summary_generated_at)
+                SELECT 
+                    provider_name,
+                    COUNT(DISTINCT ittid) as total_hotels,
+                    COUNT(*) as total_mappings,
+                    MAX(updated_at) as last_updated,
+                    CURRENT_TIMESTAMP as summary_generated_at
+                FROM provider_mappings
+                GROUP BY provider_name
+                ON DUPLICATE KEY UPDATE
+                    total_hotels = VALUES(total_hotels),
+                    total_mappings = VALUES(total_mappings),
+                    last_updated = VALUES(last_updated),
+                    summary_generated_at = VALUES(summary_generated_at)
+            """)
+        else:
+            # SQLite-compatible UPSERT
+            insert_query = text("""
+                INSERT OR REPLACE INTO supplier_summary 
+                    (provider_name, total_hotels, total_mappings, last_updated, summary_generated_at)
+                SELECT 
+                    provider_name,
+                    COUNT(DISTINCT ittid) as total_hotels,
+                    COUNT(*) as total_mappings,
+                    MAX(updated_at) as last_updated,
+                    CURRENT_TIMESTAMP as summary_generated_at
+                FROM provider_mappings
+                GROUP BY provider_name
+            """)
         
         result = db.execute(insert_query)
         db.commit()
@@ -128,11 +156,11 @@ def count_and_save_summary():
             last_updated = row[3].strftime("%Y-%m-%d %H:%M") if row[3] else "N/A"
             print(f"   {provider:<20} {hotels:<12,} {mappings:<12,} {last_updated}")
         
-        # Step 5: Data consistency check (fixed collation issue)
+        # Step 5: Data consistency check
         print("\n5️⃣  Data Consistency Check:")
         print("-"*70)
         
-        # Use subquery to avoid collation issues
+        # SQLite-compatible consistency check (no collation needed)
         consistency_query = text("""
             SELECT 
                 pm.provider_name,
@@ -148,7 +176,7 @@ def count_and_save_summary():
                 FROM provider_mappings
                 GROUP BY provider_name
             ) pm
-            LEFT JOIN supplier_summary ss ON pm.provider_name = ss.provider_name COLLATE utf8mb4_unicode_ci
+            LEFT JOIN supplier_summary ss ON pm.provider_name = ss.provider_name
             LIMIT 5
         """)
         

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
 
@@ -15,34 +15,48 @@ class ExportFormat(str, Enum):
 # --- Export Filter Schemas ---
 class HotelExportFilters(BaseModel):
     """Filters for hotel data export"""
-    suppliers: Optional[List[str]] = Field(None, description="List of supplier names to filter by")
-    country_codes: Optional[List[str]] = Field(None, description="List of ISO country codes (e.g., ['US', 'GB'])")
+    suppliers: Optional[Union[List[str], str]] = Field(None, description="List of supplier names to filter by, or 'All' for all permitted suppliers")
+    country_codes: Optional[Union[List[str], str]] = Field(None, description="List of ISO country codes (e.g., ['US', 'GB']), or 'All' for all countries")
     min_rating: Optional[float] = Field(None, ge=0, le=5, description="Minimum hotel rating (0-5)")
     max_rating: Optional[float] = Field(None, ge=0, le=5, description="Maximum hotel rating (0-5)")
     date_from: Optional[datetime] = Field(None, description="Filter hotels updated after this date")
     date_to: Optional[datetime] = Field(None, description="Filter hotels updated before this date")
-    ittids: Optional[List[str]] = Field(None, description="List of specific ITTIDs to export")
-    property_types: Optional[List[str]] = Field(None, description="List of property types (e.g., ['Hotel', 'Resort'])")
+    ittids: Optional[Union[List[str], str]] = Field(None, description="List of specific ITTIDs to export, or 'All' for all hotels")
+    property_types: Optional[Union[List[str], str]] = Field(None, description="List of property types (e.g., ['Hotel', 'Resort']), or 'All' for all property types")
     page: int = Field(1, ge=1, description="Page number for pagination")
     page_size: int = Field(1000, ge=1, le=10000, description="Number of records per page")
     max_records: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of records to export (limit: 100,000)")
 
     @validator("suppliers")
     def validate_suppliers(cls, v):
-        """Validate supplier list is not empty if provided"""
-        if v is not None and len(v) == 0:
-            raise ValueError("suppliers list cannot be empty if provided")
+        """Validate supplier list is not empty if provided, or accept 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("suppliers must be a list of supplier names or the keyword 'All'")
+                return v
+            # If it's a list, ensure it's not empty
+            elif isinstance(v, list) and len(v) == 0:
+                raise ValueError("suppliers list cannot be empty if provided")
         return v
 
     @validator("country_codes")
     def validate_country_codes(cls, v):
-        """Validate country codes are uppercase 2-letter codes"""
+        """Validate country codes are uppercase 2-letter codes, or accept 'All' keyword"""
         if v is not None:
-            if len(v) == 0:
-                raise ValueError("country_codes list cannot be empty if provided")
-            for code in v:
-                if not code or len(code) != 2 or not code.isupper():
-                    raise ValueError(f"Invalid country code '{code}'. Must be 2-letter uppercase ISO code (e.g., 'US', 'GB')")
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("country_codes must be a list of ISO codes or the keyword 'All'")
+                return v
+            # If it's a list, validate each code
+            elif isinstance(v, list):
+                if len(v) == 0:
+                    raise ValueError("country_codes list cannot be empty if provided")
+                for code in v:
+                    if not code or len(code) != 2 or not code.isupper():
+                        raise ValueError(f"Invalid country code '{code}'. Must be 2-letter uppercase ISO code (e.g., 'US', 'GB')")
         return v
 
     @validator("min_rating")
@@ -83,16 +97,30 @@ class HotelExportFilters(BaseModel):
 
     @validator("ittids")
     def validate_ittids(cls, v):
-        """Validate ITTID list is not empty if provided"""
-        if v is not None and len(v) == 0:
-            raise ValueError("ittids list cannot be empty if provided")
+        """Validate ITTID list is not empty if provided, or accept 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("ittids must be a list of ITTIDs or the keyword 'All'")
+                return v
+            # If it's a list, ensure it's not empty
+            elif isinstance(v, list) and len(v) == 0:
+                raise ValueError("ittids list cannot be empty if provided")
         return v
 
     @validator("property_types")
     def validate_property_types(cls, v):
-        """Validate property types list is not empty if provided"""
-        if v is not None and len(v) == 0:
-            raise ValueError("property_types list cannot be empty if provided")
+        """Validate property types list is not empty if provided, or accept 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("property_types must be a list of property types or the keyword 'All'")
+                return v
+            # If it's a list, ensure it's not empty
+            elif isinstance(v, list) and len(v) == 0:
+                raise ValueError("property_types list cannot be empty if provided")
         return v
 
     @validator("page_size")
@@ -105,24 +133,38 @@ class HotelExportFilters(BaseModel):
 
 class MappingExportFilters(BaseModel):
     """Filters for provider mapping export"""
-    suppliers: Optional[List[str]] = Field(None, description="List of supplier names to filter by")
-    ittids: Optional[List[str]] = Field(None, description="List of specific ITTIDs to export mappings for")
+    suppliers: Optional[Union[List[str], str]] = Field(None, description="List of supplier names to filter by, or 'All' for all permitted suppliers")
+    ittids: Optional[Union[List[str], str]] = Field(None, description="List of specific ITTIDs to export mappings for, or 'All' for all mappings")
     date_from: Optional[datetime] = Field(None, description="Filter mappings created/updated after this date")
     date_to: Optional[datetime] = Field(None, description="Filter mappings created/updated before this date")
     max_records: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of records to export (limit: 100,000)")
 
     @validator("suppliers")
     def validate_suppliers(cls, v):
-        """Validate supplier list is not empty if provided"""
-        if v is not None and len(v) == 0:
-            raise ValueError("suppliers list cannot be empty if provided")
+        """Validate supplier list is not empty if provided, or accept 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("suppliers must be a list of supplier names or the keyword 'All'")
+                return v
+            # If it's a list, ensure it's not empty
+            elif isinstance(v, list) and len(v) == 0:
+                raise ValueError("suppliers list cannot be empty if provided")
         return v
 
     @validator("ittids")
     def validate_ittids(cls, v):
-        """Validate ITTID list is not empty if provided"""
-        if v is not None and len(v) == 0:
-            raise ValueError("ittids list cannot be empty if provided")
+        """Validate ITTID list is not empty if provided, or accept 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("ittids must be a list of ITTIDs or the keyword 'All'")
+                return v
+            # If it's a list, ensure it's not empty
+            elif isinstance(v, list) and len(v) == 0:
+                raise ValueError("ittids list cannot be empty if provided")
         return v
 
     @validator("date_from")
@@ -146,14 +188,21 @@ class MappingExportFilters(BaseModel):
 
 class SupplierSummaryFilters(BaseModel):
     """Filters for supplier summary statistics export"""
-    suppliers: Optional[List[str]] = Field(None, description="List of supplier names to include in summary")
+    suppliers: Optional[Union[List[str], str]] = Field(None, description="List of supplier names to include in summary, or 'All' for all permitted suppliers")
     include_country_breakdown: bool = Field(False, description="Include hotel counts by country per supplier")
 
     @validator("suppliers")
     def validate_suppliers(cls, v):
-        """Validate supplier list is not empty if provided"""
-        if v is not None and len(v) == 0:
-            raise ValueError("suppliers list cannot be empty if provided")
+        """Validate supplier list is not empty if provided, or accept 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("suppliers must be a list of supplier names or the keyword 'All'")
+                return v
+            # If it's a list, ensure it's not empty
+            elif isinstance(v, list) and len(v) == 0:
+                raise ValueError("suppliers list cannot be empty if provided")
         return v
 
 
