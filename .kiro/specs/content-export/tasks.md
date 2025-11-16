@@ -206,7 +206,7 @@
   - Handle storage errors gracefully
   - _Requirements: 6.4, 6.5_
 
-- [ ] 10. Add error handling and edge cases and when finish, commit with only headline.
+- [x] 10. Add error handling and edge cases and when finish, commit with only headline.
 
   - Implement comprehensive try-catch blocks in all services
   - Create error response formatter with ExportErrorResponse schema
@@ -218,7 +218,7 @@
   - Handle expired export file scenarios
   - _Requirements: 5.3, 9.2, 9.3_
 
-- [ ] 11. Optimize database queries and when finish, commit with only headlin.
+- [-] 11. Optimize database queries and when finish, commit with only headlin.
 
   - Add database indexes on frequently filtered columns
   - Implement query result streaming with yield_per

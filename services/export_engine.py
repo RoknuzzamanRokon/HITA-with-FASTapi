@@ -76,6 +76,12 @@ class ExportEngine:
         Stream query results in batches for memory efficiency.
         
         Uses SQLAlchemy's yield_per() for efficient streaming of large result sets.
+        This prevents loading all records into memory at once.
+        
+        Optimizations:
+        - Uses yield_per() to fetch records in batches from database
+        - Enables query.execution_options(stream_results=True) for true streaming
+        - Batches results before yielding to reduce overhead
         
         Args:
             query: SQLAlchemy Query object to stream results from
@@ -90,7 +96,12 @@ class ExportEngine:
         logger.debug(f"Streaming query results with batch size: {batch_size}")
         
         try:
+            # Enable streaming execution for better memory management
+            # This tells SQLAlchemy to use server-side cursors when possible
+            query = query.execution_options(stream_results=True)
+            
             # Use yield_per for memory-efficient streaming
+            # This fetches records in chunks from the database
             batch = []
             for record in query.yield_per(batch_size):
                 batch.append(record)

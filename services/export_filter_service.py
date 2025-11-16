@@ -7,6 +7,7 @@ Handles query building and filtering for export operations including:
 - Supplier summary filtering
 - Result count estimation
 - Query optimization
+- Query result caching for repeated exports
 """
 
 from typing import List, Optional
@@ -14,9 +15,12 @@ from sqlalchemy.orm import Session, Query, joinedload
 from sqlalchemy import func, and_, or_
 from datetime import datetime
 import logging
+import hashlib
+import json
 
 from models import Hotel, Location, ProviderMapping, Contact, SupplierSummary
 from export_schemas import HotelExportFilters, MappingExportFilters, SupplierSummaryFilters
+from cache_config import cache, CacheConfig
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -32,7 +36,12 @@ class ExportFilterService:
     - Supplier summary query building
     - Result count estimation
     - Query optimization with selective loading
+    - Query result caching for repeated exports
     """
+    
+    # Cache TTL settings (in seconds)
+    COUNT_CACHE_TTL = 60  # 1 minute for count queries
+    SUMMARY_CACHE_TTL = 300  # 5 minutes for supplier summary
     
     def __init__(self, db: Session):
         """
@@ -43,6 +52,30 @@ class ExportFilterService:
         """
         self.db = db
         logger.info("ExportFilterService initialized")
+    
+    def _generate_cache_key(self, prefix: str, filters: dict, allowed_suppliers: List[str] = None) -> str:
+        """
+        Generate a cache key for query results.
+        
+        Args:
+            prefix: Cache key prefix (e.g., "hotel_count", "mapping_count")
+            filters: Dictionary of filter parameters
+            allowed_suppliers: List of allowed suppliers
+            
+        Returns:
+            Cache key string
+        """
+        # Create a deterministic hash of the filters and suppliers
+        cache_data = {
+            "filters": filters,
+            "suppliers": sorted(allowed_suppliers) if allowed_suppliers else []
+        }
+        
+        # Convert to JSON string and hash
+        cache_str = json.dumps(cache_data, sort_keys=True, default=str)
+        cache_hash = hashlib.md5(cache_str.encode()).hexdigest()
+        
+        return f"export:{prefix}:{cache_hash}"
 
     def build_hotel_query(
         self,
@@ -62,6 +95,12 @@ class ExportFilterService:
         - Dates (created_at/updated_at range)
         - ITTIDs (specific hotel IDs)
         - Property types
+        
+        Optimizations:
+        - Uses joinedload for eager loading relationships (reduces N+1 queries)
+        - Applies indexes on filtered columns
+        - Uses distinct() to handle join duplicates
+        - Supports streaming with yield_per()
         
         Args:
             filters: HotelExportFilters object with filter criteria
@@ -86,6 +125,7 @@ class ExportFilterService:
             query = self.db.query(Hotel)
         
         # Apply eager loading for relationships if requested
+        # Using joinedload reduces N+1 query problems
         if include_locations:
             query = query.options(joinedload(Hotel.locations))
             logger.debug("Added eager loading for locations")
@@ -321,15 +361,18 @@ class ExportFilterService:
             logger.error(f"Error building supplier summary query: {str(e)}")
             raise Exception(f"Failed to build supplier summary query: {str(e)}")
 
-    def estimate_result_count(self, query: Query) -> int:
+    def estimate_result_count(self, query: Query, cache_key: str = None) -> int:
         """
-        Estimate number of results for a query using COUNT.
+        Estimate number of results for a query using COUNT with caching.
         
         This is used to determine whether to process export synchronously
         or asynchronously based on result size.
         
+        Caches count results for 1 minute to avoid repeated expensive COUNT queries.
+        
         Args:
             query: SQLAlchemy Query object to count results for
+            cache_key: Optional cache key for storing count result
             
         Returns:
             Estimated number of results
@@ -338,6 +381,13 @@ class ExportFilterService:
             Exception: If count query fails completely
         """
         logger.debug("Estimating result count for query")
+        
+        # Try to get from cache if cache_key provided
+        if cache_key and cache.is_available:
+            cached_count = cache.get(cache_key)
+            if cached_count is not None:
+                logger.info(f"Using cached result count: {cached_count}")
+                return cached_count
         
         try:
             # Remove any limit/offset for counting
@@ -348,6 +398,12 @@ class ExportFilterService:
             count = self.db.execute(count_query).scalar()
             
             logger.info(f"Estimated result count: {count}")
+            
+            # Cache the result if cache_key provided
+            if cache_key and cache.is_available:
+                cache.set(cache_key, count, self.COUNT_CACHE_TTL)
+                logger.debug(f"Cached count result with key: {cache_key}")
+            
             return count
             
         except Exception as e:
@@ -356,12 +412,76 @@ class ExportFilterService:
             try:
                 count = query.count()
                 logger.info(f"Fallback result count: {count}")
+                
+                # Cache the fallback result too
+                if cache_key and cache.is_available:
+                    cache.set(cache_key, count, self.COUNT_CACHE_TTL)
+                
                 return count
             except Exception as e2:
                 logger.error(f"Error in fallback count: {str(e2)}")
                 # If all else fails, raise exception
                 raise Exception(f"Failed to estimate result count: {str(e2)}")
 
+    def estimate_hotel_count_with_cache(
+        self,
+        filters: HotelExportFilters,
+        allowed_suppliers: List[str]
+    ) -> int:
+        """
+        Estimate hotel count with caching support.
+        
+        Args:
+            filters: HotelExportFilters object
+            allowed_suppliers: List of allowed suppliers
+            
+        Returns:
+            Estimated count of hotels matching filters
+        """
+        # Generate cache key
+        filters_dict = filters.dict() if hasattr(filters, 'dict') else vars(filters)
+        cache_key = self._generate_cache_key("hotel_count", filters_dict, allowed_suppliers)
+        
+        # Build query
+        query = self.build_hotel_query(
+            filters=filters,
+            allowed_suppliers=allowed_suppliers,
+            include_locations=False,
+            include_contacts=False,
+            include_mappings=False
+        )
+        
+        # Get count with caching
+        return self.estimate_result_count(query, cache_key)
+    
+    def estimate_mapping_count_with_cache(
+        self,
+        filters: MappingExportFilters,
+        allowed_suppliers: List[str]
+    ) -> int:
+        """
+        Estimate mapping count with caching support.
+        
+        Args:
+            filters: MappingExportFilters object
+            allowed_suppliers: List of allowed suppliers
+            
+        Returns:
+            Estimated count of mappings matching filters
+        """
+        # Generate cache key
+        filters_dict = filters.dict() if hasattr(filters, 'dict') else vars(filters)
+        cache_key = self._generate_cache_key("mapping_count", filters_dict, allowed_suppliers)
+        
+        # Build query
+        query = self.build_mapping_query(
+            filters=filters,
+            allowed_suppliers=allowed_suppliers
+        )
+        
+        # Get count with caching
+        return self.estimate_result_count(query, cache_key)
+    
     def get_country_breakdown(
         self,
         allowed_suppliers: List[str]
