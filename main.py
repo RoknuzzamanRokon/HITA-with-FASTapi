@@ -123,11 +123,24 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 status_code=400,
                 content={"error": "Must need valid email"}
             )
-        
+    
+    # Convert errors to JSON-serializable format
+    serializable_errors = []
+    for error in exc.errors():
+        error_dict = {
+            "loc": error.get("loc", []),
+            "msg": str(error.get("msg", "")),
+            "type": error.get("type", ""),
+        }
+        # Add context if available
+        if "ctx" in error:
+            error_dict["ctx"] = {k: str(v) for k, v in error["ctx"].items()}
+        serializable_errors.append(error_dict)
+    
     # Default validation error
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()}
+        content={"detail": serializable_errors}
     )
 
 
