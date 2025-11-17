@@ -73,7 +73,14 @@ def serialize_datetime_objects(obj):
     """Convert datetime objects to ISO format strings for JSON serialization."""
     if hasattr(obj, '__dict__'):
         result = {}
-        for key, value in obj.__dict__.items():
+        try:
+            # Sort items by key (as string) to avoid comparison issues
+            items = sorted(obj.__dict__.items(), key=lambda x: str(x[0]))
+        except Exception:
+            # Fallback to unsorted if sorting fails
+            items = list(obj.__dict__.items())
+        
+        for key, value in items:
             if key.startswith('_'):
                 continue
             if isinstance(value, datetime):
@@ -1387,24 +1394,31 @@ async def get_full_hotel_with_primary_photo(
 
         # Check user permissions
         if current_user.role == models.UserRole.GENERAL_USER:
-            all_permissions = [
-                permission.provider_name
-                for permission in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
-            
-            temp_deactivated_suppliers = []
-            allowed_providers = []
-            
-            for perm in all_permissions:
-                if perm.startswith("TEMP_DEACTIVATED_"):
-                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                    temp_deactivated_suppliers.append(original_name)
-                else:
-                    allowed_providers.append(perm)
-            
-            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            try:
+                all_permissions = [
+                    str(permission.provider_name) if permission.provider_name else ""
+                    for permission in db.query(UserProviderPermission)
+                    .filter(UserProviderPermission.user_id == current_user.id)
+                    .all()
+                ]
+                
+                temp_deactivated_suppliers = []
+                allowed_providers = []
+                
+                for perm in all_permissions:
+                    if perm and perm.startswith("TEMP_DEACTIVATED_"):
+                        original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                        temp_deactivated_suppliers.append(original_name)
+                    elif perm:
+                        allowed_providers.append(perm)
+                
+                final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+            except Exception as perm_error:
+                print(f"❌ Permission processing error: {perm_error}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error processing user permissions: {str(perm_error)}"
+                )
             
             if not final_allowed_providers:
                 raise HTTPException(
@@ -1430,57 +1444,79 @@ async def get_full_hotel_with_primary_photo(
 
         # Get provider mappings based on user role
         if current_user.role == models.UserRole.GENERAL_USER:
-            all_permissions = [
-                permission.provider_name
-                for permission in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
-            
-            temp_deactivated_suppliers = []
-            allowed_providers = []
-            
-            for perm in all_permissions:
-                if perm.startswith("TEMP_DEACTIVATED_"):
-                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                    temp_deactivated_suppliers.append(original_name)
-                else:
-                    allowed_providers.append(perm)
-            
-            final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
-            
-            provider_mappings = db.query(models.ProviderMapping).filter(
-                models.ProviderMapping.ittid == ittid,
-                models.ProviderMapping.provider_name.in_(final_allowed_providers)
-            ).all()
+            try:
+                all_permissions = [
+                    str(permission.provider_name) if permission.provider_name else ""
+                    for permission in db.query(UserProviderPermission)
+                    .filter(UserProviderPermission.user_id == current_user.id)
+                    .all()
+                ]
+                
+                temp_deactivated_suppliers = []
+                allowed_providers = []
+                
+                for perm in all_permissions:
+                    if perm and perm.startswith("TEMP_DEACTIVATED_"):
+                        original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                        temp_deactivated_suppliers.append(original_name)
+                    elif perm:
+                        allowed_providers.append(perm)
+                
+                final_allowed_providers = [provider for provider in allowed_providers if provider not in temp_deactivated_suppliers]
+                
+                provider_mappings = db.query(models.ProviderMapping).filter(
+                    models.ProviderMapping.ittid == ittid,
+                    models.ProviderMapping.provider_name.in_(final_allowed_providers)
+                ).all()
+            except Exception as perm_error:
+                print(f"❌ Permission processing error for general user: {perm_error}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error processing user permissions: {str(perm_error)}"
+                )
         else:
-            all_permissions = [
-                permission.provider_name
-                for permission in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
-            
-            temp_deactivated_suppliers = []
-            for perm in all_permissions:
-                if perm.startswith("TEMP_DEACTIVATED_"):
-                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                    temp_deactivated_suppliers.append(original_name)
-            
-            if temp_deactivated_suppliers:
-                provider_mappings = [pm for pm in all_provider_mappings if pm.provider_name not in temp_deactivated_suppliers]
-            else:
-                provider_mappings = all_provider_mappings
+            try:
+                all_permissions = [
+                    str(permission.provider_name) if permission.provider_name else ""
+                    for permission in db.query(UserProviderPermission)
+                    .filter(UserProviderPermission.user_id == current_user.id)
+                    .all()
+                ]
+                
+                temp_deactivated_suppliers = []
+                for perm in all_permissions:
+                    if perm and perm.startswith("TEMP_DEACTIVATED_"):
+                        original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                        temp_deactivated_suppliers.append(original_name)
+                
+                if temp_deactivated_suppliers:
+                    provider_mappings = [pm for pm in all_provider_mappings if str(pm.provider_name) not in temp_deactivated_suppliers]
+                else:
+                    provider_mappings = all_provider_mappings
+            except Exception as perm_error:
+                print(f"❌ Permission processing error for admin/super user: {perm_error}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error processing user permissions: {str(perm_error)}"
+                )
 
         # Build have_provider_list with provider IDs grouped by provider name
         have_provider_dict = {}
         for pm in provider_mappings:
-            if pm.provider_name not in have_provider_dict:
-                have_provider_dict[pm.provider_name] = []
-            have_provider_dict[pm.provider_name].append(pm.provider_id)
+            provider_name = str(pm.provider_name) if pm.provider_name else "unknown"
+            provider_id = str(pm.provider_id) if pm.provider_id else "unknown"
+            
+            if provider_name not in have_provider_dict:
+                have_provider_dict[provider_name] = []
+            have_provider_dict[provider_name].append(provider_id)
         
-        # Convert to list of dicts format
-        have_provider_list = [{provider: ids} for provider, ids in have_provider_dict.items()]
+        # Convert to list of dicts format - sort by provider name for consistency
+        try:
+            have_provider_list = [{provider: ids} for provider, ids in sorted(have_provider_dict.items(), key=lambda x: str(x[0]))]
+        except Exception as sort_error:
+            print(f"⚠️ Sorting error in have_provider_list: {sort_error}")
+            # Fallback without sorting
+            have_provider_list = [{provider: ids} for provider, ids in have_provider_dict.items()]
 
         # Enhanced provider mappings with full details - FILTER by primary_photo
         enhanced_provider_mappings = []
@@ -1534,6 +1570,11 @@ async def get_full_hotel_with_primary_photo(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"❌ Full error in get-full-hotel-with-itt-mapping-id:\n{error_traceback}")
+        print(f"❌ Error type: {type(e).__name__}")
+        print(f"❌ Error message: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing mapping data request: {str(e)}"

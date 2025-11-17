@@ -106,15 +106,20 @@ def deduct_points_for_general_user(
     
     # Get the user's points
     user_points = db.query(models.UserPoint).filter(models.UserPoint.user_id == current_user.id).first()
-    if not user_points or user_points.current_points < points:
+    
+    # Convert to int for comparison (handle both string and int types)
+    current_points_value = int(user_points.current_points) if user_points and user_points.current_points else 0
+    points_to_deduct = int(points) if points else 0
+    
+    if not user_points or current_points_value < points_to_deduct:
         raise HTTPException(
             status_code=400,
             detail="Insufficient points to access this endpoint."
         )
 
-    # Deduct points only for general users
-    user_points.current_points -= points
-    user_points.total_used_points += points
+    # Deduct points only for general users (ensure integer arithmetic)
+    user_points.current_points = current_points_value - points_to_deduct
+    user_points.total_used_points = int(user_points.total_used_points or 0) + points_to_deduct
 
     # Check if a deduction transaction already exists for the user
     existing_transaction = db.query(models.PointTransaction).filter(
@@ -125,13 +130,13 @@ def deduct_points_for_general_user(
     if existing_transaction:
         # Update the existing transaction
         existing_transaction.giver_email = current_user.email
-        existing_transaction.points += points
+        existing_transaction.points += points_to_deduct
         existing_transaction.created_at = datetime.utcnow()  # Update the timestamp
     else:
         # Create a new transaction if none exists
         transaction = models.PointTransaction(
             giver_id=current_user.id,
-            points=points,
+            points=points_to_deduct,
             transaction_type="deduction",
             created_at=datetime.utcnow()
         )
