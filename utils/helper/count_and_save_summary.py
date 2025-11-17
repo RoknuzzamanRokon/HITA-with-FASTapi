@@ -160,25 +160,47 @@ def count_and_save_summary():
         print("\n5️⃣  Data Consistency Check:")
         print("-"*70)
         
-        # SQLite-compatible consistency check (no collation needed)
-        consistency_query = text("""
-            SELECT 
-                pm.provider_name,
-                pm.actual_hotels,
-                pm.actual_mappings,
-                ss.total_hotels as summary_hotels,
-                ss.total_mappings as summary_mappings
-            FROM (
+        # Consistency check with collation fix for MySQL
+        if is_mysql:
+            consistency_query = text("""
                 SELECT 
-                    provider_name,
-                    COUNT(DISTINCT ittid) as actual_hotels,
-                    COUNT(*) as actual_mappings
-                FROM provider_mappings
-                GROUP BY provider_name
-            ) pm
-            LEFT JOIN supplier_summary ss ON pm.provider_name = ss.provider_name
-            LIMIT 5
-        """)
+                    pm.provider_name,
+                    pm.actual_hotels,
+                    pm.actual_mappings,
+                    ss.total_hotels as summary_hotels,
+                    ss.total_mappings as summary_mappings
+                FROM (
+                    SELECT 
+                        provider_name,
+                        COUNT(DISTINCT ittid) as actual_hotels,
+                        COUNT(*) as actual_mappings
+                    FROM provider_mappings
+                    GROUP BY provider_name
+                ) pm
+                LEFT JOIN supplier_summary ss 
+                    ON pm.provider_name COLLATE utf8mb4_unicode_ci = ss.provider_name
+                LIMIT 5
+            """)
+        else:
+            # SQLite doesn't need collation handling
+            consistency_query = text("""
+                SELECT 
+                    pm.provider_name,
+                    pm.actual_hotels,
+                    pm.actual_mappings,
+                    ss.total_hotels as summary_hotels,
+                    ss.total_mappings as summary_mappings
+                FROM (
+                    SELECT 
+                        provider_name,
+                        COUNT(DISTINCT ittid) as actual_hotels,
+                        COUNT(*) as actual_mappings
+                    FROM provider_mappings
+                    GROUP BY provider_name
+                ) pm
+                LEFT JOIN supplier_summary ss ON pm.provider_name = ss.provider_name
+                LIMIT 5
+            """)
         
         result = db.execute(consistency_query)
         all_match = True

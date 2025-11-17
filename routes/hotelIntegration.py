@@ -467,6 +467,7 @@ def add_provider(
 
 # Get supplier information
 @router.get("/get-supplier-info")
+@cache(expire=300)  # Cache for 5 minutes
 def get_supplier_info(
     supplier: str = None,
     db: Session = Depends(get_db),
@@ -614,25 +615,44 @@ def get_supplier_info(
                 detail="Error validating user permissions"
             )
         
-        # Get total hotel count for the supplier
+        # Get total hotel count for the supplier from supplier_summary table (fast)
         try:
-            total_hotel = db.query(models.ProviderMapping).filter(
-                models.ProviderMapping.provider_name == supplier
-            ).count()
+            # Try to get from supplier_summary table first (optimized, indexed lookup)
+            supplier_summary = db.query(models.SupplierSummary).filter(
+                models.SupplierSummary.provider_name == supplier
+            ).first()
             
-            # Check if supplier exists in the system
-            if total_hotel == 0:
-                # Verify if supplier exists at all or just has no hotels
+            if supplier_summary:
+                # Use cached summary data - FAST!
+                total_hotel = supplier_summary.total_hotels
+                total_mappings = supplier_summary.total_mappings
+                last_updated = supplier_summary.last_updated
+                logger.debug(f"Using cached summary for '{supplier}': {total_hotel} hotels")
+                
+                # If summary exists, supplier definitely exists
+                if total_hotel == 0:
+                    logger.warning(f"Supplier '{supplier}' exists but has no hotels")
+            else:
+                # Supplier not in summary table - either doesn't exist or summary not generated
+                logger.warning(f"Supplier summary not found for '{supplier}', checking if supplier exists")
+                
+                # Quick existence check using LIMIT 1 (much faster than count)
                 supplier_exists = db.query(models.ProviderMapping).filter(
                     models.ProviderMapping.provider_name == supplier
-                ).first()
+                ).limit(1).first()
                 
                 if not supplier_exists:
                     logger.warning(f"Supplier '{supplier}' not found in system")
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Supplier '{supplier}' not found in the system. Please check the supplier name."
+                        detail=f"Supplier '{supplier}' not found in the system. Please check the supplier name or run the summary generation script."
                     )
+                
+                # Supplier exists but no summary - return message to generate summary
+                total_hotel = 0
+                total_mappings = 0
+                last_updated = None
+                logger.warning(f"Supplier '{supplier}' found but summary not generated. Run count_and_save_summary.py")
             
         except SQLAlchemyError as db_error:
             logger.error(f"Database error getting hotel count: {db_error}")
@@ -641,30 +661,27 @@ def get_supplier_info(
                 detail="Error retrieving supplier hotel count"
             )
         
-        # Get additional supplier metadata
-        try:
-            # Get unique system types for this supplier
-            system_types = db.query(models.ProviderMapping.system_type).filter(
-                models.ProviderMapping.provider_name == supplier,
-                models.ProviderMapping.system_type.isnot(None)
-            ).distinct().all()
-            
-            system_types_list = [st[0] for st in system_types if st[0]]
-            
-        except SQLAlchemyError as db_error:
-            logger.warning(f"Error getting supplier metadata: {db_error}")
-            system_types_list = []
-        
         # Log successful access
         logger.info(f"Supplier info successfully retrieved for '{supplier}' - {total_hotel} hotels found")
         
+        # Build response with supplier_summary data
+        supplier_info_response = {
+            "supplier_name": supplier,
+            "total_hotel": total_hotel,
+            "has_hotels": total_hotel > 0,
+            "last_checked": datetime.utcnow().isoformat()
+        }
+        
+        # Add additional info if available from supplier_summary
+        if supplier_summary:
+            supplier_info_response["total_mappings"] = total_mappings
+            if last_updated:
+                supplier_info_response["last_updated"] = last_updated.isoformat()
+            if supplier_summary.summary_generated_at:
+                supplier_info_response["summary_generated_at"] = supplier_summary.summary_generated_at.isoformat()
+        
         return {
-            "supplier_info": {
-                "supplier_name": supplier,
-                "total_hotel": total_hotel,
-                "has_hotels": total_hotel > 0,
-                "last_checked": datetime.utcnow().isoformat()
-            },
+            "supplier_info": supplier_info_response,
             "user_info": {
                 "user_id": current_user.id,
                 "username": getattr(current_user, 'username', 'unknown'),

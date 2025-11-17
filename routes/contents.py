@@ -1472,11 +1472,20 @@ async def get_full_hotel_with_primary_photo(
             else:
                 provider_mappings = all_provider_mappings
 
-        # Store all available provider names
-        have_provider_list = [pm.provider_name for pm in provider_mappings]
+        # Build have_provider_list with provider IDs grouped by provider name
+        have_provider_dict = {}
+        for pm in provider_mappings:
+            if pm.provider_name not in have_provider_dict:
+                have_provider_dict[pm.provider_name] = []
+            have_provider_dict[pm.provider_name].append(pm.provider_id)
+        
+        # Convert to list of dicts format
+        have_provider_list = [{provider: ids} for provider, ids in have_provider_dict.items()]
 
         # Enhanced provider mappings with full details - FILTER by primary_photo
         enhanced_provider_mappings = []
+        give_data_supplier_list = []
+        
         for pm in provider_mappings:
             hotel_details = await get_hotel_details_internal(
                 supplier_code=pm.provider_name,
@@ -1496,11 +1505,17 @@ async def get_full_hotel_with_primary_photo(
                     "full_details": hotel_details
                 }
                 enhanced_provider_mappings.append(pm_data)
+                
+                # Track suppliers that provided data
+                if pm.provider_name not in give_data_supplier_list:
+                    give_data_supplier_list.append(pm.provider_name)
 
         # Serialize the response
         response_data = {
-            "total_supplier": len(enhanced_provider_mappings),
+            "total_supplier": len(have_provider_dict),
             "have_provider_list": have_provider_list,
+            "give_data_supplier": len(give_data_supplier_list),
+            "give_data_supplier_list": give_data_supplier_list,
             "hotel": serialize_datetime_objects(hotel),
             "provider_mappings": enhanced_provider_mappings,
             "locations": [serialize_datetime_objects(loc) for loc in locations],
