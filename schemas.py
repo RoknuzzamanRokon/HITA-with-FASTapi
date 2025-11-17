@@ -179,7 +179,6 @@ UserResponse.model_rebuild()
 from models import PointAllocationType
 
 class GivePointsRequest(BaseModel):
-    receiver_email: EmailStr
     receiver_id: str
     allocation_type: PointAllocationType
 

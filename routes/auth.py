@@ -807,11 +807,11 @@ async def regenerate_api_key(
             detail="Access denied. Only admin and super admin users can regenerate API keys."
         )
     
-    new_api_key = generate_api_key(db, current_user.id)
+    new_api_key = generate-api-key(db, current_user.id)
     return {"message": "API key regenerated successfully", "api_key": new_api_key}
 
 
-@router.post("/generate_api_key/{user_id}", response_model=dict)
+@router.post("/generate-api-key/{user_id}", response_model=dict)
 async def generate_api_key_for_user(
     user_id: str,
     api_key_request: GenerateApiKeyRequest,
@@ -899,7 +899,7 @@ async def generate_api_key_for_user(
         user_id=current_user.id,
         target_user_id=user_id,
         details={
-            "action": "generate_api_key",
+            "action": "generate-api-key",
             "target_username": target_user.username,
             "admin_role": current_user.role,
             "active_for_days": api_key_request.active_for,
@@ -921,7 +921,7 @@ async def generate_api_key_for_user(
     }
 
 
-@router.delete("/revoke_api_key/{user_id}", response_model=dict)
+@router.delete("/revoke-api-key/{user_id}", response_model=dict)
 async def revoke_api_key_for_user(
     user_id: str,
     request: Request,
@@ -990,7 +990,7 @@ async def revoke_api_key_for_user(
         user_id=current_user.id,
         target_user_id=user_id,
         details={
-            "action": "revoke_api_key",
+            "action": "revoke-api-key",
             "target_username": target_user.username,
             "had_api_key": old_api_key is not None,
             "admin_role": current_user.role

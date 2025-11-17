@@ -26,7 +26,7 @@ class IPWhitelistRequest(BaseModel):
     ip: List[str]  # List of IP addresses
 
 
-@router.post("/admin/check_activate_supplier", status_code=status.HTTP_200_OK, include_in_schema=False)
+@router.post("/admin/give-supplier-active", status_code=status.HTTP_200_OK, include_in_schema=False)
 def grant_provider_permissions(
     user_id: str,
     request: ProviderPermissionRequest, 
@@ -82,7 +82,7 @@ class ProviderDeactivationRequest(BaseModel):
 
 
 @router.post(
-    "/admin/deactivate_supplier/{user_id}",
+    "/admin/give-supplier-deactivate",
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
 )

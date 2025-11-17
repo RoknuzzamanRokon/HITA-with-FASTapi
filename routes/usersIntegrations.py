@@ -712,17 +712,11 @@ def give_points(
         receiver = (
             db.query(models.User)
             .filter(
-                models.User.email == request.receiver_email,
                 models.User.id == request.receiver_id,
             )
             .first()
         )
-        if not receiver or not receiver.email:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Receiver not found or receiver does not have a valid email.",
-            )
-
+        
         # Ensure admin_user can only give points to general_user
         if (
             current_user.role == models.UserRole.ADMIN_USER
@@ -820,7 +814,7 @@ def give_points(
         )
 
 
-@router.post("/reset_point/{user_id}/")
+@router.post("/reset-point/{user_id}/")
 def reset_user_point(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -1398,13 +1392,25 @@ def check_user_info(
         ]
         active_suppliers = list(set(suppliers))
 
+        # Calculate API key info
+        api_key_info = {
+            "api_key": user.api_key,
+            "created": user.created_at.isoformat() if user.created_at else None,
+            "expires": user.api_key_expires_at.isoformat() if user.api_key_expires_at else None,
+            "active_for_days": None
+        }
+        
+        # Calculate active_for_days if API key exists and has expiration
+        if user.api_key and user.api_key_expires_at:
+            days_remaining = (user.api_key_expires_at - datetime.utcnow()).days
+            api_key_info["active_for_days"] = max(0, days_remaining)  # Don't show negative days
+        
         return {
             "id": user.id,
             "username": user.username,
             "email": user.email,
             "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
-            "api_key": user.api_key,
-            "api_key_expires_at": user.api_key_expires_at.isoformat() if user.api_key_expires_at else None,
+            "api_key_info": api_key_info,
             "points": points_info,
             "active_suppliers": active_suppliers,
             "total_suppliers": len(active_suppliers),

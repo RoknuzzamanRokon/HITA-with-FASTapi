@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
-from routes.auth import get_current_user
+from routes.auth import get_current_user, authenticate_api_key
 import models
 from models import User, UserRole, ExportJob
 from export_schemas import (
@@ -56,12 +56,56 @@ router = APIRouter(
 EXPORT_STORAGE_PATH = os.getenv("EXPORT_STORAGE_PATH", os.path.join(os.getcwd(), "exports"))
 
 
+@router.get("/my-validation")
+async def validate_api_key(
+    request: Request,
+    current_user: Annotated[User, Depends(authenticate_api_key)],
+    db: Session = Depends(get_db)
+):
+    """
+    Validate API Key for Export Endpoints
+    
+    This endpoint checks if the provided API key is valid and grants access
+    to all /v1.0/export endpoints.
+    
+    **Authentication:**
+    - Requires valid API key in X-API-Key header
+    - API key must be active and not expired
+    
+    **Returns:**
+    - User information if API key is valid
+    - 401 error if API key is invalid or expired
+    
+    **Use Cases:**
+    - Pre-validate API key before making export requests
+    - Check API key status and expiration
+    - Verify user permissions for exports
+    """
+    logger.info(f"API key validation successful for user {current_user.id}")
+    
+    return {
+        "valid": True,
+        "message": "API key is valid and active",
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "role": current_user.role,
+            "api_key_expires_at": current_user.api_key_expires_at.isoformat() if current_user.api_key_expires_at else None
+        },
+        "access": {
+            "export_endpoints": True,
+            "message": "You have access to all /v1.0/export endpoints"
+        }
+    }
+
+
 @router.post("/hotels")
 async def export_hotels(
     request: Request,
     export_request: ExportHotelsRequest,
     background_tasks: BackgroundTasks,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(authenticate_api_key)],
     db: Session = Depends(get_db)
 ):
     """
@@ -367,7 +411,7 @@ async def export_mappings(
     request: Request,
     export_request: ExportMappingsRequest,
     background_tasks: BackgroundTasks,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(authenticate_api_key)],
     db: Session = Depends(get_db)
 ):
     """
@@ -622,7 +666,7 @@ async def export_supplier_summary(
     request: Request,
     export_request: ExportSupplierSummaryRequest,
     background_tasks: BackgroundTasks,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(authenticate_api_key)],
     db: Session = Depends(get_db)
 ):
     """
@@ -860,7 +904,7 @@ async def export_supplier_summary(
 @router.get("/status/{job_id}", response_model=ExportJobStatusResponse)
 async def get_export_status(
     job_id: str,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(authenticate_api_key)],
     db: Session = Depends(get_db)
 ):
     """
@@ -941,7 +985,7 @@ async def get_export_status(
 @router.get("/download/{job_id}")
 async def download_export(
     job_id: str,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(authenticate_api_key)],
     db: Session = Depends(get_db)
 ):
     """
@@ -1072,7 +1116,7 @@ async def download_export(
 @router.delete("/cancel/{job_id}")
 async def cancel_export_job(
     job_id: str,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(authenticate_api_key)],
     db: Session = Depends(get_db)
 ):
     """
