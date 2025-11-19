@@ -57,3 +57,8 @@ utils/usage/
 
 
 .env.example
+
+
+test-*.*
+test_*.*
+*.md

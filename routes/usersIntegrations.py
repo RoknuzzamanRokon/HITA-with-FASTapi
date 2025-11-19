@@ -1393,17 +1393,26 @@ def check_user_info(
         active_suppliers = list(set(suppliers))
 
         # Calculate API key info
-        api_key_info = {
-            "api_key": user.api_key,
-            "created": user.created_at.isoformat() if user.created_at else None,
-            "expires": user.api_key_expires_at.isoformat() if user.api_key_expires_at else None,
-            "active_for_days": None
-        }
-        
-        # Calculate active_for_days if API key exists and has expiration
-        if user.api_key and user.api_key_expires_at:
-            days_remaining = (user.api_key_expires_at - datetime.utcnow()).days
-            api_key_info["active_for_days"] = max(0, days_remaining)  # Don't show negative days
+        if user.api_key:
+            api_key_info = {
+                "api_key": user.api_key,
+                "created": user.created_at.isoformat() if user.created_at else None,
+                "expires": user.api_key_expires_at.isoformat() if user.api_key_expires_at else None,
+                "active_for_days": None
+            }
+            
+            # Calculate active_for_days if API key has expiration
+            if user.api_key_expires_at:
+                days_remaining = (user.api_key_expires_at - datetime.utcnow()).days
+                api_key_info["active_for_days"] = max(0, days_remaining)  # Don't show negative days
+        else:
+            # If no API key, set all fields to null
+            api_key_info = {
+                "api_key": None,
+                "created": None,
+                "expires": None,
+                "active_for_days": None
+            }
         
         return {
             "id": user.id,
