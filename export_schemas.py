@@ -23,9 +23,6 @@ class HotelExportFilters(BaseModel):
     date_to: Optional[datetime] = Field(None, description="Filter hotels updated before this date")
     ittids: Optional[Union[List[str], str]] = Field(None, description="List of specific ITTIDs to export, or 'All' for all hotels")
     property_types: Optional[Union[List[str], str]] = Field(None, description="List of property types (e.g., ['Hotel', 'Resort']), or 'All' for all property types")
-    page: int = Field(1, ge=1, description="Page number for pagination")
-    page_size: int = Field(1000, ge=1, le=10000, description="Number of records per page")
-    max_records: Optional[Union[int, str]] = Field(None, description="Maximum number of records to export (1-100,000), or 'All' to export all records")
 
     @validator("suppliers")
     def validate_suppliers(cls, v):
@@ -121,28 +118,6 @@ class HotelExportFilters(BaseModel):
             # If it's a list, ensure it's not empty
             elif isinstance(v, list) and len(v) == 0:
                 raise ValueError("property_types list cannot be empty if provided")
-        return v
-
-    @validator("page_size")
-    def validate_page_size(cls, v):
-        """Validate page size is reasonable"""
-        if v > 10000:
-            raise ValueError("page_size cannot exceed 10,000 records per page")
-        return v
-
-    @validator("max_records")
-    def validate_max_records(cls, v):
-        """Validate max_records is either a valid integer or 'All' keyword"""
-        if v is not None:
-            # Accept "All" as a special keyword
-            if isinstance(v, str):
-                if v.lower() != "all":
-                    raise ValueError("max_records must be an integer (1-100,000) or the keyword 'All'")
-                return v
-            # If it's an integer, validate the range
-            elif isinstance(v, int):
-                if v < 1 or v > 100000:
-                    raise ValueError("max_records must be between 1 and 100,000")
         return v
 
 

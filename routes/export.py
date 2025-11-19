@@ -229,27 +229,13 @@ async def export_hotels(
             include_mappings=export_request.include_mappings,
         )
 
-        # Step 5: Determine estimated count based on max_records or page_size
-        if export_request.filters.max_records is not None:
-            if isinstance(export_request.filters.max_records, int):
-                # Use max_records as the estimate
-                estimated_count = export_request.filters.max_records
-                logger.info(
-                    f"Estimated {estimated_count} records for export (based on max_records)"
-                )
-            elif (
-                isinstance(export_request.filters.max_records, str)
-                and export_request.filters.max_records.lower() == "all"
-            ):
-                # For "All", return "All" as the estimate
-                estimated_count = "All"
-                logger.info(f"Exporting all hotel records (no limit)")
-        else:
-            # Use page_size as estimate
-            estimated_count = export_request.filters.page_size
-            logger.info(
-                f"Estimated {estimated_count} records for export (based on page_size)"
-            )
+        # Step 5: Get actual count of records to be exported
+        # This ensures accurate progress tracking and time estimates
+        actual_count = query.count()
+        estimated_count = actual_count
+        logger.info(
+            f"Actual count: {estimated_count} hotel records for export"
+        )
 
         # Check maximum export size (only for numeric estimates)
         MAX_EXPORT_SIZE = 100000
@@ -338,9 +324,6 @@ async def export_hotels(
                 ),
                 "ittids": export_request.filters.ittids,
                 "property_types": export_request.filters.property_types,
-                "page": export_request.filters.page,
-                "page_size": export_request.filters.page_size,
-                "max_records": export_request.filters.max_records,
             },
             "allowed_suppliers": permission_result.allowed_suppliers,
             "include_locations": export_request.include_locations,
@@ -379,22 +362,18 @@ async def export_hotels(
         )
 
         # Calculate estimated completion time
-        if isinstance(estimated_count, str) and estimated_count.lower() == "all":
-            estimated_time = "Unknown (exporting all records)"
+        # More realistic estimate: ~60 records per second (based on actual performance)
+        estimated_seconds = estimated_count / 60
+        if estimated_seconds < 60:
+            estimated_time = f"{int(estimated_seconds)} seconds"
+        elif estimated_seconds < 3600:
+            estimated_minutes = int(estimated_seconds / 60)
+            estimated_time = f"{estimated_minutes} minutes"
         else:
-            # Rough estimate: 1000 records per second
-            estimated_seconds = estimated_count / 1000
-            if estimated_seconds < 60:
-                estimated_time = f"{int(estimated_seconds)} seconds"
-            else:
-                estimated_minutes = int(estimated_seconds / 60)
-                estimated_time = f"{estimated_minutes} minutes"
+            estimated_hours = int(estimated_seconds / 3600)
+            estimated_time = f"{estimated_hours} hours"
 
-        # Customize message based on max_records setting
-        if isinstance(estimated_count, str) and estimated_count.lower() == "all":
-            message = "Export job created successfully (exporting all records). Use the job_id to check status and download when complete."
-        else:
-            message = "Export job created successfully. Use the job_id to check status and download when complete."
+        message = "Export job created successfully. Use the job_id to check status and download when complete."
 
         return ExportJobResponse(
             job_id=export_job.id,
@@ -557,26 +536,29 @@ async def export_mappings(
             allowed_suppliers=permission_result.allowed_suppliers,
         )
 
-        # Step 4: Determine estimated count based on max_records
+        # Step 4: Determine actual count based on max_records
         if export_request.filters.max_records is not None:
             if isinstance(export_request.filters.max_records, int):
-                # Use max_records as the estimate
-                estimated_count = export_request.filters.max_records
+                # Get actual count but limit to max_records
+                actual_count = query.count()
+                estimated_count = min(actual_count, export_request.filters.max_records)
                 logger.info(
-                    f"Estimated {estimated_count} mapping records for export (based on max_records)"
+                    f"Actual count: {actual_count}, limited to max_records: {estimated_count}"
                 )
             elif (
                 isinstance(export_request.filters.max_records, str)
                 and export_request.filters.max_records.lower() == "all"
             ):
-                # For "All", return "All" as the estimate
-                estimated_count = "All"
-                logger.info(f"Exporting all mapping records (no limit)")
+                # Get actual count for "All"
+                actual_count = query.count()
+                estimated_count = actual_count
+                logger.info(f"Actual count for all mapping records: {estimated_count}")
         else:
-            # No max_records specified - use rough estimate
-            estimated_count = 10000  # Rough estimate, actual count done in worker
+            # No max_records specified - get actual count
+            actual_count = query.count()
+            estimated_count = actual_count
             logger.info(
-                f"Estimated {estimated_count} mapping records for export (rough estimate)"
+                f"Actual count: {estimated_count} mapping records for export"
             )
 
         # Check maximum export size (only for numeric estimates)
@@ -691,21 +673,18 @@ async def export_mappings(
         )
 
         # Calculate estimated completion time
-        if isinstance(estimated_count, str) and estimated_count.lower() == "all":
-            estimated_time = "Unknown (exporting all records)"
+        # More realistic estimate: ~60 records per second (based on actual performance)
+        estimated_seconds = estimated_count / 60
+        if estimated_seconds < 60:
+            estimated_time = f"{int(estimated_seconds)} seconds"
+        elif estimated_seconds < 3600:
+            estimated_minutes = int(estimated_seconds / 60)
+            estimated_time = f"{estimated_minutes} minutes"
         else:
-            estimated_seconds = estimated_count / 1000
-            if estimated_seconds < 60:
-                estimated_time = f"{int(estimated_seconds)} seconds"
-            else:
-                estimated_minutes = int(estimated_seconds / 60)
-                estimated_time = f"{estimated_minutes} minutes"
+            estimated_hours = int(estimated_seconds / 3600)
+            estimated_time = f"{estimated_hours} hours"
 
-        # Customize message based on max_records setting
-        if isinstance(estimated_count, str) and estimated_count.lower() == "all":
-            message = "Mapping export job created successfully (exporting all records). Use the job_id to check status and download when complete."
-        else:
-            message = "Mapping export job created successfully. Use the job_id to check status and download when complete."
+        message = "Mapping export job created successfully. Use the job_id to check status and download when complete."
 
         return ExportJobResponse(
             job_id=export_job.id,

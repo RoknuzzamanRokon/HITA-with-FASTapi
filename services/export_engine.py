@@ -754,7 +754,7 @@ class ExportEngine:
 
                     # Update progress more frequently (every 1% or every batch if small dataset)
                     if total_records > 0:
-                        progress = int((processed_records / total_records) * 100)
+                        progress = min(int((processed_records / total_records) * 100), 99)
 
                         # Update if progress changed by at least 1%
                         if progress > last_progress_update:
@@ -1039,7 +1039,7 @@ class ExportEngine:
 
                     # Update progress more frequently (every 1% or every batch if small dataset)
                     if total_records > 0:
-                        progress = int((processed_records / total_records) * 100)
+                        progress = min(int((processed_records / total_records) * 100), 99)
 
                         # Update if progress changed by at least 1%
                         if progress > last_progress_update:
@@ -1334,7 +1334,7 @@ class ExportEngine:
 
                     # Update progress more frequently (every 1% or every batch if small dataset)
                     if total_records > 0:
-                        progress = int((processed_records / total_records) * 100)
+                        progress = min(int((processed_records / total_records) * 100), 99)
 
                         # Update if progress changed by at least 1%
                         if progress > last_progress_update:

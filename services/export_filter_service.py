@@ -228,11 +228,7 @@ class ExportFilterService:
             # Remove duplicates (hotels may appear multiple times due to joins)
             query = query.distinct()
             
-            # Apply pagination
-            offset = (filters.page - 1) * filters.page_size
-            query = query.offset(offset).limit(filters.page_size)
-            
-            logger.info(f"Hotel query built successfully with pagination: page={filters.page}, size={filters.page_size}")
+            logger.info(f"Hotel query built successfully (no pagination - exports all matching records)")
             
             return query
             
@@ -662,14 +658,7 @@ class ExportFilterService:
                     if filters.min_rating is not None and filters.max_rating < filters.min_rating:
                         return False, "max_rating must be greater than or equal to min_rating"
             
-            # Check pagination validity
-            if hasattr(filters, 'page') and hasattr(filters, 'page_size'):
-                if filters.page < 1:
-                    return False, "page must be >= 1"
-                if filters.page_size < 1 or filters.page_size > 10000:
-                    return False, "page_size must be between 1 and 10000"
-            
-            # Check maximum export size
+            # Check maximum export size (only for mappings which still use max_records)
             if hasattr(filters, 'max_records'):
                 if filters.max_records is not None:
                     # Accept "All" keyword or valid integer
@@ -680,7 +669,7 @@ class ExportFilterService:
                         if filters.max_records < 1:
                             return False, "max_records must be at least 1"
                         if filters.max_records > 100000:
-                            return False, "max_records cannot exceed 100,000. Please use more specific filters or pagination."
+                            return False, "max_records cannot exceed 100,000. Please use more specific filters."
             
             # Check that list filters are not empty if provided
             if hasattr(filters, 'suppliers'):
