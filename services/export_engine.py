@@ -1061,9 +1061,6 @@ class ExportEngine:
                     "ittid",
                     "provider_name",
                     "provider_id",
-                    "system_type",
-                    "vervotech_id",
-                    "giata_code",
                     "created_at",
                     "updated_at",
                 ]

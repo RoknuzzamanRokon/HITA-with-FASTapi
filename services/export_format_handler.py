@@ -485,9 +485,6 @@ class ExportFormatHandler:
             'ittid': mapping.ittid,
             'provider_name': mapping.provider_name,
             'provider_id': mapping.provider_id,
-            'system_type': mapping.system_type,
-            'vervotech_id': mapping.vervotech_id,
-            'giata_code': mapping.giata_code,
             'created_at': mapping.created_at.isoformat() if mapping.created_at else None,
             'updated_at': mapping.updated_at.isoformat() if mapping.updated_at else None,
         }
