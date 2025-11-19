@@ -25,7 +25,7 @@ class HotelExportFilters(BaseModel):
     property_types: Optional[Union[List[str], str]] = Field(None, description="List of property types (e.g., ['Hotel', 'Resort']), or 'All' for all property types")
     page: int = Field(1, ge=1, description="Page number for pagination")
     page_size: int = Field(1000, ge=1, le=10000, description="Number of records per page")
-    max_records: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of records to export (limit: 100,000)")
+    max_records: Optional[Union[int, str]] = Field(None, description="Maximum number of records to export (1-100,000), or 'All' to export all records")
 
     @validator("suppliers")
     def validate_suppliers(cls, v):
@@ -130,6 +130,21 @@ class HotelExportFilters(BaseModel):
             raise ValueError("page_size cannot exceed 10,000 records per page")
         return v
 
+    @validator("max_records")
+    def validate_max_records(cls, v):
+        """Validate max_records is either a valid integer or 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("max_records must be an integer (1-100,000) or the keyword 'All'")
+                return v
+            # If it's an integer, validate the range
+            elif isinstance(v, int):
+                if v < 1 or v > 100000:
+                    raise ValueError("max_records must be between 1 and 100,000")
+        return v
+
 
 class MappingExportFilters(BaseModel):
     """Filters for provider mapping export"""
@@ -137,7 +152,7 @@ class MappingExportFilters(BaseModel):
     ittids: Optional[Union[List[str], str]] = Field(None, description="List of specific ITTIDs to export mappings for, or 'All' for all mappings")
     date_from: Optional[datetime] = Field(None, description="Filter mappings created/updated after this date")
     date_to: Optional[datetime] = Field(None, description="Filter mappings created/updated before this date")
-    max_records: Optional[int] = Field(None, ge=1, le=100000, description="Maximum number of records to export (limit: 100,000)")
+    max_records: Optional[Union[int, str]] = Field(None, description="Maximum number of records to export (1-100,000), or 'All' to export all records")
 
     @validator("suppliers")
     def validate_suppliers(cls, v):
@@ -183,6 +198,21 @@ class MappingExportFilters(BaseModel):
             if "date_from" in values and values["date_from"] is not None:
                 if v < values["date_from"]:
                     raise ValueError("date_to must be after date_from")
+        return v
+
+    @validator("max_records")
+    def validate_max_records(cls, v):
+        """Validate max_records is either a valid integer or 'All' keyword"""
+        if v is not None:
+            # Accept "All" as a special keyword
+            if isinstance(v, str):
+                if v.lower() != "all":
+                    raise ValueError("max_records must be an integer (1-100,000) or the keyword 'All'")
+                return v
+            # If it's an integer, validate the range
+            elif isinstance(v, int):
+                if v < 1 or v > 100000:
+                    raise ValueError("max_records must be between 1 and 100,000")
         return v
 
 
@@ -254,7 +284,7 @@ class ExportJobResponse(BaseModel):
     """Response schema for asynchronous export job creation"""
     job_id: str = Field(..., description="Unique identifier for the export job")
     status: str = Field(..., description="Current job status (pending, processing, completed, failed)")
-    estimated_records: int = Field(..., description="Estimated number of records to be exported")
+    estimated_records: Union[int, str] = Field(..., description="Estimated number of records to be exported, or 'All' for unlimited")
     estimated_completion_time: str = Field(..., description="Estimated time to completion (e.g., '2 minutes')")
     created_at: datetime = Field(..., description="Timestamp when the job was created")
     message: str = Field(..., description="Human-readable message about the export job")
@@ -359,6 +389,126 @@ class ExportErrorResponse(BaseModel):
         }
 
 
+# --- Export Job Management Schemas ---
+class ExportJobSummary(BaseModel):
+    """Summary information for a single export job"""
+    job_id: str = Field(..., description="Unique identifier for the export job")
+    export_type: str = Field(..., description="Type of export (hotels, mappings, supplier_summary)")
+    format: str = Field(..., description="Export file format (csv, json, excel)")
+    status: str = Field(..., description="Current job status")
+    progress_percentage: int = Field(..., ge=0, le=100, description="Progress percentage")
+    processed_records: int = Field(..., description="Number of records processed")
+    total_records: Optional[int] = Field(None, description="Total number of records")
+    created_at: datetime = Field(..., description="When job was created")
+    completed_at: Optional[datetime] = Field(None, description="When job completed")
+    download_url: Optional[str] = Field(None, description="Download URL if completed")
+    expires_at: Optional[datetime] = Field(None, description="When export file expires")
+    file_size_bytes: Optional[int] = Field(None, description="File size in bytes")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "job_id": "exp_1234567890abcdef",
+                "export_type": "hotels",
+                "format": "csv",
+                "status": "completed",
+                "progress_percentage": 100,
+                "processed_records": 15000,
+                "total_records": 15000,
+                "created_at": "2024-11-16T10:30:00",
+                "completed_at": "2024-11-16T10:35:00",
+                "download_url": "/v1.0/export/download/exp_1234567890abcdef",
+                "expires_at": "2024-11-17T10:35:00",
+                "file_size_bytes": 2048576
+            }
+        }
+
+
+class ExportJobListResponse(BaseModel):
+    """Response schema for listing export jobs"""
+    jobs: List[ExportJobSummary] = Field(..., description="List of export jobs")
+    total: int = Field(..., description="Total number of jobs matching filters")
+    limit: int = Field(..., description="Number of jobs per page")
+    offset: int = Field(..., description="Pagination offset")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "jobs": [
+                    {
+                        "job_id": "exp_1234567890abcdef",
+                        "export_type": "hotels",
+                        "format": "csv",
+                        "status": "completed",
+                        "progress_percentage": 100,
+                        "processed_records": 15000,
+                        "total_records": 15000,
+                        "created_at": "2024-11-16T10:30:00",
+                        "completed_at": "2024-11-16T10:35:00",
+                        "download_url": "/v1.0/export/download/exp_1234567890abcdef",
+                        "expires_at": "2024-11-17T10:35:00",
+                        "file_size_bytes": 2048576
+                    }
+                ],
+                "total": 1,
+                "limit": 100,
+                "offset": 0
+            }
+        }
+
+
+class ExportJobDetailResponse(BaseModel):
+    """Detailed response for a single export job"""
+    job_id: str = Field(..., description="Unique identifier for the export job")
+    user_id: str = Field(..., description="User who created the job")
+    export_type: str = Field(..., description="Type of export")
+    format: str = Field(..., description="Export file format")
+    filters: Optional[Dict[str, Any]] = Field(None, description="Filters applied to export")
+    status: str = Field(..., description="Current job status")
+    progress_percentage: int = Field(..., ge=0, le=100, description="Progress percentage")
+    processed_records: int = Field(..., description="Number of records processed")
+    total_records: Optional[int] = Field(None, description="Total number of records")
+    file_path: Optional[str] = Field(None, description="Server file path")
+    file_size_bytes: Optional[int] = Field(None, description="File size in bytes")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+    created_at: datetime = Field(..., description="When job was created")
+    started_at: Optional[datetime] = Field(None, description="When processing started")
+    completed_at: Optional[datetime] = Field(None, description="When job completed")
+    expires_at: Optional[datetime] = Field(None, description="When export file expires")
+    download_url: Optional[str] = Field(None, description="Download URL if completed")
+
+
+class ExportJobDeleteResponse(BaseModel):
+    """Response for deleting an export job"""
+    success: bool = Field(..., description="Whether deletion was successful")
+    message: str = Field(..., description="Human-readable message")
+    job_id: str = Field(..., description="ID of deleted job")
+
+
+class ExportJobsClearResponse(BaseModel):
+    """Response for clearing multiple export jobs"""
+    success: bool = Field(..., description="Whether operation was successful")
+    message: str = Field(..., description="Human-readable message")
+    deleted_count: int = Field(..., description="Number of jobs deleted")
+    deleted_job_ids: List[str] = Field(..., description="IDs of deleted jobs")
+
+
+class ExportJobStatusUpdateRequest(BaseModel):
+    """Request to update export job status (internal use)"""
+    status: str = Field(..., description="New status")
+    progress_percentage: Optional[int] = Field(None, ge=0, le=100)
+    processed_records: Optional[int] = Field(None)
+    total_records: Optional[int] = Field(None)
+    error_message: Optional[str] = Field(None)
+
+
+class ExportJobStatusUpdateResponse(BaseModel):
+    """Response for status update"""
+    success: bool = Field(..., description="Whether update was successful")
+    message: str = Field(..., description="Human-readable message")
+    job_id: str = Field(..., description="ID of updated job")
+
+
 # Rebuild forward references
 HotelExportFilters.model_rebuild()
 MappingExportFilters.model_rebuild()
@@ -370,3 +520,10 @@ ExportJobResponse.model_rebuild()
 ExportJobStatusResponse.model_rebuild()
 ExportMetadata.model_rebuild()
 ExportErrorResponse.model_rebuild()
+ExportJobSummary.model_rebuild()
+ExportJobListResponse.model_rebuild()
+ExportJobDetailResponse.model_rebuild()
+ExportJobDeleteResponse.model_rebuild()
+ExportJobsClearResponse.model_rebuild()
+ExportJobStatusUpdateRequest.model_rebuild()
+ExportJobStatusUpdateResponse.model_rebuild()

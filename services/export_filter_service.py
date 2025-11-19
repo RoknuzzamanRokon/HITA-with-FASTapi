@@ -327,6 +327,35 @@ class ExportFilterService:
             # Order by provider_name and ittid for consistent results
             query = query.order_by(ProviderMapping.provider_name, ProviderMapping.ittid)
             
+            # Apply max_records limit if specified (skip if "All")
+            if filters.max_records is not None:
+                if isinstance(filters.max_records, int):
+                    logger.info(f"[MAX_RECORDS] Applying limit: {filters.max_records}")
+                    query = query.limit(filters.max_records)
+                elif isinstance(filters.max_records, str) and filters.max_records.lower() == "all":
+                    logger.info("[MAX_RECORDS] Set to 'All' - NO LIMIT APPLIED")
+            else:
+                logger.info("[MAX_RECORDS] Not specified - NO LIMIT APPLIED")
+            
+            # Log the actual SQL query for debugging
+            try:
+                from sqlalchemy.dialects import sqlite
+                compiled_query = str(query.statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+                logger.info(f"[QUERY] Compiled SQL (first 500 chars): {compiled_query[:500]}")
+                if "LIMIT" in compiled_query.upper():
+                    logger.warning(f"[QUERY] LIMIT clause found in query!")
+                else:
+                    logger.info(f"[QUERY] No LIMIT clause in query")
+            except Exception as e:
+                logger.warning(f"Could not compile query for logging: {str(e)}")
+            
+            # Count total matching records for debugging
+            try:
+                total_count = query.count()
+                logger.info(f"[QUERY] Total matching records in database: {total_count}")
+            except Exception as e:
+                logger.warning(f"Could not count query results: {str(e)}")
+            
             logger.info("Mapping query built successfully")
             
             return query
@@ -643,10 +672,15 @@ class ExportFilterService:
             # Check maximum export size
             if hasattr(filters, 'max_records'):
                 if filters.max_records is not None:
-                    if filters.max_records < 1:
-                        return False, "max_records must be at least 1"
-                    if filters.max_records > 100000:
-                        return False, "max_records cannot exceed 100,000. Please use more specific filters or pagination."
+                    # Accept "All" keyword or valid integer
+                    if isinstance(filters.max_records, str):
+                        if filters.max_records.lower() != "all":
+                            return False, "max_records must be an integer (1-100,000) or the keyword 'All'"
+                    elif isinstance(filters.max_records, int):
+                        if filters.max_records < 1:
+                            return False, "max_records must be at least 1"
+                        if filters.max_records > 100000:
+                            return False, "max_records cannot exceed 100,000. Please use more specific filters or pagination."
             
             # Check that list filters are not empty if provided
             if hasattr(filters, 'suppliers'):

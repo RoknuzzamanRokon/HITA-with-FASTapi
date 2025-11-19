@@ -80,21 +80,26 @@ class ExportFileStorage:
         job_id: str,
         export_type: str,
         format: str,
-        timestamp: datetime = None
+        timestamp: datetime = None,
+        user_id: str = None
     ) -> str:
         """
         Generate standardized file path for an export.
         
+        Directory structure:
+        /exports/{user_id}/{export_type}/filename
+        
         File naming convention:
         {export_type}_{job_id}_{timestamp}.{extension}
         
-        Example: hotels_exp_a1b2c3d4e5f6_20231116_143022.csv
+        Example: /exports/5779356081/mapping/mappings_exp_a1b2c3d4e5f6_20231116_143022.csv
         
         Args:
             job_id: Unique export job ID
             export_type: Type of export (hotels, mappings, supplier_summary)
             format: Export format (csv, json, excel)
             timestamp: Timestamp for filename (default: current time)
+            user_id: User ID for organizing files (optional)
             
         Returns:
             Full file path for the export file
@@ -114,8 +119,27 @@ class ExportFileStorage:
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
         filename = f"{export_type}_{job_id}_{timestamp_str}.{extension}"
         
-        # Combine with base path
-        file_path = os.path.join(self.base_storage_path, filename)
+        # Build directory structure: /exports/{user_id}/{export_type}/
+        if user_id:
+            # Normalize export_type for directory name (remove 's' if plural)
+            dir_export_type = export_type.rstrip('s') if export_type.endswith('s') else export_type
+            
+            # Create user-specific directory structure
+            user_dir = os.path.join(self.base_storage_path, user_id, dir_export_type)
+            
+            # Ensure directory exists
+            Path(user_dir).mkdir(parents=True, exist_ok=True)
+            
+            # Set directory permissions
+            try:
+                os.chmod(user_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+            except Exception as e:
+                logger.warning(f"Could not set permissions on {user_dir}: {str(e)}")
+            
+            file_path = os.path.join(user_dir, filename)
+        else:
+            # Fallback to flat structure if no user_id provided
+            file_path = os.path.join(self.base_storage_path, filename)
         
         logger.debug(f"Generated file path: {file_path}")
         

@@ -1186,6 +1186,70 @@ async def authenticate_api_key(
     return user
 
 
+async def authenticate_for_export(
+    request: Request, db: Session = Depends(get_db)
+) -> models.User:
+    """
+    Flexible authentication for export endpoints.
+    
+    - Super Users and Admin Users: Can use either API Key OR JWT Token
+    - General Users: Must use API Key only
+    
+    Returns authenticated user if valid.
+    """
+    # Try API key authentication first (works for all user types)
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        user = (
+            db.query(models.User)
+            .filter(models.User.api_key == api_key, models.User.is_active == True)
+            .first()
+        )
+        
+        if user:
+            # Check if API key has expired
+            if user.api_key_expires_at is not None:
+                if datetime.utcnow() > user.api_key_expires_at:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED, 
+                        detail="API Key has expired. Please contact your administrator for a new key."
+                    )
+            return user
+    
+    # Try JWT token authentication (only for Super Users and Admin Users)
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            # Check if token is blacklisted
+            if not redis_client.get(f"blacklist:{token}"):
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                user_id: str = payload.get("user_id")
+                token_type: str = payload.get("type")
+
+                if username and user_id and token_type == "access":
+                    user = get_user_by_id(db, user_id)
+                    if user and user.is_active:
+                        # Only allow Super Users and Admin Users to use JWT tokens
+                        if user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+                            return user
+                        else:
+                            # General users must use API key
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="General users must use API Key for export endpoints. Please provide X-API-Key header."
+                            )
+        except JWTError:
+            pass
+    
+    # No valid authentication found
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required. Provide X-API-Key header or Authorization Bearer token (Super/Admin users only)."
+    )
+
+
 async def get_user_by_api_key_or_token(
     request: Request, db: Session = Depends(get_db)
 ) -> Optional[models.User]:
