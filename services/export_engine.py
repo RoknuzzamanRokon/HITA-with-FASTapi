@@ -68,6 +68,32 @@ class ExportEngine:
 
         logger.info(f"ExportEngine initialized with storage path: {self.storage_path}")
 
+    def _update_job_progress(self, db: Session, job_id: str, progress: int, processed_records: int):
+        """
+        Update job progress with minimal database locking.
+        
+        Uses raw SQL UPDATE to avoid ORM overhead and reduce lock time.
+        Failures are logged but don't stop the export.
+        """
+        try:
+            db.execute(
+                "UPDATE export_jobs SET progress_percentage = :progress, "
+                "processed_records = :processed WHERE id = :job_id",
+                {
+                    "progress": progress,
+                    "processed": processed_records,
+                    "job_id": job_id
+                }
+            )
+            db.commit()
+        except Exception as e:
+            # Don't fail export if progress update fails
+            logger.warning(f"Failed to update progress for job {job_id}: {e}")
+            try:
+                db.rollback()
+            except:
+                pass
+
     def stream_query_results(
         self,
         query: Query,
@@ -749,19 +775,23 @@ class ExportEngine:
             def progress_tracking_generator():
                 nonlocal processed_records, last_progress_update
 
+                batch_count = 0
                 for batch in self.stream_query_results(query, self.batch_size, job_id=job_id, db_session=db):
                     processed_records += len(batch)
+                    batch_count += 1
 
-                    # Update progress more frequently (every 1% or every batch if small dataset)
+                    # Update progress less frequently to avoid blocking database
+                    # Only update every 5% progress OR every 10 batches (whichever is less frequent)
                     if total_records > 0:
                         progress = min(int((processed_records / total_records) * 100), 99)
 
-                        # Update if progress changed by at least 1%
-                        if progress > last_progress_update:
-                            export_job.progress_percentage = progress
-                            export_job.processed_records = processed_records
-                            db.commit()
+                        # Update if progress changed by at least 5% OR every 10 batches
+                        should_update = (progress >= last_progress_update + 5) or (batch_count >= 10)
+                        
+                        if should_update:
+                            self._update_job_progress(db, job_id, progress, processed_records)
                             last_progress_update = progress
+                            batch_count = 0
                             logger.info(f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)")
 
                     yield batch
@@ -1037,16 +1067,18 @@ class ExportEngine:
                         f"[EXPORT] Batch {batch_count}: {batch_size_actual} records, Total so far: {processed_records}"
                     )
 
-                    # Update progress more frequently (every 1% or every batch if small dataset)
+                    # Update progress less frequently to avoid blocking database
+                    # Only update every 5% progress OR every 10 batches (whichever is less frequent)
                     if total_records > 0:
                         progress = min(int((processed_records / total_records) * 100), 99)
 
-                        # Update if progress changed by at least 1%
-                        if progress > last_progress_update:
-                            export_job.progress_percentage = progress
-                            export_job.processed_records = processed_records
-                            db.commit()
+                        # Update if progress changed by at least 5% OR every 10 batches
+                        should_update = (progress >= last_progress_update + 5) or (batch_count >= 10)
+                        
+                        if should_update:
+                            self._update_job_progress(db, job_id, progress, processed_records)
                             last_progress_update = progress
+                            batch_count = 0
                             logger.info(f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)")
 
                     yield batch
@@ -1329,19 +1361,23 @@ class ExportEngine:
             def progress_tracking_generator():
                 nonlocal processed_records, last_progress_update
 
+                batch_count = 0
                 for batch in self.stream_query_results(query, self.batch_size, job_id=job_id, db_session=db):
                     processed_records += len(batch)
+                    batch_count += 1
 
-                    # Update progress more frequently (every 1% or every batch if small dataset)
+                    # Update progress less frequently to avoid blocking database
+                    # Only update every 5% progress OR every 10 batches (whichever is less frequent)
                     if total_records > 0:
                         progress = min(int((processed_records / total_records) * 100), 99)
 
-                        # Update if progress changed by at least 1%
-                        if progress > last_progress_update:
-                            export_job.progress_percentage = progress
-                            export_job.processed_records = processed_records
-                            db.commit()
+                        # Update if progress changed by at least 5% OR every 10 batches
+                        should_update = (progress >= last_progress_update + 5) or (batch_count >= 10)
+                        
+                        if should_update:
+                            self._update_job_progress(db, job_id, progress, processed_records)
                             last_progress_update = progress
+                            batch_count = 0
                             logger.info(f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)")
 
                     yield batch
