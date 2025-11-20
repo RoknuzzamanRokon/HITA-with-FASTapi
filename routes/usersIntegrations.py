@@ -63,8 +63,8 @@ async def self_info(
     - Account creation & update timestamps
 
     Supplier Info Structure:
-    - total_active: Total number of suppliers user has access to
-    - active_list: List of all suppliers user has access to (including temp deactivated)
+    - total_active: Total number of currently active suppliers (excluding temp deactivated)
+    - active_list: List of active suppliers (excluding temp deactivated ones)
     - temporary_off: Number of temporarily deactivated suppliers
     - temporary_off_supplier: List of temporarily deactivated supplier names
 
@@ -122,13 +122,11 @@ async def self_info(
                 row.provider_name
                 for row in db.query(models.ProviderMapping.provider_name).distinct().all()
             ]
-            # Filter out temporarily deactivated suppliers
+            # Filter out temporarily deactivated suppliers from active list
             final_active_suppliers = [supplier for supplier in all_system_suppliers if supplier not in temp_deactivated_suppliers]
-            # For super/admin users, show all suppliers they have access to (including temp deactivated)
-            all_accessible_suppliers = list(set(all_system_suppliers + temp_deactivated_suppliers))
         else:
-            # For general users, show all suppliers they have access to (including temp deactivated)
-            all_accessible_suppliers = list(set(active_suppliers + temp_deactivated_suppliers))
+            # For general users, filter out temporarily deactivated suppliers from active list
+            final_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
 
         # Return the user's details with new supplier_info structure
         return {
@@ -139,8 +137,8 @@ async def self_info(
             "available_points": available_points,
             "total_points": total_points,
             "supplier_info": {
-                "total_active": len(all_accessible_suppliers),
-                "active_list": all_accessible_suppliers,
+                "total_active": len(final_active_suppliers),
+                "active_list": final_active_suppliers,
                 "temporary_off": len(temp_deactivated_suppliers),
                 "temporary_off_supplier": temp_deactivated_suppliers
             },
