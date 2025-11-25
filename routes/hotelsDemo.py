@@ -230,6 +230,180 @@ def get_hotel_mapping_data_demo(
         )
 
 
+# Get full hotel with ITT mapping ID - demo version
+@router.get(
+    "/content/get-full-hotel-with-itt-mapping-id/{ittid}",
+    status_code=status.HTTP_200_OK,
+)
+async def get_full_hotel_with_itt_mapping_id_demo(
+    ittid: str,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Get Full Hotel Details with ITT Mapping ID (Demo Version)
+
+    Retrieves comprehensive hotel information with provider mappings that have primary photos.
+    Demo restrictions apply: only works with demo hotel IDs and demo suppliers.
+
+    Demo Restrictions:
+    - Only works with hotels from the demo list (offset 354125, limit 100)
+    - Only shows first 3 suppliers from the system
+    - Limits to first 5 provider mappings per hotel
+    - Only includes providers with primary_photo in full_details
+    - No point deduction
+    - No IP whitelist check
+
+    Args:
+        ittid (str): The ITT hotel identifier
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+
+    Returns:
+        dict: Hotel data with filtered provider mappings including:
+            - total_supplier: Count of demo suppliers
+            - have_provider_list: List of available provider names with IDs
+            - give_data_supplier: Count of providers that returned data
+            - give_data_supplier_list: List of provider names that returned data
+            - hotel: Basic hotel information
+            - provider_mappings: Only providers with primary_photo in full_details
+            - locations: Hotel location information
+            - contacts: Hotel contact information
+    """
+    try:
+        # Get demo hotel IDs (first 100 from offset 354125)
+        demo_hotels = db.query(models.Hotel.ittid).offset(354125).limit(100).all()
+        allowed_hotel_ids = [hotel.ittid for hotel in demo_hotels]
+
+        # Check if requested hotel is in demo list
+        if ittid not in allowed_hotel_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. This hotel ID is not available in the demo. Only the first 100 hotels are accessible.",
+            )
+
+        # Get hotel
+        hotel = db.query(models.Hotel).filter(models.Hotel.ittid == ittid).first()
+        if not hotel:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Hotel with id '{ittid}' not found.",
+            )
+
+        # Get all provider mappings for this hotel
+        all_provider_mappings = (
+            db.query(models.ProviderMapping)
+            .filter(models.ProviderMapping.ittid == ittid)
+            .all()
+        )
+
+        if not all_provider_mappings:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No supplier mappings found for hotel '{ittid}'",
+            )
+
+        # Get demo suppliers (first 3 from system)
+        demo_suppliers_query = (
+            db.query(models.ProviderMapping.provider_name).distinct().limit(3).all()
+        )
+        allowed_suppliers = sorted([row.provider_name for row in demo_suppliers_query])
+
+        if not allowed_suppliers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suppliers found in the system.",
+            )
+
+        # Filter provider mappings to only demo suppliers
+        provider_mappings = [
+            pm for pm in all_provider_mappings if pm.provider_name in allowed_suppliers
+        ][
+            :5
+        ]  # Limit to first 5
+
+        if not provider_mappings:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No demo suppliers available for this hotel. Available demo suppliers: {', '.join(allowed_suppliers)}",
+            )
+
+        # Get related data
+        locations = (
+            db.query(models.Location).filter(models.Location.ittid == hotel.ittid).all()
+        )
+        contacts = (
+            db.query(models.Contact).filter(models.Contact.ittid == hotel.ittid).all()
+        )
+
+        # Build have_provider_list with provider IDs grouped by provider name
+        have_provider_dict = {}
+        for pm in provider_mappings:
+            provider_name = str(pm.provider_name) if pm.provider_name else "unknown"
+            provider_id = str(pm.provider_id) if pm.provider_id else "unknown"
+
+            if provider_name not in have_provider_dict:
+                have_provider_dict[provider_name] = []
+            have_provider_dict[provider_name].append(provider_id)
+
+        # Convert to list of dicts format
+        have_provider_list = [
+            {provider: ids} for provider, ids in sorted(have_provider_dict.items())
+        ]
+
+        # Enhanced provider mappings with full details
+        enhanced_provider_mappings = []
+        give_data_supplier_list = []
+
+        for pm in provider_mappings:
+            # Get hotel details from raw data files
+            hotel_details = await get_hotel_details_internal_demo(
+                supplier_code=pm.provider_name, hotel_id=pm.provider_id
+            )
+
+            # Only include if full_details exists and has primary_photo
+            if (
+                hotel_details
+                and isinstance(hotel_details, dict)
+                and hotel_details.get("primary_photo")
+            ):
+                pm_data = {
+                    "id": pm.id,
+                    "ittid": pm.ittid,
+                    "provider_name": pm.provider_name,
+                    "provider_id": pm.provider_id,
+                    "updated_at": pm.updated_at,
+                    "full_details": hotel_details,
+                }
+                enhanced_provider_mappings.append(pm_data)
+
+                # Track suppliers that provided data
+                if pm.provider_name not in give_data_supplier_list:
+                    give_data_supplier_list.append(pm.provider_name)
+
+        # Serialize the response - same format as get-full-hotel-with-itt-mapping-id
+        response_data = {
+            "total_supplier": len(have_provider_dict),
+            "have_provider_list": have_provider_list,
+            "give_data_supplier": len(give_data_supplier_list),
+            "give_data_supplier_list": give_data_supplier_list,
+            "hotel": serialize_datetime_objects(hotel),
+            "provider_mappings": enhanced_provider_mappings,
+            "locations": [serialize_datetime_objects(loc) for loc in locations],
+            "contacts": [serialize_datetime_objects(contact) for contact in contacts],
+        }
+
+        return response_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing hotel data request: {str(e)}",
+        )
+
+
 # Read hotels list - returns first 100 hotel IDs
 @router.get("/hotel/get-all-demo-id")
 async def read_hotels(db: Session = Depends(get_db)):
