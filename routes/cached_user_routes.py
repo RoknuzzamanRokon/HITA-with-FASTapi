@@ -18,9 +18,7 @@ from models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/v1.0/users",
-    tags=["Cached User Management"])
+router = APIRouter(prefix="/v1.0/cache/users", tags=["Cached User Management"])
 
 @router.get("/list")
 async def get_users_paginated(
@@ -700,7 +698,7 @@ async def get_dashboard_statistics(
             detail=f"Failed to fetch dashboard statistics: {str(e)}"
         )
 
-@router.post("/{user_id}/invalidate_cache")
+@router.post("/{user_id}/invalidate-cache")
 async def invalidate_user_cache(
     user_id: str,
     db: Session = Depends(get_db),
