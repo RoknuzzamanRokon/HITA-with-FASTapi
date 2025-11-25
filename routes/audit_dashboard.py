@@ -15,10 +15,7 @@ from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 from routes.auth import get_current_user
 from security.middleware import validate_user_permissions
 
-router = APIRouter(
-    prefix="/v1.0",
-    tags=["Audit Analytics"]
-)
+router = APIRouter(prefix="/v1.0", tags=["Audit Analytics"])
 
 
 @router.get("/audit/analytics")
@@ -31,7 +28,7 @@ async def get_audit_analytics(
 ):
     """
     Get audit analytics data optimized for frontend graphs and visualizations
-    
+
     Returns:
     - Activity timeline (daily counts)
     - Activity breakdown by type
@@ -40,202 +37,264 @@ async def get_audit_analytics(
     - Authentication statistics
     - User management statistics
     """
-    
+
     # Validate permissions - only admin and super users can access audit analytics
-    validate_user_permissions(current_user, [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER])
-    
+    validate_user_permissions(
+        current_user, [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]
+    )
+
     audit_logger = AuditLogger(db)
-    
+
     # Calculate date range
     start_date = datetime.utcnow() - timedelta(days=days)
-    
+
     # Base query
     base_query = db.query(models.UserActivityLog).filter(
         models.UserActivityLog.created_at >= start_date
     )
-    
+
     # Apply user filter if specified
     if user_id:
         base_query = base_query.filter(models.UserActivityLog.user_id == user_id)
-    
+
     # 1. Daily Activity Timeline (for line/area chart)
     daily_activity = db.query(
-        func.date(models.UserActivityLog.created_at).label('date'),
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.created_at >= start_date
-    )
-    
+        func.date(models.UserActivityLog.created_at).label("date"),
+        func.count(models.UserActivityLog.id).label("count"),
+    ).filter(models.UserActivityLog.created_at >= start_date)
+
     if user_id:
-        daily_activity = daily_activity.filter(models.UserActivityLog.user_id == user_id)
-    
-    daily_activity = daily_activity.group_by(
-        func.date(models.UserActivityLog.created_at)
-    ).order_by(func.date(models.UserActivityLog.created_at)).all()
-    
+        daily_activity = daily_activity.filter(
+            models.UserActivityLog.user_id == user_id
+        )
+
+    daily_activity = (
+        daily_activity.group_by(func.date(models.UserActivityLog.created_at))
+        .order_by(func.date(models.UserActivityLog.created_at))
+        .all()
+    )
+
     # 2. Activity Breakdown by Type (for pie/donut chart)
     activity_by_type = db.query(
         models.UserActivityLog.action,
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.created_at >= start_date
-    )
-    
+        func.count(models.UserActivityLog.id).label("count"),
+    ).filter(models.UserActivityLog.created_at >= start_date)
+
     if user_id:
-        activity_by_type = activity_by_type.filter(models.UserActivityLog.user_id == user_id)
-    
-    activity_by_type = activity_by_type.group_by(
-        models.UserActivityLog.action
-    ).order_by(desc('count')).all()
-    
+        activity_by_type = activity_by_type.filter(
+            models.UserActivityLog.user_id == user_id
+        )
+
+    activity_by_type = (
+        activity_by_type.group_by(models.UserActivityLog.action)
+        .order_by(desc("count"))
+        .all()
+    )
+
     # 3. Security Events (for alert dashboard)
     security_activity_types = [
         ActivityType.UNAUTHORIZED_ACCESS_ATTEMPT.value,
         ActivityType.RATE_LIMIT_EXCEEDED.value,
         ActivityType.SUSPICIOUS_ACTIVITY.value,
         ActivityType.ACCOUNT_LOCKED.value,
-        ActivityType.LOGIN_FAILED.value
+        ActivityType.LOGIN_FAILED.value,
     ]
-    
+
     security_events = db.query(
         models.UserActivityLog.action,
-        func.count(models.UserActivityLog.id).label('count')
+        func.count(models.UserActivityLog.id).label("count"),
     ).filter(
         models.UserActivityLog.created_at >= start_date,
-        models.UserActivityLog.action.in_(security_activity_types)
+        models.UserActivityLog.action.in_(security_activity_types),
     )
-    
+
     if user_id:
-        security_events = security_events.filter(models.UserActivityLog.user_id == user_id)
-    
-    security_events = security_events.group_by(
-        models.UserActivityLog.action
-    ).all()
-    
+        security_events = security_events.filter(
+            models.UserActivityLog.user_id == user_id
+        )
+
+    security_events = security_events.group_by(models.UserActivityLog.action).all()
+
     # 4. Top Active Users (for leaderboard/bar chart)
     top_users = []
     if not user_id:  # Only show if not filtering by specific user
-        top_users_query = db.query(
-            models.UserActivityLog.user_id,
-            models.User.username,
-            models.User.email,
-            func.count(models.UserActivityLog.id).label('activity_count')
-        ).join(
-            models.User, models.UserActivityLog.user_id == models.User.id
-        ).filter(
-            models.UserActivityLog.created_at >= start_date,
-            models.UserActivityLog.user_id.isnot(None)
-        ).group_by(
-            models.UserActivityLog.user_id,
-            models.User.username,
-            models.User.email
-        ).order_by(desc('activity_count')).limit(10).all()
-        
+        top_users_query = (
+            db.query(
+                models.UserActivityLog.user_id,
+                models.User.username,
+                models.User.email,
+                func.count(models.UserActivityLog.id).label("activity_count"),
+            )
+            .join(models.User, models.UserActivityLog.user_id == models.User.id)
+            .filter(
+                models.UserActivityLog.created_at >= start_date,
+                models.UserActivityLog.user_id.isnot(None),
+            )
+            .group_by(
+                models.UserActivityLog.user_id, models.User.username, models.User.email
+            )
+            .order_by(desc("activity_count"))
+            .limit(10)
+            .all()
+        )
+
         top_users = [
             {
                 "user_id": row.user_id,
                 "username": row.username,
                 "email": row.email,
-                "activity_count": row.activity_count
+                "activity_count": row.activity_count,
             }
             for row in top_users_query
         ]
-    
+
     # 5. Authentication Statistics (for stats cards)
     auth_stats = db.query(
-        func.sum(case((models.UserActivityLog.action == ActivityType.LOGIN_SUCCESS.value, 1), else_=0)).label('successful_logins'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.LOGIN_FAILED.value, 1), else_=0)).label('failed_logins'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.LOGOUT.value, 1), else_=0)).label('logouts'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.PASSWORD_RESET_REQUEST.value, 1), else_=0)).label('password_resets')
-    ).filter(
-        models.UserActivityLog.created_at >= start_date
-    )
-    
+        func.sum(
+            case(
+                (models.UserActivityLog.action == ActivityType.LOGIN_SUCCESS.value, 1),
+                else_=0,
+            )
+        ).label("successful_logins"),
+        func.sum(
+            case(
+                (models.UserActivityLog.action == ActivityType.LOGIN_FAILED.value, 1),
+                else_=0,
+            )
+        ).label("failed_logins"),
+        func.sum(
+            case(
+                (models.UserActivityLog.action == ActivityType.LOGOUT.value, 1), else_=0
+            )
+        ).label("logouts"),
+        func.sum(
+            case(
+                (
+                    models.UserActivityLog.action
+                    == ActivityType.PASSWORD_RESET_REQUEST.value,
+                    1,
+                ),
+                else_=0,
+            )
+        ).label("password_resets"),
+    ).filter(models.UserActivityLog.created_at >= start_date)
+
     if user_id:
         auth_stats = auth_stats.filter(models.UserActivityLog.user_id == user_id)
-    
+
     auth_stats = auth_stats.first()
-    
+
     # 6. User Management Statistics (for stats cards)
     user_mgmt_stats = db.query(
-        func.sum(case((models.UserActivityLog.action == ActivityType.USER_CREATED.value, 1), else_=0)).label('users_created'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.USER_UPDATED.value, 1), else_=0)).label('users_updated'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.USER_DELETED.value, 1), else_=0)).label('users_deleted'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.USER_ROLE_CHANGED.value, 1), else_=0)).label('role_changes')
-    ).filter(
-        models.UserActivityLog.created_at >= start_date
-    )
-    
+        func.sum(
+            case(
+                (models.UserActivityLog.action == ActivityType.USER_CREATED.value, 1),
+                else_=0,
+            )
+        ).label("users_created"),
+        func.sum(
+            case(
+                (models.UserActivityLog.action == ActivityType.USER_UPDATED.value, 1),
+                else_=0,
+            )
+        ).label("users_updated"),
+        func.sum(
+            case(
+                (models.UserActivityLog.action == ActivityType.USER_DELETED.value, 1),
+                else_=0,
+            )
+        ).label("users_deleted"),
+        func.sum(
+            case(
+                (
+                    models.UserActivityLog.action
+                    == ActivityType.USER_ROLE_CHANGED.value,
+                    1,
+                ),
+                else_=0,
+            )
+        ).label("role_changes"),
+    ).filter(models.UserActivityLog.created_at >= start_date)
+
     if user_id:
-        user_mgmt_stats = user_mgmt_stats.filter(models.UserActivityLog.user_id == user_id)
-    
+        user_mgmt_stats = user_mgmt_stats.filter(
+            models.UserActivityLog.user_id == user_id
+        )
+
     user_mgmt_stats = user_mgmt_stats.first()
-    
+
     # 7. Hourly Activity Pattern (for heatmap)
     hourly_pattern = db.query(
-        func.extract('hour', models.UserActivityLog.created_at).label('hour'),
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.created_at >= start_date
-    )
-    
+        func.extract("hour", models.UserActivityLog.created_at).label("hour"),
+        func.count(models.UserActivityLog.id).label("count"),
+    ).filter(models.UserActivityLog.created_at >= start_date)
+
     if user_id:
-        hourly_pattern = hourly_pattern.filter(models.UserActivityLog.user_id == user_id)
-    
-    hourly_pattern = hourly_pattern.group_by(
-        func.extract('hour', models.UserActivityLog.created_at)
-    ).order_by('hour').all()
-    
+        hourly_pattern = hourly_pattern.filter(
+            models.UserActivityLog.user_id == user_id
+        )
+
+    hourly_pattern = (
+        hourly_pattern.group_by(func.extract("hour", models.UserActivityLog.created_at))
+        .order_by("hour")
+        .all()
+    )
+
     # 8. Recent Critical Events (for alerts)
     recent_critical = db.query(models.UserActivityLog).filter(
         models.UserActivityLog.created_at >= start_date,
-        models.UserActivityLog.action.in_(security_activity_types)
+        models.UserActivityLog.action.in_(security_activity_types),
     )
-    
+
     if user_id:
-        recent_critical = recent_critical.filter(models.UserActivityLog.user_id == user_id)
-    
-    recent_critical = recent_critical.order_by(
-        desc(models.UserActivityLog.created_at)
-    ).limit(10).all()
-    
+        recent_critical = recent_critical.filter(
+            models.UserActivityLog.user_id == user_id
+        )
+
+    recent_critical = (
+        recent_critical.order_by(desc(models.UserActivityLog.created_at))
+        .limit(10)
+        .all()
+    )
+
     # Log this analytics access
     audit_logger.log_activity(
         activity_type=ActivityType.DATA_EXPORT,
         user_id=current_user.id,
         details={
-            'action': 'audit_analytics_access',
-            'days_requested': days,
-            'filtered_user_id': user_id
+            "action": "audit_analytics_access",
+            "days_requested": days,
+            "filtered_user_id": user_id,
         },
         request=request,
-        security_level=SecurityLevel.LOW
+        security_level=SecurityLevel.LOW,
     )
-    
+
     # Build response
     return {
         "period": {
             "days": days,
             "start_date": start_date.isoformat(),
-            "end_date": datetime.utcnow().isoformat()
+            "end_date": datetime.utcnow().isoformat(),
         },
-        "filter": {
-            "user_id": user_id
-        },
+        "filter": {"user_id": user_id},
         "summary": {
             "total_activities": base_query.count(),
             "total_security_events": sum(row.count for row in security_events),
-            "unique_users": db.query(func.count(func.distinct(models.UserActivityLog.user_id))).filter(
-                models.UserActivityLog.created_at >= start_date,
-                models.UserActivityLog.user_id.isnot(None)
-            ).scalar() if not user_id else 1
+            "unique_users": (
+                db.query(func.count(func.distinct(models.UserActivityLog.user_id)))
+                .filter(
+                    models.UserActivityLog.created_at >= start_date,
+                    models.UserActivityLog.user_id.isnot(None),
+                )
+                .scalar()
+                if not user_id
+                else 1
+            ),
         },
         "timeline": {
             "daily_activity": [
-                {
-                    "date": row.date.isoformat(),
-                    "count": row.count
-                }
+                {"date": row.date.isoformat(), "count": row.count}
                 for row in daily_activity
             ]
         },
@@ -244,18 +303,18 @@ async def get_audit_analytics(
                 {
                     "action": row.action,
                     "count": row.count,
-                    "percentage": round((row.count / base_query.count() * 100), 2) if base_query.count() > 0 else 0
+                    "percentage": (
+                        round((row.count / base_query.count() * 100), 2)
+                        if base_query.count() > 0
+                        else 0
+                    ),
                 }
                 for row in activity_by_type
             ]
         },
         "security": {
             "events_by_type": [
-                {
-                    "action": row.action,
-                    "count": row.count
-                }
-                for row in security_events
+                {"action": row.action, "count": row.count} for row in security_events
             ],
             "recent_critical_events": [
                 {
@@ -264,10 +323,10 @@ async def get_audit_analytics(
                     "user_id": log.user_id,
                     "ip_address": log.ip_address,
                     "created_at": log.created_at.isoformat(),
-                    "details": log.details
+                    "details": log.details,
                 }
                 for log in recent_critical
-            ]
+            ],
         },
         "authentication": {
             "successful_logins": auth_stats.successful_logins or 0,
@@ -275,27 +334,32 @@ async def get_audit_analytics(
             "logouts": auth_stats.logouts or 0,
             "password_resets": auth_stats.password_resets or 0,
             "success_rate": round(
-                (auth_stats.successful_logins / (auth_stats.successful_logins + auth_stats.failed_logins) * 100)
-                if (auth_stats.successful_logins or 0) + (auth_stats.failed_logins or 0) > 0 else 0,
-                2
-            )
+                (
+                    (
+                        auth_stats.successful_logins
+                        / (auth_stats.successful_logins + auth_stats.failed_logins)
+                        * 100
+                    )
+                    if (auth_stats.successful_logins or 0)
+                    + (auth_stats.failed_logins or 0)
+                    > 0
+                    else 0
+                ),
+                2,
+            ),
         },
         "user_management": {
             "users_created": user_mgmt_stats.users_created or 0,
             "users_updated": user_mgmt_stats.users_updated or 0,
             "users_deleted": user_mgmt_stats.users_deleted or 0,
-            "role_changes": user_mgmt_stats.role_changes or 0
+            "role_changes": user_mgmt_stats.role_changes or 0,
         },
         "patterns": {
             "hourly_distribution": [
-                {
-                    "hour": int(row.hour),
-                    "count": row.count
-                }
-                for row in hourly_pattern
+                {"hour": int(row.hour), "count": row.count} for row in hourly_pattern
             ]
         },
-        "top_users": top_users
+        "top_users": top_users,
     }
 
 
@@ -309,87 +373,95 @@ async def get_user_activity_graph(
 ):
     """
     Get specific user's activity data optimized for graphs
-    
+
     Returns activity timeline and breakdown for a single user
     """
-    
+
     # Validate permissions
-    validate_user_permissions(current_user, [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER])
-    
+    validate_user_permissions(
+        current_user, [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]
+    )
+
     # Verify user exists
     target_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     audit_logger = AuditLogger(db)
     start_date = datetime.utcnow() - timedelta(days=days)
-    
+
     # Get daily activity
-    daily_activity = db.query(
-        func.date(models.UserActivityLog.created_at).label('date'),
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).group_by(
-        func.date(models.UserActivityLog.created_at)
-    ).order_by(func.date(models.UserActivityLog.created_at)).all()
-    
+    daily_activity = (
+        db.query(
+            func.date(models.UserActivityLog.created_at).label("date"),
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(func.date(models.UserActivityLog.created_at))
+        .order_by(func.date(models.UserActivityLog.created_at))
+        .all()
+    )
+
     # Get activity by type
-    activity_by_type = db.query(
-        models.UserActivityLog.action,
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).group_by(
-        models.UserActivityLog.action
-    ).order_by(desc('count')).all()
-    
+    activity_by_type = (
+        db.query(
+            models.UserActivityLog.action,
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(models.UserActivityLog.action)
+        .order_by(desc("count"))
+        .all()
+    )
+
     # Get recent activities
-    recent_activities = db.query(models.UserActivityLog).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).order_by(desc(models.UserActivityLog.created_at)).limit(20).all()
-    
+    recent_activities = (
+        db.query(models.UserActivityLog)
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .order_by(desc(models.UserActivityLog.created_at))
+        .limit(20)
+        .all()
+    )
+
     # Log access
     audit_logger.log_activity(
         activity_type=ActivityType.DATA_EXPORT,
         user_id=current_user.id,
         details={
-            'action': 'user_activity_graph_access',
-            'target_user_id': user_id,
-            'days_requested': days
+            "action": "user_activity_graph_access",
+            "target_user_id": user_id,
+            "days_requested": days,
         },
         request=request,
-        security_level=SecurityLevel.LOW
+        security_level=SecurityLevel.LOW,
     )
-    
+
     return {
         "user": {
             "id": target_user.id,
             "username": target_user.username,
             "email": target_user.email,
-            "role": target_user.role
+            "role": target_user.role,
         },
         "period": {
             "days": days,
             "start_date": start_date.isoformat(),
-            "end_date": datetime.utcnow().isoformat()
+            "end_date": datetime.utcnow().isoformat(),
         },
         "timeline": [
-            {
-                "date": row.date.isoformat(),
-                "count": row.count
-            }
-            for row in daily_activity
+            {"date": row.date.isoformat(), "count": row.count} for row in daily_activity
         ],
         "activity_breakdown": [
-            {
-                "action": row.action,
-                "count": row.count
-            }
-            for row in activity_by_type
+            {"action": row.action, "count": row.count} for row in activity_by_type
         ],
         "recent_activities": [
             {
@@ -397,11 +469,11 @@ async def get_user_activity_graph(
                 "action": log.action,
                 "ip_address": log.ip_address,
                 "created_at": log.created_at.isoformat(),
-                "details": log.details
+                "details": log.details,
             }
             for log in recent_activities
         ],
-        "total_activities": sum(row.count for row in activity_by_type)
+        "total_activities": sum(row.count for row in activity_by_type),
     }
 
 
@@ -414,123 +486,309 @@ async def get_my_activity(
 ):
     """
     Get current user's own activity data (available to ALL users)
-    
+
     Any authenticated user can view their own activity history and statistics.
-    This endpoint provides a personal dashboard of user activity.
+    This endpoint provides a comprehensive personal dashboard of user activity including:
+    - Endpoint usage statistics
+    - Daily activity patterns
+    - Authentication history
+    - Hourly usage patterns
+    - Recent activities with details
     """
-    
+
     audit_logger = AuditLogger(db)
     start_date = datetime.utcnow() - timedelta(days=days)
     user_id = current_user.id
-    
+
     # Get daily activity
-    daily_activity = db.query(
-        func.date(models.UserActivityLog.created_at).label('date'),
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).group_by(
-        func.date(models.UserActivityLog.created_at)
-    ).order_by(func.date(models.UserActivityLog.created_at)).all()
-    
+    daily_activity = (
+        db.query(
+            func.date(models.UserActivityLog.created_at).label("date"),
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(func.date(models.UserActivityLog.created_at))
+        .order_by(func.date(models.UserActivityLog.created_at))
+        .all()
+    )
+
     # Get activity by type
-    activity_by_type = db.query(
-        models.UserActivityLog.action,
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).group_by(
-        models.UserActivityLog.action
-    ).order_by(desc('count')).all()
-    
+    activity_by_type = (
+        db.query(
+            models.UserActivityLog.action,
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(models.UserActivityLog.action)
+        .order_by(desc("count"))
+        .all()
+    )
+
+    # Get endpoint usage statistics from details JSON
+    all_activities = (
+        db.query(models.UserActivityLog)
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .all()
+    )
+
+    # Parse endpoint usage from details
+    endpoint_usage = {}
+    method_usage = {}
+    status_code_stats = {}
+
+    for activity in all_activities:
+        if activity.details and isinstance(activity.details, dict):
+            # Extract endpoint information
+            endpoint = activity.details.get("endpoint") or activity.details.get("path")
+            method = activity.details.get("method")
+            status_code = activity.details.get("status_code")
+
+            if endpoint:
+                endpoint_key = f"{method} {endpoint}" if method else endpoint
+                endpoint_usage[endpoint_key] = endpoint_usage.get(endpoint_key, 0) + 1
+
+            if method:
+                method_usage[method] = method_usage.get(method, 0) + 1
+
+            if status_code:
+                status_code_stats[str(status_code)] = (
+                    status_code_stats.get(str(status_code), 0) + 1
+                )
+
+    # Sort endpoints by usage count
+    sorted_endpoints = sorted(endpoint_usage.items(), key=lambda x: x[1], reverse=True)
+
     # Get recent activities (limit sensitive details)
-    recent_activities = db.query(models.UserActivityLog).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).order_by(desc(models.UserActivityLog.created_at)).limit(50).all()
-    
+    recent_activities = (
+        db.query(models.UserActivityLog)
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .order_by(desc(models.UserActivityLog.created_at))
+        .limit(50)
+        .all()
+    )
+
     # Authentication stats for this user
-    auth_stats = db.query(
-        func.sum(case((models.UserActivityLog.action == ActivityType.LOGIN_SUCCESS.value, 1), else_=0)).label('successful_logins'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.LOGIN_FAILED.value, 1), else_=0)).label('failed_logins'),
-        func.sum(case((models.UserActivityLog.action == ActivityType.LOGOUT.value, 1), else_=0)).label('logouts')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).first()
-    
-    # Hourly pattern
-    hourly_pattern = db.query(
-        func.extract('hour', models.UserActivityLog.created_at).label('hour'),
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).group_by(
-        func.extract('hour', models.UserActivityLog.created_at)
-    ).order_by('hour').all()
-    
+    auth_stats = (
+        db.query(
+            func.sum(
+                case(
+                    (
+                        models.UserActivityLog.action
+                        == ActivityType.LOGIN_SUCCESS.value,
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("successful_logins"),
+            func.sum(
+                case(
+                    (
+                        models.UserActivityLog.action
+                        == ActivityType.LOGIN_FAILED.value,
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("failed_logins"),
+            func.sum(
+                case(
+                    (models.UserActivityLog.action == ActivityType.LOGOUT.value, 1),
+                    else_=0,
+                )
+            ).label("logouts"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .first()
+    )
+
+    # Hourly pattern (using HOUR function for MySQL compatibility)
+    hourly_pattern = (
+        db.query(
+            func.hour(models.UserActivityLog.created_at).label("hour"),
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(func.hour(models.UserActivityLog.created_at))
+        .order_by("hour")
+        .all()
+    )
+
     # Most active day
-    most_active_day = db.query(
-        func.date(models.UserActivityLog.created_at).label('date'),
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= start_date
-    ).group_by(
-        func.date(models.UserActivityLog.created_at)
-    ).order_by(desc('count')).first()
-    
+    most_active_day = (
+        db.query(
+            func.date(models.UserActivityLog.created_at).label("date"),
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(func.date(models.UserActivityLog.created_at))
+        .order_by(desc("count"))
+        .first()
+    )
+
+    # Day of week pattern (using DAYOFWEEK function for MySQL compatibility)
+    # MySQL DAYOFWEEK returns 1=Sunday, 2=Monday, ..., 7=Saturday
+    day_of_week_pattern = (
+        db.query(
+            (func.dayofweek(models.UserActivityLog.created_at) - 1).label(
+                "day_of_week"
+            ),
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= start_date,
+        )
+        .group_by(func.dayofweek(models.UserActivityLog.created_at))
+        .order_by("day_of_week")
+        .all()
+    )
+
+    # Map day of week numbers to names
+    day_names = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ]
+
     # Log this access
     audit_logger.log_activity(
         activity_type=ActivityType.API_ACCESS,
         user_id=current_user.id,
         details={
-            'action': 'my_activity_access',
-            'days_requested': days
+            "action": "my_activity_access",
+            "days_requested": days,
+            "endpoint": "/audit/my-activity",
+            "method": "GET",
         },
         request=request,
-        security_level=SecurityLevel.LOW
+        security_level=SecurityLevel.LOW,
     )
-    
+
     total_activities = sum(row.count for row in activity_by_type)
-    
+    total_endpoint_calls = sum(endpoint_usage.values())
+
     return {
         "user": {
             "id": current_user.id,
             "username": current_user.username,
             "email": current_user.email,
             "role": current_user.role,
-            "account_created": current_user.created_at.isoformat() if current_user.created_at else None
+            "account_created": (
+                current_user.created_at.isoformat() if current_user.created_at else None
+            ),
         },
         "period": {
             "days": days,
             "start_date": start_date.isoformat(),
-            "end_date": datetime.utcnow().isoformat()
+            "end_date": datetime.utcnow().isoformat(),
         },
         "summary": {
             "total_activities": total_activities,
-            "average_daily_activities": round(total_activities / days, 2) if days > 0 else 0,
+            "total_endpoint_calls": total_endpoint_calls,
+            "unique_endpoints_used": len(endpoint_usage),
+            "average_daily_activities": (
+                round(total_activities / days, 2) if days > 0 else 0
+            ),
+            "average_daily_endpoint_calls": (
+                round(total_endpoint_calls / days, 2) if days > 0 else 0
+            ),
             "most_active_day": {
                 "date": most_active_day.date.isoformat() if most_active_day else None,
-                "count": most_active_day.count if most_active_day else 0
-            }
+                "count": most_active_day.count if most_active_day else 0,
+            },
+        },
+        "endpoint_usage": {
+            "total_calls": total_endpoint_calls,
+            "unique_endpoints": len(endpoint_usage),
+            "top_endpoints": [
+                {
+                    "endpoint": endpoint,
+                    "calls": count,
+                    "percentage": (
+                        round((count / total_endpoint_calls * 100), 2)
+                        if total_endpoint_calls > 0
+                        else 0
+                    ),
+                }
+                for endpoint, count in sorted_endpoints[:20]  # Top 20 endpoints
+            ],
+            "all_endpoints": [
+                {"endpoint": endpoint, "calls": count}
+                for endpoint, count in sorted_endpoints
+            ],
+        },
+        "http_methods": {
+            "total": sum(method_usage.values()),
+            "breakdown": [
+                {
+                    "method": method,
+                    "count": count,
+                    "percentage": (
+                        round((count / sum(method_usage.values()) * 100), 2)
+                        if sum(method_usage.values()) > 0
+                        else 0
+                    ),
+                }
+                for method, count in sorted(
+                    method_usage.items(), key=lambda x: x[1], reverse=True
+                )
+            ],
+        },
+        "status_codes": {
+            "total": sum(status_code_stats.values()),
+            "breakdown": [
+                {
+                    "status_code": int(code),
+                    "count": count,
+                    "percentage": (
+                        round((count / sum(status_code_stats.values()) * 100), 2)
+                        if sum(status_code_stats.values()) > 0
+                        else 0
+                    ),
+                }
+                for code, count in sorted(
+                    status_code_stats.items(), key=lambda x: x[1], reverse=True
+                )
+            ],
         },
         "timeline": [
-            {
-                "date": row.date.isoformat(),
-                "count": row.count
-            }
-            for row in daily_activity
+            {"date": row.date.isoformat(), "count": row.count} for row in daily_activity
         ],
         "activity_breakdown": [
             {
                 "action": row.action,
-                "action_label": row.action.replace('_', ' ').title(),
+                "action_label": row.action.replace("_", " ").title(),
                 "count": row.count,
-                "percentage": round((row.count / total_activities * 100), 2) if total_activities > 0 else 0
+                "percentage": (
+                    round((row.count / total_activities * 100), 2)
+                    if total_activities > 0
+                    else 0
+                ),
             }
             for row in activity_by_type
         ],
@@ -539,33 +797,81 @@ async def get_my_activity(
             "failed_logins": auth_stats.failed_logins or 0,
             "logouts": auth_stats.logouts or 0,
             "success_rate": round(
-                (auth_stats.successful_logins / (auth_stats.successful_logins + auth_stats.failed_logins) * 100)
-                if (auth_stats.successful_logins or 0) + (auth_stats.failed_logins or 0) > 0 else 100,
-                2
-            )
+                (
+                    (
+                        auth_stats.successful_logins
+                        / (auth_stats.successful_logins + auth_stats.failed_logins)
+                        * 100
+                    )
+                    if (auth_stats.successful_logins or 0)
+                    + (auth_stats.failed_logins or 0)
+                    > 0
+                    else 100
+                ),
+                2,
+            ),
         },
         "patterns": {
             "hourly_distribution": [
                 {
                     "hour": int(row.hour),
                     "hour_label": f"{int(row.hour):02d}:00",
-                    "count": row.count
+                    "count": row.count,
                 }
                 for row in hourly_pattern
             ],
-            "most_active_hour": max(hourly_pattern, key=lambda x: x.count).hour if hourly_pattern else None
+            "most_active_hour": (
+                max(hourly_pattern, key=lambda x: x.count).hour
+                if hourly_pattern
+                else None
+            ),
+            "day_of_week_distribution": [
+                {
+                    "day_of_week": int(row.day_of_week),
+                    "day_name": day_names[int(row.day_of_week)],
+                    "count": row.count,
+                    "percentage": (
+                        round((row.count / total_activities * 100), 2)
+                        if total_activities > 0
+                        else 0
+                    ),
+                }
+                for row in day_of_week_pattern
+            ],
+            "most_active_day_of_week": (
+                day_names[
+                    int(max(day_of_week_pattern, key=lambda x: x.count).day_of_week)
+                ]
+                if day_of_week_pattern
+                else None
+            ),
         },
         "recent_activities": [
             {
                 "id": log.id,
                 "action": log.action,
-                "action_label": log.action.replace('_', ' ').title(),
+                "action_label": log.action.replace("_", " ").title(),
                 "created_at": log.created_at.isoformat(),
                 "ip_address": log.ip_address,
-                "details": log.details
+                "endpoint": (
+                    log.details.get("endpoint")
+                    if log.details and isinstance(log.details, dict)
+                    else None
+                ),
+                "method": (
+                    log.details.get("method")
+                    if log.details and isinstance(log.details, dict)
+                    else None
+                ),
+                "status_code": (
+                    log.details.get("status_code")
+                    if log.details and isinstance(log.details, dict)
+                    else None
+                ),
+                "details": log.details,
             }
             for log in recent_activities
-        ]
+        ],
     }
 
 
@@ -577,88 +883,125 @@ async def get_my_stats(
 ):
     """
     Get quick stats summary for current user (available to ALL users)
-    
+
     Returns a lightweight summary of user activity statistics.
     Perfect for dashboard widgets and quick overview cards.
     """
-    
+
     user_id = current_user.id
-    
+
     # Last 7 days
     last_7_days = datetime.utcnow() - timedelta(days=7)
     # Last 30 days
     last_30_days = datetime.utcnow() - timedelta(days=30)
     # All time
-    
+
     # Activity counts
-    activities_7_days = db.query(func.count(models.UserActivityLog.id)).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= last_7_days
-    ).scalar() or 0
-    
-    activities_30_days = db.query(func.count(models.UserActivityLog.id)).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= last_30_days
-    ).scalar() or 0
-    
-    activities_all_time = db.query(func.count(models.UserActivityLog.id)).filter(
-        models.UserActivityLog.user_id == user_id
-    ).scalar() or 0
-    
+    activities_7_days = (
+        db.query(func.count(models.UserActivityLog.id))
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= last_7_days,
+        )
+        .scalar()
+        or 0
+    )
+
+    activities_30_days = (
+        db.query(func.count(models.UserActivityLog.id))
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= last_30_days,
+        )
+        .scalar()
+        or 0
+    )
+
+    activities_all_time = (
+        db.query(func.count(models.UserActivityLog.id))
+        .filter(models.UserActivityLog.user_id == user_id)
+        .scalar()
+        or 0
+    )
+
     # Last login
-    last_login = db.query(models.UserActivityLog).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.action == ActivityType.LOGIN_SUCCESS.value
-    ).order_by(desc(models.UserActivityLog.created_at)).first()
-    
+    last_login = (
+        db.query(models.UserActivityLog)
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.action == ActivityType.LOGIN_SUCCESS.value,
+        )
+        .order_by(desc(models.UserActivityLog.created_at))
+        .first()
+    )
+
     # Most common action
-    most_common_action = db.query(
-        models.UserActivityLog.action,
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.created_at >= last_30_days
-    ).group_by(
-        models.UserActivityLog.action
-    ).order_by(desc('count')).first()
-    
+    most_common_action = (
+        db.query(
+            models.UserActivityLog.action,
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.created_at >= last_30_days,
+        )
+        .group_by(models.UserActivityLog.action)
+        .order_by(desc("count"))
+        .first()
+    )
+
     # Failed login attempts (security indicator)
-    failed_logins_7_days = db.query(func.count(models.UserActivityLog.id)).filter(
-        models.UserActivityLog.user_id == user_id,
-        models.UserActivityLog.action == ActivityType.LOGIN_FAILED.value,
-        models.UserActivityLog.created_at >= last_7_days
-    ).scalar() or 0
-    
+    failed_logins_7_days = (
+        db.query(func.count(models.UserActivityLog.id))
+        .filter(
+            models.UserActivityLog.user_id == user_id,
+            models.UserActivityLog.action == ActivityType.LOGIN_FAILED.value,
+            models.UserActivityLog.created_at >= last_7_days,
+        )
+        .scalar()
+        or 0
+    )
+
     # Account age
-    account_age_days = (datetime.utcnow() - current_user.created_at).days if current_user.created_at else 0
-    
+    account_age_days = (
+        (datetime.utcnow() - current_user.created_at).days
+        if current_user.created_at
+        else 0
+    )
+
     return {
         "user": {
             "id": current_user.id,
             "username": current_user.username,
             "role": current_user.role,
-            "account_age_days": account_age_days
+            "account_age_days": account_age_days,
         },
         "activity_summary": {
             "last_7_days": activities_7_days,
             "last_30_days": activities_30_days,
             "all_time": activities_all_time,
-            "daily_average_30_days": round(activities_30_days / 30, 2)
+            "daily_average_30_days": round(activities_30_days / 30, 2),
         },
         "last_login": {
             "timestamp": last_login.created_at.isoformat() if last_login else None,
             "ip_address": last_login.ip_address if last_login else None,
-            "days_ago": (datetime.utcnow() - last_login.created_at).days if last_login else None
+            "days_ago": (
+                (datetime.utcnow() - last_login.created_at).days if last_login else None
+            ),
         },
         "most_common_action": {
             "action": most_common_action.action if most_common_action else None,
-            "action_label": most_common_action.action.replace('_', ' ').title() if most_common_action else None,
-            "count": most_common_action.count if most_common_action else 0
+            "action_label": (
+                most_common_action.action.replace("_", " ").title()
+                if most_common_action
+                else None
+            ),
+            "count": most_common_action.count if most_common_action else 0,
         },
         "security": {
             "failed_login_attempts_7_days": failed_logins_7_days,
-            "status": "warning" if failed_logins_7_days > 3 else "good"
-        }
+            "status": "warning" if failed_logins_7_days > 3 else "good",
+        },
     }
 
 
@@ -667,42 +1010,45 @@ async def get_my_timeline(
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    limit: int = Query(100, ge=1, le=500, description="Number of activities to retrieve"),
+    limit: int = Query(
+        100, ge=1, le=500, description="Number of activities to retrieve"
+    ),
     action_filter: Optional[str] = Query(None, description="Filter by action type"),
 ):
     """
     Get current user's activity timeline (available to ALL users)
-    
+
     Returns a chronological list of user activities with filtering options.
     Perfect for activity feed components.
     """
-    
+
     user_id = current_user.id
-    
+
     # Build query
     query = db.query(models.UserActivityLog).filter(
         models.UserActivityLog.user_id == user_id
     )
-    
+
     # Apply action filter if provided
     if action_filter:
         query = query.filter(models.UserActivityLog.action == action_filter)
-    
+
     # Get activities
-    activities = query.order_by(
-        desc(models.UserActivityLog.created_at)
-    ).limit(limit).all()
-    
+    activities = (
+        query.order_by(desc(models.UserActivityLog.created_at)).limit(limit).all()
+    )
+
     # Get available action types for this user
-    available_actions = db.query(
-        models.UserActivityLog.action,
-        func.count(models.UserActivityLog.id).label('count')
-    ).filter(
-        models.UserActivityLog.user_id == user_id
-    ).group_by(
-        models.UserActivityLog.action
-    ).all()
-    
+    available_actions = (
+        db.query(
+            models.UserActivityLog.action,
+            func.count(models.UserActivityLog.id).label("count"),
+        )
+        .filter(models.UserActivityLog.user_id == user_id)
+        .group_by(models.UserActivityLog.action)
+        .all()
+    )
+
     return {
         "user_id": user_id,
         "total_returned": len(activities),
@@ -710,8 +1056,8 @@ async def get_my_timeline(
         "available_actions": [
             {
                 "action": row.action,
-                "action_label": row.action.replace('_', ' ').title(),
-                "count": row.count
+                "action_label": row.action.replace("_", " ").title(),
+                "count": row.count,
             }
             for row in available_actions
         ],
@@ -719,14 +1065,14 @@ async def get_my_timeline(
             {
                 "id": log.id,
                 "action": log.action,
-                "action_label": log.action.replace('_', ' ').title(),
+                "action_label": log.action.replace("_", " ").title(),
                 "timestamp": log.created_at.isoformat(),
                 "time_ago": _format_time_ago(log.created_at),
                 "ip_address": log.ip_address,
-                "details": log.details
+                "details": log.details,
             }
             for log in activities
-        ]
+        ],
     }
 
 
@@ -734,7 +1080,7 @@ def _format_time_ago(timestamp: datetime) -> str:
     """Helper function to format timestamp as 'time ago' string"""
     now = datetime.utcnow()
     diff = now - timestamp
-    
+
     if diff.days > 365:
         years = diff.days // 365
         return f"{years} year{'s' if years > 1 else ''} ago"
