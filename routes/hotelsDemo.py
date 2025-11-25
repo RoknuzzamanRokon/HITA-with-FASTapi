@@ -2,16 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas import HotelCreateDemo, HotelReadDemo
-from typing import Annotated, Optional, Dict
+from typing import Annotated, Optional, Dict, List
 import models
 from datetime import datetime
 from utils import require_role
-from models import User
+from models import User, Hotel, ProviderMapping
 from routes.auth import get_current_user
 import os
 import json
 from routes.path import RAW_BASE_DIR
 from routes.hotelFormattingData import map_to_our_format
+from pydantic import BaseModel
 
 
 def serialize_datetime_objects(obj):
@@ -30,14 +31,207 @@ def serialize_datetime_objects(obj):
 
 
 router = APIRouter(
-    prefix="/v1.0/demo/hotel",
+    prefix="/v1.0/demo",
     tags=["Hotels Demo"],
     responses={404: {"description": "Not found"}},
 )
 
 
-# Read hotels list - returns first 50 hotel IDs
-@router.get("/get-all-demo-id")
+# Check active suppliers - demo version (shows first 3 suppliers only)
+@router.get("/check-active-my-supplier")
+def check_active_my_supplier_demo(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Check My Active Suppliers (Demo Version)
+
+    Returns first 3 suppliers from the system regardless of user permissions.
+    This is a demo endpoint to showcase the supplier management functionality.
+
+    Returns:
+    - active_supplier: Total suppliers (always 3 for demo)
+    - total_on_supplier: Currently active suppliers count (3)
+    - total_off_supplier: Temporarily deactivated suppliers count (0)
+    - off_supplier_list: List of turned off supplier names (empty)
+    - on_supplier_list: List of active supplier names (first 3 from system)
+
+    Demo Restrictions:
+    - Always shows first 3 suppliers from the system
+    - Ignores user permissions (demo mode)
+    - Works for all authenticated users
+    """
+    try:
+        # DEMO MODE: Get first 3 suppliers from the system regardless of user permissions
+        all_system_suppliers = [
+            row.provider_name
+            for row in db.query(models.ProviderMapping.provider_name)
+            .distinct()
+            .limit(3)
+            .all()
+        ]
+
+        if not all_system_suppliers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suppliers found in the system.",
+            )
+
+        # Sort suppliers alphabetically
+        demo_suppliers = sorted(all_system_suppliers)
+
+        # For demo, all suppliers are active (no deactivated ones)
+        return {
+            "active_supplier": len(demo_suppliers),
+            "total_on_supplier": len(demo_suppliers),
+            "total_off_supplier": 0,
+            "off_supplier_list": [],
+            "on_supplier_list": demo_suppliers,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while retrieving supplier statistics: {str(e)}",
+        )
+
+
+# Pydantic models for the mapping endpoint
+class ProviderHotelIdentity(BaseModel):
+    provider_id: str
+    provider_name: str
+
+
+class ProviderHotelRequest(BaseModel):
+    provider_hotel_identity: List[ProviderHotelIdentity]
+
+
+# Get hotel mapping info - demo version
+@router.post(
+    "/content/get-hotel-mapping-info-using-provider-name-and-id",
+    status_code=status.HTTP_200_OK,
+)
+def get_hotel_mapping_data_demo(
+    request: ProviderHotelRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Get Hotel Mapping Data by Provider Name and ID (Demo Version)
+
+    Retrieves provider mapping information for hotels based on provider name and ID combinations.
+    Demo restrictions apply: only works with demo hotel IDs and demo suppliers.
+
+    Demo Restrictions:
+    - Only works with hotels from the demo list (offset 354125, limit 100)
+    - Only works with first 3 suppliers from the system
+    - No point deduction
+    - No IP whitelist check
+
+    Args:
+        request (ProviderHotelRequest): Request containing list of provider identities
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+
+    Returns:
+        List[dict]: List of provider mapping data with ITTID and creation timestamps
+
+    Example Request:
+        {
+            "provider_hotel_identity": [
+                {
+                    "provider_name": "booking",
+                    "provider_id": "12345"
+                }
+            ]
+        }
+    """
+    try:
+        # Get demo hotel IDs (first 100 from offset 354125)
+        demo_hotels = db.query(models.Hotel.ittid).offset(354125).limit(100).all()
+        allowed_hotel_ids = [hotel.ittid for hotel in demo_hotels]
+
+        # Get demo suppliers (first 3 from system)
+        demo_suppliers_query = (
+            db.query(models.ProviderMapping.provider_name).distinct().limit(3).all()
+        )
+        allowed_suppliers = sorted([row.provider_name for row in demo_suppliers_query])
+
+        if not allowed_suppliers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No suppliers found in the system.",
+            )
+
+        result = []
+        for identity in request.provider_hotel_identity:
+            name = identity.provider_name
+            pid = identity.provider_id
+
+            # Check if supplier is in demo list
+            if name not in allowed_suppliers:
+                print(
+                    f"Supplier '{name}' not in demo list. Allowed: {allowed_suppliers}"
+                )
+                continue
+
+            # Find provider mapping
+            mapping = (
+                db.query(ProviderMapping)
+                .filter_by(provider_id=pid, provider_name=name)
+                .first()
+            )
+            if not mapping:
+                print(f"No mapping found for provider_id={pid}, provider_name={name}")
+                continue
+
+            # Check if hotel is in demo list
+            if mapping.ittid not in allowed_hotel_ids:
+                print(f"Hotel '{mapping.ittid}' not in demo list")
+                continue
+
+            # Verify hotel exists
+            hotel = db.query(Hotel).filter(Hotel.ittid == mapping.ittid).first()
+            if not hotel:
+                print(f"No hotel found for ittid={mapping.ittid}")
+                continue
+
+            # Build provider_mappings list
+            provider_mappings_list = [
+                {
+                    "ittid": hotel.ittid,
+                    "provider_mapping_id": mapping.id,
+                    "provider_id": mapping.provider_id,
+                    "provider_name": mapping.provider_name,
+                    "created_at": (
+                        mapping.created_at.isoformat() if mapping.created_at else None
+                    ),
+                }
+            ]
+
+            result.append({"provider_mappings": provider_mappings_list})
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cannot find mapping for any of the requested suppliers in our demo system. Please ensure you're using demo hotel IDs and demo suppliers.",
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing mapping data request: {str(e)}",
+        )
+
+
+# Read hotels list - returns first 100 hotel IDs
+@router.get("/hotel/get-all-demo-id")
 async def read_hotels(db: Session = Depends(get_db)):
     """
     Get the first 100 hotel IDs from the demo hotels table.
@@ -64,8 +258,8 @@ async def read_hotels(db: Session = Depends(get_db)):
         )
 
 
-# Get hotel details by ID - only for first 50 hotels (requires login)
-@router.get("/{hotel_id}")
+# Get hotel details by ID - only for first 100 hotels (requires login)
+@router.get("/hotel/{hotel_id}")
 async def get_hotel_details(
     hotel_id: str,
     db: Session = Depends(get_db),
