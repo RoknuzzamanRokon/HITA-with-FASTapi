@@ -83,7 +83,7 @@ async def get_hotel_details(
         if hotel_id not in allowed_hotel_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. This hotel ID is not available in the demo. Only the first 50 hotels are accessible."
+                detail="Access denied. This hotel ID is not available in the demo. Only the first 100 hotels are accessible."
             )
 
         # Query the hotel details with all related data
