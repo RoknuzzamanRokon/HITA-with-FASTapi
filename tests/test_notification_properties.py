@@ -1197,3 +1197,533 @@ class TestCleanupProperties:
             assert (
                 notification is not None
             ), f"Recent read notification {notification_id} should be preserved"
+
+
+class TestEventTriggeredNotificationProperties:
+    """
+    Property tests for event-triggered notifications
+    """
+
+    @given(
+        user_id=user_id_strategy(),
+        action=st.sampled_from(["granted", "revoked"]),
+        supplier_name=st.text(min_size=1, max_size=50),
+        admin_username=st.text(min_size=1, max_size=50),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_17_permission_change_triggers_notification(
+        self, test_db, user_id, action, supplier_name, admin_username
+    ):
+        """
+        Feature: notification-system, Property 17: Permission change triggers notification
+        Validates: Requirements 8.1
+
+        For any user whose permissions are modified, a notification of type "permission"
+        should be created for that user.
+        """
+        from services.notification_service import NotificationService
+
+        # Arrange
+        service = NotificationService(test_db)
+
+        # Act - Trigger permission change notification
+        notification = service.notify_permission_change(
+            user_id=user_id,
+            action=action,
+            supplier_name=supplier_name,
+            admin_username=admin_username,
+        )
+
+        # Assert - Notification was created
+        assert notification is not None, "Notification should be created"
+        assert notification.id is not None, "Notification should have an ID"
+
+        # Assert - Notification has correct type
+        assert (
+            notification.type == NotificationType.PERMISSION
+        ), "Notification type should be PERMISSION"
+
+        # Assert - Notification belongs to correct user
+        assert (
+            notification.user_id == user_id
+        ), "Notification should belong to the correct user"
+
+        # Assert - Notification has high priority
+        assert (
+            notification.priority == NotificationPriority.HIGH
+        ), "Permission change notifications should have HIGH priority"
+
+        # Assert - Notification contains relevant information
+        assert supplier_name in notification.message, "Message should mention supplier"
+        assert action in notification.message, "Message should mention action"
+
+    @given(
+        user_id=user_id_strategy(),
+        export_id=st.text(min_size=1, max_size=50),
+        export_type=st.sampled_from(["hotel", "mapping", "location"]),
+        file_path=st.text(min_size=1, max_size=100),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_18_export_completion_triggers_notification(
+        self, test_db, user_id, export_id, export_type, file_path
+    ):
+        """
+        Feature: notification-system, Property 18: Export completion triggers notification
+        Validates: Requirements 8.2
+
+        For any completed export job, a notification of type "export" should be
+        created for the user who initiated the export.
+        """
+        from services.notification_service import NotificationService
+
+        # Arrange
+        service = NotificationService(test_db)
+
+        # Act - Trigger export completion notification
+        notification = service.notify_export_complete(
+            user_id=user_id,
+            export_id=export_id,
+            export_type=export_type,
+            file_path=file_path,
+        )
+
+        # Assert - Notification was created
+        assert notification is not None, "Notification should be created"
+        assert notification.id is not None, "Notification should have an ID"
+
+        # Assert - Notification has correct type
+        assert (
+            notification.type == NotificationType.EXPORT
+        ), "Notification type should be EXPORT"
+
+        # Assert - Notification belongs to correct user
+        assert (
+            notification.user_id == user_id
+        ), "Notification should belong to the correct user"
+
+        # Assert - Notification has medium priority
+        assert (
+            notification.priority == NotificationPriority.MEDIUM
+        ), "Export completion notifications should have MEDIUM priority"
+
+        # Assert - Notification contains relevant information
+        assert export_type in notification.message, "Message should mention export type"
+
+    @given(
+        user_id=user_id_strategy(),
+        transaction_type=st.sampled_from(["received", "deducted", "allocated"]),
+        points=st.integers(min_value=1, max_value=10000),
+        from_user=st.one_of(st.none(), st.text(min_size=1, max_size=50)),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_19_point_transaction_triggers_notification(
+        self, test_db, user_id, transaction_type, points, from_user
+    ):
+        """
+        Feature: notification-system, Property 19: Point transaction triggers notification
+        Validates: Requirements 8.3
+
+        For any significant point balance change for a user, a notification of type
+        "point" should be created for that user.
+        """
+        from services.notification_service import NotificationService
+
+        # Arrange
+        service = NotificationService(test_db)
+
+        # Act - Trigger point transaction notification
+        notification = service.notify_point_transaction(
+            user_id=user_id,
+            transaction_type=transaction_type,
+            points=points,
+            from_user=from_user,
+        )
+
+        # Assert - Notification was created
+        assert notification is not None, "Notification should be created"
+        assert notification.id is not None, "Notification should have an ID"
+
+        # Assert - Notification has correct type
+        assert (
+            notification.type == NotificationType.POINT
+        ), "Notification type should be POINT"
+
+        # Assert - Notification belongs to correct user
+        assert (
+            notification.user_id == user_id
+        ), "Notification should belong to the correct user"
+
+        # Assert - Priority is appropriate for point amount
+        if points >= 1000:
+            assert (
+                notification.priority == NotificationPriority.HIGH
+            ), "Large point transactions should have HIGH priority"
+        else:
+            assert (
+                notification.priority == NotificationPriority.MEDIUM
+            ), "Small point transactions should have MEDIUM priority"
+
+        # Assert - Notification contains relevant information
+        assert str(points) in notification.message, "Message should mention points"
+
+    @given(
+        scheduled_at=st.datetimes(
+            min_value=datetime(2024, 1, 1), max_value=datetime(2025, 12, 31)
+        ),
+        duration=st.text(min_size=1, max_size=50),
+        description=st.text(min_size=1, max_size=200),
+        active_user_count=st.integers(min_value=1, max_value=10),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_20_system_maintenance_broadcasts_to_all_active_users(
+        self, test_db, scheduled_at, duration, description, active_user_count
+    ):
+        """
+        Feature: notification-system, Property 20: System maintenance broadcasts to all active users
+        Validates: Requirements 8.4
+
+        For any system maintenance event, notifications should be created for all
+        users with is_active=True.
+        """
+        from services.notification_service import NotificationService
+        from models import User
+
+        # Clear existing users and notifications
+        test_db.query(User).delete()
+        from models import Notification
+
+        test_db.query(Notification).delete()
+        test_db.commit()
+
+        # Arrange - Create active users
+        active_user_ids = []
+        for i in range(active_user_count):
+            user = User(
+                id=f"user{i:06d}",
+                username=f"activeuser{i}",
+                email=f"active{i}@test.com",
+                hashed_password="hashed",
+                is_active=True,
+            )
+            test_db.add(user)
+            active_user_ids.append(user.id)
+
+        # Create some inactive users (should not receive notifications)
+        for i in range(2):
+            user = User(
+                id=f"inact{i:05d}",
+                username=f"inactiveuser{i}",
+                email=f"inactive{i}@test.com",
+                hashed_password="hashed",
+                is_active=False,
+            )
+            test_db.add(user)
+
+        test_db.commit()
+
+        # Act - Trigger system maintenance notification
+        service = NotificationService(test_db)
+        notifications = service.notify_system_maintenance(
+            scheduled_at=scheduled_at, duration=duration, description=description
+        )
+
+        # Assert - Correct number of notifications created
+        assert (
+            len(notifications) == active_user_count
+        ), f"Should create {active_user_count} notifications for active users"
+
+        # Assert - All notifications have correct type and priority
+        for notification in notifications:
+            assert (
+                notification.type == NotificationType.MAINTENANCE
+            ), "Notification type should be MAINTENANCE"
+            assert (
+                notification.priority == NotificationPriority.HIGH
+            ), "Maintenance notifications should have HIGH priority"
+            assert (
+                notification.user_id in active_user_ids
+            ), "Notification should belong to an active user"
+
+        # Assert - All active users received a notification
+        for user_id in active_user_ids:
+            user_notifications = [n for n in notifications if n.user_id == user_id]
+            assert (
+                len(user_notifications) == 1
+            ), f"User {user_id} should receive exactly one notification"
+
+    @given(
+        user_id=user_id_strategy(),
+        event_type=st.sampled_from(["created", "expiring", "expired"]),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_21_api_key_events_trigger_notifications(
+        self, test_db, user_id, event_type
+    ):
+        """
+        Feature: notification-system, Property 21: API key events trigger notifications
+        Validates: Requirements 8.5
+
+        For any API key creation or expiration event for a user, a notification of
+        type "api_key" should be created for that user.
+        """
+        from services.notification_service import NotificationService
+
+        # Arrange
+        service = NotificationService(test_db)
+        expires_at = (
+            datetime.utcnow() + timedelta(days=30) if event_type != "expired" else None
+        )
+
+        # Act - Trigger API key event notification
+        notification = service.notify_api_key_event(
+            user_id=user_id, event_type=event_type, expires_at=expires_at
+        )
+
+        # Assert - Notification was created
+        assert notification is not None, "Notification should be created"
+        assert notification.id is not None, "Notification should have an ID"
+
+        # Assert - Notification has correct type
+        assert (
+            notification.type == NotificationType.API_KEY
+        ), "Notification type should be API_KEY"
+
+        # Assert - Notification belongs to correct user
+        assert (
+            notification.user_id == user_id
+        ), "Notification should belong to the correct user"
+
+        # Assert - Priority is appropriate for event type
+        if event_type == "expired":
+            assert (
+                notification.priority == NotificationPriority.CRITICAL
+            ), "Expired API key should have CRITICAL priority"
+        elif event_type == "expiring":
+            assert (
+                notification.priority == NotificationPriority.HIGH
+            ), "Expiring API key should have HIGH priority"
+        else:
+            assert (
+                notification.priority == NotificationPriority.MEDIUM
+            ), "Created API key should have MEDIUM priority"
+
+
+class TestPriorityHandlingProperties:
+    """
+    Property tests for priority handling
+    """
+
+    @given(
+        user_id=user_id_strategy(),
+        priority=notification_priority_strategy(),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_22_priority_values_are_from_valid_set(
+        self, test_db, user_id, priority
+    ):
+        """
+        Feature: notification-system, Property 22: Priority values are from valid set
+        Validates: Requirements 9.1
+
+        For any created notification, the priority field should be one of:
+        low, medium, high, or critical.
+        """
+        from repositories.notification_repository import NotificationRepository
+
+        # Arrange
+        repository = NotificationRepository(test_db)
+        notification_data = NotificationCreate(
+            user_id=user_id,
+            type=NotificationType.SYSTEM,
+            priority=priority,
+            title="Test Notification",
+            message="Test Message",
+            meta_data=None,
+        )
+
+        # Act
+        notification = repository.create_notification(notification_data)
+
+        # Assert - Priority is from valid set
+        valid_priorities = [
+            NotificationPriority.LOW,
+            NotificationPriority.MEDIUM,
+            NotificationPriority.HIGH,
+            NotificationPriority.CRITICAL,
+        ]
+        assert (
+            notification.priority in valid_priorities
+        ), f"Priority should be one of {[p.value for p in valid_priorities]}"
+
+    @given(
+        user_id=user_id_strategy(),
+        priority=notification_priority_strategy(),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_23_priority_included_in_responses(
+        self, test_db, user_id, priority
+    ):
+        """
+        Feature: notification-system, Property 23: Priority included in responses
+        Validates: Requirements 9.2
+
+        For any notification returned by the API, the response should include a
+        priority field with a valid priority value.
+        """
+        from repositories.notification_repository import NotificationRepository
+        from schemas import NotificationResponse
+
+        # Arrange
+        repository = NotificationRepository(test_db)
+        notification_data = NotificationCreate(
+            user_id=user_id,
+            type=NotificationType.SYSTEM,
+            priority=priority,
+            title="Test Notification",
+            message="Test Message",
+            meta_data=None,
+        )
+
+        # Act - Create notification and convert to response
+        notification = repository.create_notification(notification_data)
+        response = NotificationResponse.model_validate(notification)
+
+        # Assert - Priority is included in response
+        assert hasattr(response, "priority"), "Response should have priority field"
+        assert response.priority is not None, "Priority should not be None"
+        assert (
+            response.priority == priority
+        ), f"Priority should be {priority}, but got {response.priority}"
+
+    @given(
+        user_id=user_id_strategy(),
+        notification_count=st.integers(min_value=4, max_value=8),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_24_priority_based_sorting_order(
+        self, test_db, user_id, notification_count
+    ):
+        """
+        Feature: notification-system, Property 24: Priority-based sorting order
+        Validates: Requirements 9.3
+
+        For any list of notifications sorted by priority, critical notifications
+        should appear before high, high before medium, and medium before low.
+        """
+        from repositories.notification_repository import NotificationRepository
+
+        # Clear any existing notifications
+        from models import Notification
+        from repositories.repository_config import query_cache
+
+        test_db.query(Notification).delete()
+        test_db.commit()
+        query_cache.clear()
+
+        # Arrange
+        repository = NotificationRepository(test_db)
+
+        # Create notifications with all priority levels
+        priorities = [
+            NotificationPriority.LOW,
+            NotificationPriority.MEDIUM,
+            NotificationPriority.HIGH,
+            NotificationPriority.CRITICAL,
+        ]
+
+        # Create multiple notifications for each priority
+        for priority in priorities:
+            for i in range(notification_count // 4 + 1):
+                notification_data = NotificationCreate(
+                    user_id=user_id,
+                    type=NotificationType.SYSTEM,
+                    priority=priority,
+                    title=f"{priority.value} Notification {i}",
+                    message=f"{priority.value} Message {i}",
+                    meta_data=None,
+                )
+                repository.create_notification(notification_data)
+
+        # Act - Get notifications sorted by priority
+        filters = NotificationFilters()
+        notifications, total = repository.get_notifications_with_pagination(
+            user_id=user_id,
+            page=1,
+            limit=100,
+            filters=filters,
+            sort_by="priority",
+            sort_order="desc",
+        )
+
+        # Assert - Notifications are sorted by priority (critical first)
+        priority_order = {
+            NotificationPriority.CRITICAL: 4,
+            NotificationPriority.HIGH: 3,
+            NotificationPriority.MEDIUM: 2,
+            NotificationPriority.LOW: 1,
+        }
+
+        for i in range(len(notifications) - 1):
+            current_priority_value = priority_order[notifications[i].priority]
+            next_priority_value = priority_order[notifications[i + 1].priority]
+
+            assert (
+                current_priority_value >= next_priority_value
+            ), f"Notification {i} with priority {notifications[i].priority.value} should come before notification {i+1} with priority {notifications[i+1].priority.value}"
+
+    @given(
+        user_id=user_id_strategy(),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_25_critical_priority_preservation(self, test_db, user_id):
+        """
+        Feature: notification-system, Property 25: Critical priority preservation
+        Validates: Requirements 9.4
+
+        For any notification created with critical priority, retrieving that
+        notification should show priority as "critical".
+        """
+        from repositories.notification_repository import NotificationRepository
+
+        # Arrange
+        repository = NotificationRepository(test_db)
+        notification_data = NotificationCreate(
+            user_id=user_id,
+            type=NotificationType.SYSTEM,
+            priority=NotificationPriority.CRITICAL,
+            title="Critical Notification",
+            message="Critical Message",
+            meta_data=None,
+        )
+
+        # Act - Create notification with critical priority
+        notification = repository.create_notification(notification_data)
+        notification_id = notification.id
+
+        # Retrieve the notification
+        retrieved_notification = repository.get_notification_by_id(
+            notification_id, user_id
+        )
+
+        # Assert - Priority is preserved as CRITICAL
+        assert (
+            retrieved_notification.priority == NotificationPriority.CRITICAL
+        ), "Priority should be preserved as CRITICAL"
