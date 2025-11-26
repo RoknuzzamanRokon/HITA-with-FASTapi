@@ -61,7 +61,7 @@ class NotificationRepository:
             title=notification_data.title,
             message=notification_data.message,
             status=NotificationStatus.UNREAD,
-            metadata=notification_data.meta_data,
+            meta_data=notification_data.meta_data,
             created_at=datetime.utcnow(),
         )
 

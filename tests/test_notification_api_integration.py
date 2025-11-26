@@ -43,6 +43,8 @@ def test_db_engine():
 @pytest.fixture(scope="function")
 def test_db_session(test_db_engine):
     """Create a test database session"""
+    from repositories.repository_config import query_cache
+
     TestingSessionLocal = sessionmaker(
         autocommit=False, autoflush=False, bind=test_db_engine
     )
@@ -52,6 +54,10 @@ def test_db_session(test_db_engine):
         session.query(Notification).delete()
         session.query(User).delete()
         session.commit()
+
+        # Clear query cache to avoid stale results
+        query_cache.clear()
+
         yield session
     finally:
         session.close()
@@ -143,7 +149,7 @@ def create_notification(db_session, user_id, **kwargs):
         title=kwargs.get("title", "Test Notification"),
         message=kwargs.get("message", "Test message"),
         status=kwargs.get("status", NotificationStatus.UNREAD),
-        metadata=kwargs.get("metadata"),
+        meta_data=kwargs.get("meta_data"),
     )
     db_session.add(notification)
     db_session.commit()
