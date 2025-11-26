@@ -213,9 +213,13 @@ class TestUserIsolationProperties:
 
         # Clear any existing notifications from previous examples
         from models import Notification
+        from repositories.repository_config import query_cache
 
         test_db.query(Notification).delete()
         test_db.commit()
+
+        # Clear the query cache to avoid stale results
+        query_cache.clear()
 
         # Arrange
         repository = NotificationRepository(test_db)
