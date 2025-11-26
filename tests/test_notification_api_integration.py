@@ -11,6 +11,7 @@ from fastapi import status
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from unittest.mock import Mock
 
 from fastapi import FastAPI
@@ -32,8 +33,11 @@ from routes.notifications import router as notifications_router
 @pytest.fixture(scope="function")
 def test_db_engine():
     """Create a test database engine"""
+    # Use file::memory:?cache=shared to allow multiple connections to the same in-memory database
     engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+        "sqlite:///file:testdb?mode=memory&cache=shared&uri=true",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,  # Use StaticPool to ensure single connection
     )
     Base.metadata.create_all(bind=engine)
     yield engine
@@ -752,6 +756,11 @@ class TestCompleteWorkflows:
         response = authenticated_client.delete(f"/v1.0/notifications/{notification.id}")
         assert response.status_code == status.HTTP_200_OK
         assert "deleted successfully" in response.json()["message"]
+
+        # Clear cache to ensure fresh query
+        from repositories.repository_config import query_cache
+
+        query_cache.clear()
 
         # Verify it's gone
         response = authenticated_client.get("/v1.0/notifications/")
