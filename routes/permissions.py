@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import models
 from security.input_validation import validate_ip_address
 from datetime import datetime
+from services.notification_service import NotificationService
 
 router = APIRouter(
     prefix="/v1.0/permissions",
@@ -66,6 +67,7 @@ def grant_provider_permissions(
         )
     # Super users have no restrictions - they can grant to anyone
 
+    granted_providers = []
     for provider_name in provider_names:
         existing_permission = (
             db.query(UserProviderPermission)
@@ -79,12 +81,28 @@ def grant_provider_permissions(
                 user_id=user_id, provider_name=provider_name
             )
             db.add(new_permission)
+            granted_providers.append(provider_name)
         else:
             # Optionally update fields here if needed
             # For now we do nothing, just skip to avoid duplicate
             pass
 
     db.commit()
+
+    # Create notifications for granted permissions
+    if granted_providers:
+        notification_service = NotificationService(db)
+        for provider_name in granted_providers:
+            try:
+                notification_service.notify_permission_change(
+                    user_id=user_id,
+                    action="granted",
+                    supplier_name=provider_name,
+                    admin_username=current_user.username,
+                )
+            except Exception as e:
+                # Log error but don't fail the permission grant
+                print(f"Failed to create notification for permission grant: {str(e)}")
 
     return {
         "message": f"Successfully updated permissions for user {user_id} with providers: {provider_names}"
@@ -144,6 +162,21 @@ def remove_provider_permissions(
             removed.append(provider_name)
 
     db.commit()
+
+    # Create notifications for revoked permissions
+    if removed:
+        notification_service = NotificationService(db)
+        for provider_name in removed:
+            try:
+                notification_service.notify_permission_change(
+                    user_id=user_id,
+                    action="revoked",
+                    supplier_name=provider_name,
+                    admin_username=current_user.username,
+                )
+            except Exception as e:
+                # Log error but don't fail the permission revoke
+                print(f"Failed to create notification for permission revoke: {str(e)}")
 
     return {
         "message": f"Successfully removed permissions for user {user_id} for providers: {removed}"

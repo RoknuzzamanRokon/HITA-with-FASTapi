@@ -1,0 +1,4 @@
+# file: D:\Rokon\ofc_git\HITA_full\backend\services\notification_service.py
+# hypothesis_version: 6.148.2
+
+[1000, 'API Key Created', 'API Key Event', 'API Key Expired', 'Export Complete', 'Point Transaction', 'Points Allocated', 'Points Deducted', 'Points Received', 'action', 'admin_username', 'allocated', 'created', 'created_at', 'deducted', 'desc', 'description', 'duration', 'event_type', 'expired', 'expires_at', 'expiring', 'export_id', 'export_type', 'file_path', 'from_user', 'points', 'received', 'scheduled_at', 'supplier_name', 'timestamp', 'transaction_type']

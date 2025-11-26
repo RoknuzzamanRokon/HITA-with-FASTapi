@@ -185,6 +185,127 @@ class TestChronologicalOrderingProperties:
             ), f"Notification {i} should be newer than notification {i+1}"
 
 
+class TestAPIResponseCompletenessProperties:
+    """
+    Property tests for API response completeness
+    """
+
+    @given(
+        user_id=user_id_strategy(),
+        notification_data=notification_create_strategy(),
+    )
+    @settings(
+        max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture]
+    )
+    def test_property_4_complete_notification_data_in_responses(
+        self, test_db, user_id, notification_data
+    ):
+        """
+        Feature: notification-system, Property 4: Complete notification data in responses
+        Validates: Requirements 2.2
+
+        For any notification returned by the API, the response should include id, type,
+        priority, title, message, status, created_at, and read_at fields.
+        """
+        from services.notification_service import NotificationService
+        from schemas import NotificationResponse
+
+        from models import Notification
+        from repositories.repository_config import query_cache
+
+        # Clear any existing notifications and cache to ensure test isolation
+        test_db.query(Notification).delete()
+        test_db.commit()
+        query_cache.clear()
+
+        # Arrange
+        service = NotificationService(test_db)
+
+        # Override user_id to ensure consistency
+        notification_data.user_id = user_id
+
+        # Create a notification
+        created_notification = service.create_notification(
+            user_id=notification_data.user_id,
+            type=notification_data.type,
+            title=notification_data.title,
+            message=notification_data.message,
+            priority=notification_data.priority,
+            metadata=notification_data.meta_data,
+        )
+
+        # Act - Get notifications through service (simulating API call)
+        filters = NotificationFilters()
+        response = service.get_notifications(
+            user_id=user_id, page=1, limit=10, filters=filters
+        )
+
+        # Assert - Response contains notifications
+        assert (
+            len(response.notifications) > 0
+        ), "Should return at least one notification"
+
+        # Get the notification from response
+        notification_response = response.notifications[0]
+
+        # Assert - All required fields are present and not None (except read_at which can be None)
+        assert (
+            notification_response.id is not None
+        ), "Response should include 'id' field"
+        assert (
+            notification_response.type is not None
+        ), "Response should include 'type' field"
+        assert (
+            notification_response.priority is not None
+        ), "Response should include 'priority' field"
+        assert (
+            notification_response.title is not None
+        ), "Response should include 'title' field"
+        assert (
+            notification_response.message is not None
+        ), "Response should include 'message' field"
+        assert (
+            notification_response.status is not None
+        ), "Response should include 'status' field"
+        assert (
+            notification_response.created_at is not None
+        ), "Response should include 'created_at' field"
+        # read_at can be None for unread notifications, but the field should exist
+        assert hasattr(
+            notification_response, "read_at"
+        ), "Response should include 'read_at' field"
+
+        # Assert - Fields have correct types
+        assert isinstance(notification_response.id, int), "id should be an integer"
+        assert isinstance(
+            notification_response.type, NotificationType
+        ), "type should be NotificationType enum"
+        assert isinstance(
+            notification_response.priority, NotificationPriority
+        ), "priority should be NotificationPriority enum"
+        assert isinstance(notification_response.title, str), "title should be a string"
+        assert isinstance(
+            notification_response.message, str
+        ), "message should be a string"
+        assert isinstance(
+            notification_response.status, NotificationStatus
+        ), "status should be NotificationStatus enum"
+        assert isinstance(
+            notification_response.created_at, datetime
+        ), "created_at should be a datetime"
+        assert notification_response.read_at is None or isinstance(
+            notification_response.read_at, datetime
+        ), "read_at should be None or datetime"
+
+        # Assert - user_id field is present (this is part of the complete data requirement)
+        assert hasattr(
+            notification_response, "user_id"
+        ), "Response should include 'user_id' field"
+        assert (
+            notification_response.user_id == user_id
+        ), "Response user_id should match request"
+
+
 class TestUserIsolationProperties:
     """
     Property tests for user isolation

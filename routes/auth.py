@@ -1,5 +1,6 @@
 import os
 import uuid
+import logging
 from datetime import datetime, timedelta
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -18,8 +19,12 @@ import models
 from models import UserRole
 import json
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 # Import audit logging
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from services.notification_service import NotificationService
 
 
 # Router setup
@@ -174,7 +179,7 @@ def create_user(
 ) -> models.User:
     user_id = generate_user_id()
     hashed_password = get_password_hash(user_data.password)
-    
+
     # 🔒 API KEY POLICY: Only admin/super admin created users get API keys
     # Self-registered users (created_by starts with "own:") don't get API keys
     api_key = None
@@ -208,20 +213,24 @@ def create_user(
     return db_user
 
 
-def generate_api_key(db: Session, user_id: str, active_for_days: Optional[int] = None) -> str:
+def generate_api_key(
+    db: Session, user_id: str, active_for_days: Optional[int] = None
+) -> str:
     """Generate a new API key for a user with optional expiration"""
     api_key = f"ak_{uuid.uuid4().hex}"
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user:
         user.api_key = api_key
         user.updated_at = datetime.utcnow()
-        
+
         # Set expiration if active_for_days is provided
         if active_for_days is not None and active_for_days > 0:
-            user.api_key_expires_at = datetime.utcnow() + timedelta(days=active_for_days)
+            user.api_key_expires_at = datetime.utcnow() + timedelta(
+                days=active_for_days
+            )
         else:
             user.api_key_expires_at = None  # No expiration
-        
+
         db.commit()
     return api_key
 
@@ -286,18 +295,18 @@ async def require_admin(
 #     db: Session = Depends(get_db),
 # ):
 #     """Ultra-fast token generation - maximum speed optimization."""
-    
+
 #     # Direct database query - bypass helper functions
 #     user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    
+
 #     if not user or not verify_password(form_data.password, user.hashed_password):
 #         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
 #     # Direct JWT creation - no helper functions
 #     now = datetime.utcnow()
 #     access_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 #     refresh_exp = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    
+
 #     # Create tokens directly
 #     access_payload = {
 #         "sub": user.username,
@@ -307,7 +316,7 @@ async def require_admin(
 #         "type": "access",
 #         "iat": now
 #     }
-    
+
 #     refresh_payload = {
 #         "sub": user.username,
 #         "user_id": user.id,
@@ -315,10 +324,10 @@ async def require_admin(
 #         "type": "refresh",
 #         "iat": now
 #     }
-    
+
 #     access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
 #     refresh_token = jwt.encode(refresh_payload, SECRET_KEY, algorithm=ALGORITHM)
-    
+
 #     return {
 #         "access_token": access_token,
 #         "token_type": "bearer",
@@ -332,32 +341,31 @@ async def ultra_fast_token(
     db: Session = Depends(get_db),
 ):
     """Ultra-fast token generation - minimal overhead."""
-    
+
     # Direct database query - no extra functions
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    
+    user = (
+        db.query(models.User).filter(models.User.username == form_data.username).first()
+    )
+
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     # Minimal token creation
     now = datetime.utcnow()
     access_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     access_payload = {
         "sub": user.username,
         "user_id": user.id,
         "role": user.role,
         "exp": access_exp,
         "type": "access",
-        "iat": now
+        "iat": now,
     }
-    
+
     access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/refresh-token", response_model=Token)
@@ -365,7 +373,7 @@ async def refresh_access_token(
     refresh_request: RefreshTokenRequest, db: Session = Depends(get_db)
 ):
     """Fast token refresh using access token validation."""
-    
+
     try:
         # Decode the provided access token to get user info
         payload = jwt.decode(
@@ -390,7 +398,7 @@ async def refresh_access_token(
     now = datetime.utcnow()
     access_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_exp = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    
+
     # Create new tokens
     access_payload = {
         "sub": user.username,
@@ -398,17 +406,17 @@ async def refresh_access_token(
         "role": user.role,
         "exp": access_exp,
         "type": "access",
-        "iat": now
+        "iat": now,
     }
-    
+
     refresh_payload = {
         "sub": user.username,
         "user_id": user.id,
         "exp": refresh_exp,
         "type": "refresh",
-        "iat": now
+        "iat": now,
     }
-    
+
     new_access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
     new_refresh_token = jwt.encode(refresh_payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -469,21 +477,21 @@ async def refresh_access_token(
 def user_registration_form(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     """
     **User Registration & Account Creation**
-    
+
     Create new user account with secure password hashing and validation.
-    
+
     **Use Cases:**
     - New user signup
     - Self-service registration
     - Account creation for web/mobile apps
     - User onboarding process
-    
+
     **Account Details:**
     - Default role: GENERAL_USER
     - Password: Bcrypt hashed for security
     - API Key: Not provided (contact admin for API access)
     - Status: Active by default
-    
+
     **Validation:**
     - Username uniqueness check
     - Email format and uniqueness validation
@@ -527,36 +535,36 @@ async def reset_password(
 ):
     """
     **Reset User Password**
-    
+
     Allow authenticated users to change their password with proper validation.
-    
+
     **Use Cases:**
     - User-initiated password change
     - Security compliance requirements
     - Regular password rotation
     - Account security enhancement
-    
+
     **Security Features:**
     - Current password verification
     - New password confirmation matching
     - Password strength validation
     - Audit logging for security tracking
     - Rate limiting protection
-    
+
     **Process:**
     - Validates current password against stored hash
     - Ensures new password matches confirmation
     - Applies password strength requirements
     - Updates password hash in database
     - Logs security event for audit trail
-    
+
     **Requirements:**
     - Must be authenticated (valid JWT token)
     - Current password must be correct
     - New password must match confirmation
     - New password must meet security standards
     """
-    
+
     # Validate current password
     if not verify_password(reset_data.current_password, current_user.hashed_password):
         # Log failed password reset attempt
@@ -567,46 +575,46 @@ async def reset_password(
             details={
                 "action": "password_reset_failed",
                 "reason": "invalid_current_password",
-                "username": current_user.username
+                "username": current_user.username,
             },
             request=request,
             security_level=SecurityLevel.HIGH,
-            success=False
+            success=False,
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect"
+            detail="Current password is incorrect",
         )
-    
+
     # Validate new password matches confirmation
     if reset_data.new_password != reset_data.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password and confirmation do not match"
+            detail="New password and confirmation do not match",
         )
-    
+
     # Validate new password is different from current
     if verify_password(reset_data.new_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be different from current password"
+            detail="New password must be different from current password",
         )
-    
+
     # Basic password strength validation
     if len(reset_data.new_password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be at least 8 characters long"
+            detail="New password must be at least 8 characters long",
         )
-    
+
     try:
         # Update password
         new_hashed_password = get_password_hash(reset_data.new_password)
         current_user.hashed_password = new_hashed_password
         current_user.updated_at = datetime.utcnow()
         db.commit()
-        
+
         # Log successful password reset
         audit_logger = AuditLogger(db)
         audit_logger.log_activity(
@@ -615,21 +623,21 @@ async def reset_password(
             details={
                 "action": "password_reset_success",
                 "username": current_user.username,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             },
             request=request,
             security_level=SecurityLevel.HIGH,
-            success=True
+            success=True,
         )
-        
+
         return {
             "message": "Password reset successfully",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
     except Exception as e:
         db.rollback()
-        
+
         # Log password reset error
         audit_logger = AuditLogger(db)
         audit_logger.log_activity(
@@ -638,16 +646,16 @@ async def reset_password(
             details={
                 "action": "password_reset_error",
                 "error": str(e),
-                "username": current_user.username
+                "username": current_user.username,
             },
             request=request,
             security_level=SecurityLevel.HIGH,
-            success=False
+            success=False,
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to reset password. Please try again."
+            detail="Failed to reset password. Please try again.",
         )
 
 
@@ -658,21 +666,21 @@ async def logout(
 ):
     """
     **Single Device Logout**
-    
+
     Securely logout from current device/session by invalidating tokens.
-    
+
     **Use Cases:**
     - User logout from web app
     - Mobile app logout
     - Security logout after suspicious activity
     - Session termination
-    
+
     **Process:**
     - Blacklists current access token in Redis
     - Removes refresh token from storage
     - Calculates token TTL for efficient cleanup
     - Prevents token reuse until natural expiration
-    
+
     **Impact:**
     - Current session becomes invalid immediately
     - Other devices/sessions remain active
@@ -702,22 +710,22 @@ async def logout_all_devices(
 ):
     """
     **Global Logout (All Devices)**
-    
+
     Logout user from ALL devices and sessions for enhanced security.
-    
+
     **Use Cases:**
     - Suspected account compromise
     - Password change security measure
     - Lost/stolen device protection
     - Administrative security action
     - User-requested global logout
-    
+
     **Process:**
     - Removes all refresh tokens from Redis
     - Prevents new token generation on any device
     - Forces re-authentication when access tokens expire
     - Maintains current session until token expires
-    
+
     **Security Benefits:**
     - Comprehensive session invalidation
     - Immediate effect on token refresh attempts
@@ -733,22 +741,22 @@ async def read_users_me(
 ):
     """
     **Get Current User Profile**
-    
+
     Retrieve authenticated user's profile information and account details.
-    
+
     **Use Cases:**
     - User profile display in applications
     - Role-based UI rendering
     - Account information verification
     - API key retrieval for developers
     - User dashboard data
-    
+
     **Returns:**
     - User ID, username, email
     - Role (GENERAL_USER, ADMIN_USER, SUPER_USER)
     - Account status and timestamps
     - API key (if assigned by admin)
-    
+
     **Authentication:**
     - Requires valid JWT token in Authorization header
     - Validates token signature and expiration
@@ -774,40 +782,55 @@ async def regenerate_api_key(
 ):
     """
     **Regenerate Personal API Key**
-    
+
     Create new API key for current user (Admin/Super Admin only).
-    
+
     **Use Cases:**
     - API key rotation for security
     - Compromised key replacement
     - Regular security maintenance
     - New application deployment
-    
+
     **Access Control:**
     - ADMIN_USER: Can regenerate own key
     - SUPER_USER: Can regenerate own key
     - GENERAL_USER: Access denied
-    
+
     **Process:**
     - Generates new unique API key with 'ak_' prefix
     - Updates user record in database
     - Invalidates old API key immediately
     - Returns new key for immediate use
-    
+
     **Security:**
     - Old key stops working instantly
     - UUID-based key generation
     - Database transaction safety
     """
-    
+
     # 🔒 SECURITY CHECK: Only admin and super admin can regenerate API keys
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only admin and super admin users can regenerate API keys."
+            detail="Access denied. Only admin and super admin users can regenerate API keys.",
         )
-    
-    new_api_key = generate-api-key(db, current_user.id)
+
+    new_api_key = generate_api_key(db, current_user.id)
+
+    # Create notification for API key creation
+    try:
+        notification_service = NotificationService(db)
+        notification_service.notify_api_key_event(
+            user_id=current_user.id, event_type="created", expires_at=None
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to create notification for API key regeneration: {str(e)}"
+        )
+
     return {"message": "API key regenerated successfully", "api_key": new_api_key}
 
 
@@ -821,26 +844,26 @@ async def generate_api_key_for_user(
 ):
     """
     **Generate API Key for User with Expiration**
-    
+
     Create API key for another user with configurable expiration (Admin/Super Admin management function).
-    
+
     **Path Parameter:**
     - user_id: Target user ID
-    
+
     **Request Body:**
     - active_for: Number of days the API key should be valid (e.g., 2 for 2 days)
-    
+
     **Use Cases:**
     - Providing temporary API access to team members
     - Time-limited API key generation for projects
     - Enabling programmatic access with expiration
     - Developer onboarding with trial periods
-    
+
     **Access Control:**
     - ADMIN_USER: Can generate keys for any user
     - SUPER_USER: Can generate keys for any user
     - Comprehensive audit logging
-    
+
     **Process:**
     - Validates target user exists
     - Validates user_id matches between path and body
@@ -849,12 +872,12 @@ async def generate_api_key_for_user(
     - Updates target user's record
     - Logs action with admin details
     - Returns key, expiration date, and user confirmation
-    
+
     **Expiration:**
     - API key expires after specified number of days
     - Expiration is calculated from creation time
     - Expired keys are automatically rejected during authentication
-    
+
     **Audit Trail:**
     - Records admin performing action
     - Logs target user details
@@ -862,37 +885,43 @@ async def generate_api_key_for_user(
     - High security level logging
     - Request context tracking
     """
-    
+
     # 🔒 SECURITY CHECK: Only admin and super admin can generate API keys for others
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only admin and super admin users can generate API keys for other users."
+            detail="Access denied. Only admin and super admin users can generate API keys for other users.",
         )
-    
+
     # Validate active_for is positive
     if api_key_request.active_for <= 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="active_for must be a positive number of days."
+            detail="active_for must be a positive number of days.",
         )
-    
+
     # Check if target user exists
     target_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not target_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found."
+            detail=f"User with ID {user_id} not found.",
         )
-    
+
     # Generate API key for the target user with expiration
-    new_api_key = generate_api_key(db, user_id, active_for_days=api_key_request.active_for)
-    
+    new_api_key = generate_api_key(
+        db, user_id, active_for_days=api_key_request.active_for
+    )
+
     # Calculate expiration date
     expires_at = datetime.utcnow() + timedelta(days=api_key_request.active_for)
-    
+
     # 📝 AUDIT LOG: Record API key generation
     from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+
     audit_logger = AuditLogger(db)
     audit_logger.log_activity(
         activity_type=ActivityType.USER_UPDATED,
@@ -903,13 +932,22 @@ async def generate_api_key_for_user(
             "target_username": target_user.username,
             "admin_role": current_user.role,
             "active_for_days": api_key_request.active_for,
-            "expires_at": expires_at.isoformat()
+            "expires_at": expires_at.isoformat(),
         },
         request=request,
         security_level=SecurityLevel.HIGH,
-        success=True
+        success=True,
     )
-    
+
+    # Create notification for API key creation
+    try:
+        notification_service = NotificationService(db)
+        notification_service.notify_api_key_event(
+            user_id=user_id, event_type="created", expires_at=expires_at
+        )
+    except Exception as e:
+        logger.error(f"Failed to create notification for API key generation: {str(e)}")
+
     return {
         "message": f"API key generated successfully for user {target_user.username}",
         "user_id": user_id,
@@ -917,7 +955,7 @@ async def generate_api_key_for_user(
         "api_key": new_api_key,
         "active_for_days": api_key_request.active_for,
         "expires_at": expires_at.isoformat(),
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
     }
 
 
@@ -930,60 +968,64 @@ async def revoke_api_key_for_user(
 ):
     """
     **Revoke User API Key**
-    
+
     Remove API key access from user (Admin/Super Admin security function).
-    
+
     **Use Cases:**
     - Security incident response
     - Employee termination/role change
     - Suspected API key compromise
     - Temporary access suspension
     - Compliance requirements
-    
+
     **Access Control:**
     - ADMIN_USER: Can revoke any user's key
     - SUPER_USER: Can revoke any user's key
     - Full audit logging for security
-    
+
     **Process:**
     - Validates target user exists
     - Records current API key status
     - Sets API key to null (revoked)
     - Updates user timestamp
     - Logs revocation with details
-    
+
     **Impact:**
     - API key becomes invalid immediately
     - User loses programmatic API access
     - All applications using key will fail
     - Action cannot be undone (new key needed)
     """
-    
+
     # 🔒 SECURITY CHECK: Only admin and super admin can revoke API keys
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only admin and super admin users can revoke API keys."
+            detail="Access denied. Only admin and super admin users can revoke API keys.",
         )
-    
+
     # Check if target user exists
     target_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not target_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found."
+            detail=f"User with ID {user_id} not found.",
         )
-    
+
     # Store old API key for audit
     old_api_key = target_user.api_key
-    
+
     # Revoke API key (set to None)
     target_user.api_key = None
     target_user.updated_at = datetime.utcnow()
     db.commit()
-    
+
     # 📝 AUDIT LOG: Record API key revocation
     from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+
     audit_logger = AuditLogger(db)
     audit_logger.log_activity(
         activity_type=ActivityType.USER_UPDATED,
@@ -993,17 +1035,17 @@ async def revoke_api_key_for_user(
             "action": "revoke-api-key",
             "target_username": target_user.username,
             "had_api_key": old_api_key is not None,
-            "admin_role": current_user.role
+            "admin_role": current_user.role,
         },
         request=request,
         security_level=SecurityLevel.HIGH,
-        success=True
+        success=True,
     )
-    
+
     return {
         "message": f"API key revoked successfully for user {target_user.username}",
         "user_id": user_id,
-        "username": target_user.username
+        "username": target_user.username,
     }
 
 
@@ -1014,29 +1056,29 @@ async def auth_health_check(
 ):
     """
     **Authentication System Health Check**
-    
+
     Verify authentication system status and user session validity.
-    
+
     **Use Cases:**
     - Application startup verification
     - Monitoring system integration
     - User session validation
     - System synchronization checks
     - Health monitoring dashboards
-    
+
     **Health Components:**
     - API service status verification
     - Database connection testing
     - User authentication validation
     - Token validity confirmation
     - System timestamp synchronization
-    
+
     **Returns:**
     - API status (ok/error)
     - Database connectivity status
     - Current user details (username, ID, role)
     - Server timestamp (ISO format)
-    
+
     **Monitoring:**
     - Use for automated health checks
     - Set alerts for non-'ok' status
@@ -1069,21 +1111,21 @@ async def get_all_users(
 ):
     """
     **Get All Users (Super Admin)**
-    
+
     Retrieve complete user list with pagination for system administration.
-    
+
     **Use Cases:**
     - User management dashboard
     - System audit and compliance
     - User statistics and reporting
     - API key management oversight
     - Account status monitoring
-    
+
     **Access Control:**
     - SUPER_USER only (highest privilege level)
     - Admin users cannot access this endpoint
     - Complete system visibility
-    
+
 
     **Security:**
     - Sensitive endpoint with full user data
@@ -1114,27 +1156,27 @@ async def activate_user(
 ):
     """
     **Toggle User Account Status**
-    
+
     Activate or deactivate user account (Super Admin management function).
-    
+
     **Use Cases:**
     - Temporary account suspension
     - Employee leave management
     - Security incident response
     - Account recovery processes
     - Compliance requirements
-    
+
     **Access Control:**
     - SUPER_USER only (highest privilege)
     - Non-destructive account management
     - Preserves user data and settings
-    
+
     **Toggle Behavior:**
     - Active users → Inactive (cannot login)
     - Inactive users → Active (can login normally)
     - Status change is immediate
     - Updates user timestamp
-    
+
     **Effects:**
     - **When Deactivated:** No login, existing tokens valid until expiry, API key disabled
     - **When Activated:** Full login access, can generate tokens, API key restored
@@ -1174,13 +1216,13 @@ async def authenticate_api_key(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key"
         )
-    
+
     # Check if API key has expired
     if user.api_key_expires_at is not None:
         if datetime.utcnow() > user.api_key_expires_at:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, 
-                detail="API Key has expired. Please contact your administrator for a new key."
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API Key has expired. Please contact your administrator for a new key.",
             )
 
     return user
@@ -1191,10 +1233,10 @@ async def authenticate_for_export(
 ) -> models.User:
     """
     Flexible authentication for export endpoints.
-    
+
     - Super Users and Admin Users: Can use either API Key OR JWT Token
     - General Users: Must use API Key only
-    
+
     Returns authenticated user if valid.
     """
     # Try API key authentication first (works for all user types)
@@ -1205,17 +1247,17 @@ async def authenticate_for_export(
             .filter(models.User.api_key == api_key, models.User.is_active == True)
             .first()
         )
-        
+
         if user:
             # Check if API key has expired
             if user.api_key_expires_at is not None:
                 if datetime.utcnow() > user.api_key_expires_at:
                     raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED, 
-                        detail="API Key has expired. Please contact your administrator for a new key."
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="API Key has expired. Please contact your administrator for a new key.",
                     )
             return user
-    
+
     # Try JWT token authentication (only for Super Users and Admin Users)
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
@@ -1232,21 +1274,24 @@ async def authenticate_for_export(
                     user = get_user_by_id(db, user_id)
                     if user and user.is_active:
                         # Only allow Super Users and Admin Users to use JWT tokens
-                        if user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+                        if user.role in [
+                            models.UserRole.SUPER_USER,
+                            models.UserRole.ADMIN_USER,
+                        ]:
                             return user
                         else:
                             # General users must use API key
                             raise HTTPException(
                                 status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="General users must use API Key for export endpoints. Please provide X-API-Key header."
+                                detail="General users must use API Key for export endpoints. Please provide X-API-Key header.",
                             )
         except JWTError:
             pass
-    
+
     # No valid authentication found
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required. Provide X-API-Key header or Authorization Bearer token (Super/Admin users only)."
+        detail="Authentication required. Provide X-API-Key header or Authorization Bearer token (Super/Admin users only).",
     )
 
 
@@ -1266,18 +1311,18 @@ async def get_user_by_api_key_or_token(
             .filter(models.User.api_key == api_key, models.User.is_active == True)
             .first()
         )
-        
+
         # Check if API key has expired
         if user and user.api_key_expires_at is not None:
             if datetime.utcnow() > user.api_key_expires_at:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, 
-                    detail="API Key has expired. Please contact your administrator for a new key."
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="API Key has expired. Please contact your administrator for a new key.",
                 )
-        
+
         if user:
             return user
-    
+
     # Try JWT token authentication
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
@@ -1296,15 +1341,12 @@ async def get_user_by_api_key_or_token(
                         return user
         except JWTError:
             pass
-    
+
     return None
 
 
 @router.get("/check-api-key", response_model=ApiKeyCheckResponse)
-async def check_api_key_status(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def check_api_key_status(request: Request, db: Session = Depends(get_db)):
     """
     **Check API Key Status and User Profile**
     
@@ -1370,17 +1412,17 @@ async def check_api_key_status(
     """
     # Try flexible authentication
     current_user = await get_user_by_api_key_or_token(request, db)
-    
+
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required. Provide either X-API-Key header or Authorization Bearer token."
+            detail="Authentication required. Provide either X-API-Key header or Authorization Bearer token.",
         )
-    
+
     # Format timestamps in ISO format with Z suffix
     created_at_iso = current_user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
     updated_at_iso = current_user.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
-    
+
     # Calculate API key information
     has_api_key = bool(current_user.api_key)
     api_key_info = {
@@ -1389,32 +1431,34 @@ async def check_api_key_status(
         "status": "not_generated",
         "generatedAt": None,
         "expiresAt": None,
-        "daysUntilExpiration": None
+        "daysUntilExpiration": None,
     }
-    
+
     if has_api_key:
         # Check if API key has expiration
         if current_user.api_key_expires_at:
-            expires_at_iso = current_user.api_key_expires_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+            expires_at_iso = current_user.api_key_expires_at.strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
             is_expired = current_user.api_key_expires_at < datetime.utcnow()
-            
+
             # Calculate days until expiration
             if not is_expired:
                 time_diff = current_user.api_key_expires_at - datetime.utcnow()
                 days_until_expiration = time_diff.days
             else:
                 days_until_expiration = 0
-            
+
             # Determine generated date (use updated_at as proxy if not stored separately)
             generated_at_iso = current_user.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
-            
+
             api_key_info = {
                 "hasApiKey": True,
                 "isExpired": is_expired,
                 "status": "expired" if is_expired else "active",
                 "generatedAt": generated_at_iso,
                 "expiresAt": expires_at_iso,
-                "daysUntilExpiration": days_until_expiration
+                "daysUntilExpiration": days_until_expiration,
             }
         else:
             # API key exists but no expiration (permanent key)
@@ -1425,26 +1469,28 @@ async def check_api_key_status(
                 "status": "active_permanent",
                 "generatedAt": generated_at_iso,
                 "expiresAt": None,
-                "daysUntilExpiration": None
+                "daysUntilExpiration": None,
             }
-    
+
     # Return structured response
     return ApiKeyCheckResponse(
         id=current_user.id,
-        identity={
-            "username": current_user.username,
-            "email": current_user.email
-        },
+        identity={"username": current_user.username, "email": current_user.email},
         status={
-            "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role),
-            "isActive": current_user.is_active
+            "role": (
+                current_user.role.value
+                if hasattr(current_user.role, "value")
+                else str(current_user.role)
+            ),
+            "isActive": current_user.is_active,
         },
         security={
-            "apiKey": current_user.api_key if current_user.api_key else "Contact your admin to get API key access"
+            "apiKey": (
+                current_user.api_key
+                if current_user.api_key
+                else "Contact your admin to get API key access"
+            )
         },
         apiKeyInfo=api_key_info,
-        timestamps={
-            "createdAt": created_at_iso,
-            "updatedAt": updated_at_iso
-        }
+        timestamps={"createdAt": created_at_iso, "updatedAt": updated_at_iso},
     )
