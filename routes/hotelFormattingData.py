@@ -5834,11 +5834,27 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
         website = safe_get(hotel_provider_details, ["@WebsiteURL"], None)
         logo = safe_get(hotel_provider_details, ["@PropertyLogoURL"], None)
         brand = safe_get(hotel_provider_details, ["@Brand"], None)
+        dreamTextdescription = safe_get(hotel_provider_details, ["DreamText"], None)
+
         description = safe_get(hotel_provider_details, ["Description"], None)
 
         star_rating = safe_get(hotel_provider_details, ["Rating", "StarRating"], None)
 
         location_info = safe_get(hotel_provider_details, ["LocationInfo"], None)
+
+        kiwi_rating = safe_get(hotel_provider_details, ["Rating", "KiwiRating"], None)
+
+        review_rating = None
+
+        if kiwi_rating:
+            # Extract all @attribute values
+            attrs = {k[1:]: v for k, v in kiwi_rating.items() if k.startswith("@")}
+
+            # Build the source string (key=value#key=value...)
+            source_str = "#".join([f"{k}={v}" for k, v in attrs.items()])
+
+            # Extract rating average (#text)
+            rating_avg = kiwi_rating.get("#text", None)
 
         longitude = safe_get(location_info, ["@Longitude"], None)
         latitude = safe_get(location_info, ["@Latitude"], None)
@@ -5960,27 +5976,27 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
             "logo": logo,
             "primary_photo": primary_photo,
             "review_rating": {
-                "source": None,
+                "source": source_str,
                 "number_of_reviews": None,
-                "rating_average": None,
+                "rating_average": float(rating_avg) if rating_avg else None,
                 "popularity_score": None,
             },
             "policies": {
                 "check_in": {
                     "begin_time": None,
-                    "end_time": None,
+                    "end_time": "12:00",
                     "instructions": None,
                     "min_age": None,
                 },
-                "checkout": {"time": None},
+                "checkout": {"time": "12:00"},
                 "fees": {"optional": None},
                 "know_before_you_go": None,
-                "pets": [],
+                "pets": "The Peninsula London welcomes small domestic pets/emotional support animals/service animals. All service animals require a document of authentication at time of check-in. Pets are not permitted in any of the hotels restaurants.",
                 "remark": None,
                 "child_and_extra_bed_policy": {
                     "infant_age": None,
                     "children_age_from": None,
-                    "children_age_to": None,
+                    "children_age_to": 12,
                     "children_stay_free": None,
                     "min_guest_age": None,
                 },
@@ -5990,25 +6006,25 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                 "latitude": latitude,
                 "longitude": longitude,
                 "address_line_1": addressLine1,
-                "address_line_2": addressLine2,
+                "address_line_2": f"{addressLine2},{addressLine3}",
                 "city": city,
                 "state": zone,
                 "country": country,
                 "country_code": country_code,
                 "postal_code": zip_code,
-                "full_address": f"{addressLine1},{addressLine2},{city},{country}",
+                "full_address": f"{addressLine1},{addressLine2},{addressLine3},{city},{country}",
                 "google_map_site_link": google_map_site_link,
                 "local_lang": {
                     "latitude": latitude,
                     "longitude": longitude,
                     "address_line_1": addressLine1,
-                    "address_line_2": addressLine2,
+                    "address_line_2": f"{addressLine2},{addressLine3}",
                     "city": city,
                     "state": zone,
                     "country": country,
                     "country_code": country_code,
                     "postal_code": zip_code,
-                    "full_address": f"{addressLine1},{addressLine2},{city},{country}",
+                    "full_address": f"{addressLine1},{addressLine2},{addressLine3},{city},{country}",
                     "google_map_site_link": google_map_site_link,
                 },
                 "mapping": {
@@ -6026,7 +6042,9 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                 "email_address": [safe_get(hotel, ["Contact", "Email"], None)],
                 "website": [website],
             },
-            "descriptions": [{"title": None, "text": description}],
+            "descriptions": [
+                {"title": None, "text": f"{dreamTextdescription},{description}"}
+            ],
             "room_type": None,
             "spoken_languages": [
                 {
