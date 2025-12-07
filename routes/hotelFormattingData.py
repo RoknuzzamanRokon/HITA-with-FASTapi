@@ -6043,7 +6043,8 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
                 "website": [website],
             },
             "descriptions": [
-                {"title": None, "text": f"{dreamTextdescription},{description}"}
+                {"title": "DreamTextdescription", "text": f"{dreamTextdescription}"},
+                {"title": "Description", "text": f"{description}"},
             ],
             "room_type": None,
             "spoken_languages": [
