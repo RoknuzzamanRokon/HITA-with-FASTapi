@@ -1271,6 +1271,7 @@ async def get_hotel_using_ittid(
             pm_data = {
                 "id": pm.id,
                 "ittid": pm.ittid,
+                "giata_code": pm.giata_code,
                 "provider_name": pm.provider_name,
                 "provider_id": pm.provider_id,
                 "updated_at": pm.updated_at,
