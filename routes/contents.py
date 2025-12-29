@@ -2177,12 +2177,14 @@ def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
 
 
 @router.get("/get-all-ittid", status_code=status.HTTP_200_OK)
-def get_all_ittid(
+async def get_all_ittid(
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db),
+    limit: int = Query(1000, ge=100, le=10000, description="Number of ITTIDs to return per request"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
 ):
-    print(f"🎯 get_all_ittid → User: {current_user.id}")
+    print(f"🎯 get_all_ittid → User: {current_user.id}, limit: {limit}, offset: {offset}")
 
     # ---------------------------------------------------------
     # 1️⃣ IP WHITELIST CHECK
@@ -2230,26 +2232,50 @@ def get_all_ittid(
         )
 
     # ---------------------------------------------------------
-    # 3️⃣ HOTEL ITTID FETCH LOGIC
+    # 3️⃣ HOTEL ITTID FETCH LOGIC WITH PAGINATION
     # ---------------------------------------------------------
     try:
+        # First, get total count for pagination info
         if allowed_providers:
-            # Permissions restricted
+            # Permissions restricted - get total count
+            total_count_query = (
+                db.query(ProviderMapping.ittid)
+                .filter(ProviderMapping.provider_name.in_(allowed_providers))
+                .distinct()
+            )
+            total_count = total_count_query.count()
+            supplier_count = len(allowed_providers)
+        else:
+            # Fetch all - get total count
+            total_count = db.query(Hotel.ittid).distinct().count()
+            supplier_count = db.query(ProviderMapping.provider_name).distinct().count()
+
+        print(f"📊 Total ITTIDs available: {total_count} from {supplier_count} suppliers")
+
+        # Now fetch paginated results
+        if allowed_providers:
+            # Permissions restricted - fetch paginated results
             records = (
                 db.query(ProviderMapping.ittid)
                 .filter(ProviderMapping.provider_name.in_(allowed_providers))
                 .distinct()
+                .limit(limit)
+                .offset(offset)
                 .all()
             )
-            supplier_count = len(allowed_providers)
         else:
-            # Fetch all
-            records = db.query(Hotel.ittid).distinct().all()
-            supplier_count = db.query(ProviderMapping.provider_name).distinct().count()
+            # Fetch all - paginated
+            records = (
+                db.query(Hotel.ittid)
+                .distinct()
+                .limit(limit)
+                .offset(offset)
+                .all()
+            )
 
         ittid_list = [row[0] for row in records if row[0]]
 
-        print(f"📊 Found {len(ittid_list)} ITTIDs from {supplier_count} suppliers")
+        print(f"📊 Returning {len(ittid_list)} ITTIDs (offset: {offset}, limit: {limit})")
 
     except Exception as e:
         raise HTTPException(
@@ -2257,7 +2283,7 @@ def get_all_ittid(
         )
 
     # ---------------------------------------------------------
-    # 4️⃣ SMART CACHING LOGIC
+    # 4️⃣ SMART CACHING LOGIC (OPTIONAL - FOR FULL DATASET)
     # ---------------------------------------------------------
     now = datetime.utcnow()
     today_key = now.strftime("%d%m%Y")  # e.g., 16112025
@@ -2272,61 +2298,95 @@ def get_all_ittid(
     file_from_cache = False
     latest_file_path = None
 
-    # Scan existing JSONs
-    existing_files = [
-        f for f in os.listdir(user_dir) if f.endswith("_itt_mapping_id.json")
-    ]
+    # Only cache if this is the first page (offset=0) to avoid duplicate caching
+    if offset == 0:
+        # Scan existing JSONs
+        existing_files = [
+            f for f in os.listdir(user_dir) if f.endswith("_itt_mapping_id.json")
+        ]
 
-    if existing_files:
-        latest_file = sorted(existing_files, reverse=True)[0]
-        file_date_str = latest_file[:8]  # DDMMYYYY
+        if existing_files:
+            latest_file = sorted(existing_files, reverse=True)[0]
+            file_date_str = latest_file[:8]  # DDMMYYYY
 
-        # Compare file date vs today's date
-        if file_date_str == today_key:
-            # 🎉 Cached
-            latest_file_path = os.path.join(user_dir, latest_file)
-            with open(latest_file_path, "r", encoding="utf-8") as f:
-                cached = json.load(f)
+            # Compare file date vs today's date
+            if file_date_str == today_key:
+                # 🎉 Cached - but only use if we're fetching all data
+                # For pagination, we'll still return the paginated result
+                latest_file_path = os.path.join(user_dir, latest_file)
+                with open(latest_file_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
 
-            ittid_list = cached.get("ittid_list", ittid_list)
-            supplier_count = cached.get("total_supplier", supplier_count)
-            file_from_cache = True
+                # Update counts from cache if available
+                supplier_count = cached.get("total_supplier", supplier_count)
+                file_from_cache = True
 
-            print(f"📂 Using cache → {latest_file}")
+                print(f"📂 Cache available → {latest_file}")
 
-        else:
-            # ❗Older → must update
-            latest_file_path = None
+        # If no valid cache and this is first page, write fresh file in background
+        if not file_from_cache and offset == 0:
+            # Use asyncio to write cache file without blocking response
+            async def write_cache_file():
+                try:
+                    timestamp = f"{today_key}{now.second:02d}"
+                    filename = f"{timestamp}_itt_mapping_id.json"
+                    cache_file_path = os.path.join(user_dir, filename)
 
-    # If no valid cache, write fresh file
-    if not file_from_cache:
-        timestamp = f"{today_key}{now.second:02d}"
-        filename = f"{timestamp}_itt_mapping_id.json"
-        latest_file_path = os.path.join(user_dir, filename)
+                    # For cache, we need to fetch all data
+                    if allowed_providers:
+                        all_records = (
+                            db.query(ProviderMapping.ittid)
+                            .filter(ProviderMapping.provider_name.in_(allowed_providers))
+                            .distinct()
+                            .all()
+                        )
+                    else:
+                        all_records = db.query(Hotel.ittid).distinct().all()
 
-        new_payload = {
-            "total_supplier": supplier_count,
-            "total_ittid": len(ittid_list),
-            "ittid_list": ittid_list,
-        }
+                    all_ittid_list = [row[0] for row in all_records if row[0]]
 
-        with open(latest_file_path, "w", encoding="utf-8") as f:
-            json.dump(new_payload, f, indent=4)
+                    new_payload = {
+                        "total_supplier": supplier_count,
+                        "total_ittid": len(all_ittid_list),
+                        "ittid_list": all_ittid_list,
+                    }
 
-        file_saved = True
-        print(f"💾 New file saved → {filename}")
+                    with open(cache_file_path, "w", encoding="utf-8") as f:
+                        json.dump(new_payload, f, indent=4)
+
+                    print(f"💾 Cache file saved in background → {filename}")
+                    return cache_file_path
+                except Exception as e:
+                    print(f"❌ Error writing cache file: {str(e)}")
+                    return None
+
+            # Start background task for caching
+            cache_task = asyncio.create_task(write_cache_file())
 
     # ---------------------------------------------------------
-    # 5️⃣ FINAL RESPONSE
+    # 5️⃣ FINAL RESPONSE WITH PAGINATION INFO
     # ---------------------------------------------------------
     response_path = (
         latest_file_path.replace(base_dir + os.sep, "") if latest_file_path else None
     )
 
+    # Calculate pagination info
+    has_more = offset + len(ittid_list) < total_count
+    next_offset = offset + limit if has_more else None
+
     return {
         "total_supplier": supplier_count,
-        "total_ittid": len(ittid_list),
+        "total_ittid": total_count,
+        "returned_ittid_count": len(ittid_list),
         "ittid_list": ittid_list,
+        "pagination": {
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "total_pages": (total_count + limit - 1) // limit if limit > 0 else 0,
+            "current_page": (offset // limit) + 1 if limit > 0 else 1,
+        },
         "file_saved": file_saved,
         "file_from_cache": file_from_cache,
         "file_path": response_path,

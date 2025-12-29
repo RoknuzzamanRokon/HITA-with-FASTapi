@@ -2,6 +2,7 @@
     "count_log_endpoints": [
         "/v1.0/user/all-general-user",
         "/v1.0/content/get-hotel-with-ittid",
+        "/v1.0/content/get-update-provider-info",
         "/v1.0/content/get-basic-info-follow-countryCode",
         "/v1.0/content/get-full-hotel-with-itt-mapping-id",
         "/v1.0/content/get-hotel-data-with-provider-name-and-id",
@@ -11,6 +12,7 @@
         "/v1.0/mapping/get-all-supplier-mapping-data",
         "/v1.0/mapping/get-mapping-hotel-with-ittid",
         "/v1.0/export/export-all-hotels"
+        
     ],
     "cannot_count_log_endpoints": [
         "/v1.0/auth/check-me",
