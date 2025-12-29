@@ -47,18 +47,46 @@ from routes.analytics import (
     dashboard_router as analytics_dashboard_router,
 )
 from routes.ml_mapping import router as ml_mapping_router
+from routes.api_logging_management import router as api_logging_management_router
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from security.middleware import create_security_middleware_stack
 from middleware.ip_middleware import IPAddressMiddleware
 from middleware.api_logging import create_api_logging_middleware
+from middleware.auth_middleware import AuthenticationMiddleware
 
 
 app = FastAPI()
-create_security_middleware_stack(app)
 
-# Add API logging middleware for comprehensive user activity tracking
+# Add CORS middleware first (runs last)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "*",  # Allow all origins (remove in production for better security)
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add trusted host middleware
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"],  # Configure this based on your deployment
+)
+
+# Add IP address middleware to properly extract client IPs
+app.add_middleware(
+    IPAddressMiddleware,
+    trusted_proxies=["127.0.0.1", "::1", "192.168.0.0/16", "10.0.0.0/8"],
+)
+
+# Add API logging middleware BEFORE security middleware
+# This ensures security middleware runs first, then logging can access request.state.user
 app.add_middleware(
     create_api_logging_middleware(
         enhanced=True,  # Use enhanced logging with detailed metrics
@@ -77,30 +105,13 @@ app.add_middleware(
     )
 )
 
-# Add IP address middleware to properly extract client IPs
-app.add_middleware(
-    IPAddressMiddleware,
-    trusted_proxies=["127.0.0.1", "::1", "192.168.0.0/16", "10.0.0.0/8"],
-)
+# Add authentication middleware BEFORE API logging
+# This extracts user from JWT token and sets request.state.user
+app.add_middleware(AuthenticationMiddleware)
 
-# Add trusted host middleware to handle proxy headers
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["*"],  # Configure this based on your deployment
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "*",  # Allow all origins (remove in production for better security)
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Add security middleware LAST (so it runs FIRST)
+# This ensures authentication happens before logging tries to read request.state.user
+create_security_middleware_stack(app)
 
 
 # ——————— Initialize Redis cache and Export Worker on startup ———————
@@ -203,6 +214,7 @@ app.include_router(db_health_router)
 app.include_router(analytics_router)
 app.include_router(analytics_dashboard_router)
 app.include_router(ml_mapping_router)
+app.include_router(api_logging_management_router)
 
 
 # Compute absolute path to the directory containing this file

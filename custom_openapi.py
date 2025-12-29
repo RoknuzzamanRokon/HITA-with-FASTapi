@@ -7,7 +7,7 @@ def custom_openapi(app: FastAPI):
     # Force regeneration of schema for development (comment out for production)
     # if app.openapi_schema:
     #     return app.openapi_schema
-    
+
     # Generate base schema
     openapi_schema = get_openapi(
         title=app.title,
@@ -15,7 +15,7 @@ def custom_openapi(app: FastAPI):
         description=app.description,
         routes=app.routes,
     )
-    
+
     # Manually add tags metadata - Define it here to ensure it's included
     tags_metadata = [
         {
@@ -365,7 +365,7 @@ This API module provides complete hotel data management, supplier integration, a
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/input_hotel_all_details` | POST | Create complete hotel records with all related data |
-| `/add_provider_all_details_with_ittid` | POST | Add provider mappings to existing hotels |
+| `/add-provider-all-details-with-ittid` | POST | Add provider mappings to existing hotels |
 | `/get-supplier-info` | GET | Retrieve supplier information and hotel counts |
 | `/check-my-active-suppliers-info` | GET | Get user's accessible supplier list with analytics |
 
@@ -961,10 +961,10 @@ Logs are retained for 90 days for compliance and audit purposes.
             """,
         },
     ]
-    
+
     # Add tags to the schema
     openapi_schema["tags"] = tags_metadata
-    
+
     # Also try to get tags from app if they exist and merge them
     if hasattr(app, 'tags_metadata') and app.tags_metadata:
         # Merge app tags with our defined tags, avoiding duplicates
@@ -980,20 +980,20 @@ Logs are retained for 90 days for compliance and audit purposes.
         "backgroundColor": "#FFFFFF",
         "href": "https://example.com"
     }
-    
+
     # Add contact information
     openapi_schema["info"]["contact"] = {
         "name": "API Support",
         "email": "support@hotelapi.com",
         "url": "https://hotelapi.com/support"
     }
-    
+
     # Add license information
     openapi_schema["info"]["license"] = {
         "name": "MIT License",
         "url": "https://opensource.org/licenses/MIT"
     }
-    
+
     # Add server information
     openapi_schema["servers"] = [
         {
@@ -1005,29 +1005,29 @@ Logs are retained for 90 days for compliance and audit purposes.
             "description": "Production server"
         }
     ]
-    
+
     # Add security schemes
     if "components" not in openapi_schema:
         openapi_schema["components"] = {}
     if "securitySchemes" not in openapi_schema["components"]:
         openapi_schema["components"]["securitySchemes"] = {}
-    
+
     openapi_schema["components"]["securitySchemes"]["BearerAuth"] = {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "JWT token obtained from the authentication endpoint"
     }
-    
+
     # Add global security requirement
     openapi_schema["security"] = [{"BearerAuth": []}]
-    
+
     # Enhance user management endpoint documentation
     enhance_user_endpoints_documentation(openapi_schema)
-    
+
     # Add common response schemas
     add_common_response_schemas(openapi_schema)
-    
+
     # Add example responses
     add_example_responses(openapi_schema)
 

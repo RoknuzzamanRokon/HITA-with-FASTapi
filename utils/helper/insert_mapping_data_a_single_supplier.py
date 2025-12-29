@@ -16,7 +16,7 @@ from contextlib import contextmanager
 load_dotenv()
 
 API_BASE = "http://127.0.0.1:8028/v1.0"
-ENDPOINT = f"{API_BASE}/hotels/add_provider_all_details_with_ittid/"
+ENDPOINT = f"{API_BASE}/hotels/add-provider-all-details-with-ittid/"
 
 # Global engine instance
 _engine = None
@@ -104,7 +104,7 @@ PROVIDERS = [
     "adivahahotel", "grnconnect", "juniperhotel", "mikihotel",
     "paximumhotel", "adonishotel", "w2mhotel", "oryxhotel",
     "dotw", "hotelston", "letsflyhotel", "illusionshotel",
-    "innstanttravel", "roomerang", "kiwihotel"
+    "innstanttravel", "roomerang", "kiwihotel", "rnrhotel"
 ]
 
 SUFFIX_MAP = {
@@ -160,7 +160,7 @@ def build_payload(row, provider, suffix):
 from sqlalchemy import desc
 
 
-def fetch_all_mappings(offset=0, limit=10000):
+def fetch_all_mappings(offset=0, limit=200):
     engine = get_database_engine()
     meta = MetaData()
     table = Table("global_hotel_mapping_copy_2", meta, autoload_with=engine)
@@ -168,8 +168,7 @@ def fetch_all_mappings(offset=0, limit=10000):
     with get_db_session() as session:
         stmt = (
             select(table)
-            .where(table.c.mapStatus != "upd1")
-            .where(table.c.mapStatus != "new id")
+            .where(table.c.mapStatus == "rnrU1")
             .order_by(desc(table.c.ittid))
             .offset(offset)
             .limit(limit)
@@ -202,7 +201,7 @@ signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
 
-def update_map_status(ittid, status="upd1"):
+def update_map_status(ittid, status="rnrU1"):
     """Update mapStatus for the given ittid"""
     engine = get_database_engine()
     meta = MetaData()
@@ -222,7 +221,7 @@ def post_mapping(session, headers, payload):
     try:
         resp = session.post(ENDPOINT, headers=headers, data=json.dumps(payload))
         resp.raise_for_status()
-        update_map_status(payload["ittid"], "upd1")
+        update_map_status(payload["ittid"], "rnrU1")
         return payload
 
     except requests.exceptions.HTTPError as e:
@@ -231,7 +230,7 @@ def post_mapping(session, headers, payload):
             new_headers = get_headers()
             resp = session.post(ENDPOINT, headers=new_headers, data=json.dumps(payload))
             resp.raise_for_status()
-            update_map_status(payload["ittid"], "upd1")
+            update_map_status(payload["ittid"], "rnrU1")
             return payload
         elif e.response is not None and e.response.status_code == 404:
             # Handle 404 - Hotel not found
@@ -436,6 +435,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

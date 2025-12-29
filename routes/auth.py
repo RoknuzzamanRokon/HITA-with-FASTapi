@@ -819,7 +819,7 @@ async def regenerate_api_key(
             detail="Access denied. Only admin and super admin users can regenerate API keys.",
         )
 
-    new_api_key = generate - api - key(db, current_user.id)
+    new_api_key = generate_api_key(db, current_user.id)
     return {"message": "API key regenerated successfully", "api_key": new_api_key}
 
 

@@ -1312,14 +1312,14 @@
 									}
 								},
 								"url": {
-									"raw": "{{host}}/v1.0/hotels/add_provider_all_details_with_ittid/",
+									"raw": "{{host}}/v1.0/hotels/add-provider-all-details-with-ittid/",
 									"host": [
 										"{{host}}"
 									],
 									"path": [
 										"v1.0",
 										"hotels",
-										"add_provider_all_details_with_ittid",
+										"add-provider-all-details-with-ittid",
 										""
 									]
 								}

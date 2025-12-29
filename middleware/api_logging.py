@@ -3,6 +3,8 @@ API Logging Middleware for comprehensive user activity tracking
 
 This middleware automatically logs all API requests to track user activity,
 endpoint usage, and system interactions for the user activity dashboard.
+
+Uses APILoggingConfig to determine which endpoints should be counted in usage logs.
 """
 
 import time
@@ -15,6 +17,7 @@ from starlette.responses import Response as StarletteResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from utils.api_logging_config import api_logging_config
 import models
 
 
@@ -23,18 +26,33 @@ class APILoggingMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, exclude_paths: Optional[list] = None):
         super().__init__(app)
+        # Keep basic exclude paths for system endpoints
         self.exclude_paths = exclude_paths or [
             "/docs",
             "/redoc",
             "/openapi.json",
             "/favicon.ico",
-            "/health",
-            "/metrics",
+            "/static",
         ]
 
     async def dispatch(self, request: Request, call_next):
-        # Skip logging for excluded paths
+        # Skip logging for basic system paths
         if any(request.url.path.startswith(path) for path in self.exclude_paths):
+            return await call_next(request)
+
+        # Check if this endpoint should be counted using our configuration
+        endpoint_path = request.url.path
+        should_count = api_logging_config.should_count_endpoint(endpoint_path)
+        should_exclude = api_logging_config.should_exclude_endpoint(endpoint_path)
+
+        # DEBUG: Print middleware execution with config info
+        print(
+            f"🔍 API LOGGING: {request.method} {endpoint_path} | Count: {should_count} | Exclude: {should_exclude}"
+        )
+
+        # If endpoint is explicitly excluded, skip detailed logging
+        if should_exclude:
+            print(f"⏭️ SKIPPING LOG: {endpoint_path} is in exclude list")
             return await call_next(request)
 
         # Record start time
@@ -48,12 +66,19 @@ class APILoggingMiddleware(BaseHTTPMiddleware):
         if hasattr(request.state, "user") and request.state.user:
             user_id = request.state.user.id
             user_email = request.state.user.email
+            print(f"👤 API LOGGING: Found user {user_id} ({user_email})")
+        else:
+            print(
+                f"❌ API LOGGING: No user found in request.state for {request.url.path}"
+            )
 
         # Process the request
         response = await call_next(request)
 
         # Calculate processing time
         process_time = time.time() - start_time
+
+        print(f"📝 API LOGGING: Logging request for user {user_id}")
 
         # Log the API access
         await self._log_api_access(
@@ -64,6 +89,7 @@ class APILoggingMiddleware(BaseHTTPMiddleware):
             process_time=process_time,
         )
 
+        print(f"✅ API LOGGING: Completed logging for {request.url.path}")
         return response
 
     async def _log_api_access(
@@ -77,6 +103,15 @@ class APILoggingMiddleware(BaseHTTPMiddleware):
         """Log API access to the database"""
 
         try:
+            # Check if this endpoint should be counted
+            endpoint_path = request.url.path
+            should_count = api_logging_config.should_count_endpoint(endpoint_path)
+
+            # If endpoint should not be counted, skip logging
+            if not should_count:
+                print(f"⏭️ SKIP LOGGING: {endpoint_path} not in count list")
+                return
+
             # Get database session
             db_gen = get_db()
             db: Session = next(db_gen)
@@ -104,6 +139,7 @@ class APILoggingMiddleware(BaseHTTPMiddleware):
                     "query_params": query_params,
                     "user_email": user_email,
                     "timestamp": datetime.utcnow().isoformat(),
+                    "counted_in_usage": True,  # Mark that this was counted
                 }
 
                 # Add request body size if available
@@ -257,11 +293,18 @@ class EnhancedAPILoggingMiddleware(BaseHTTPMiddleware):
 
         # Extract user information if available
         if hasattr(request.state, "user") and request.state.user:
+            # Handle role - it might be an enum or already a string
+            user_role = request.state.user.role
+            if hasattr(user_role, "value"):
+                user_role_str = user_role.value
+            else:
+                user_role_str = str(user_role)
+
             info.update(
                 {
                     "user_id": request.state.user.id,
                     "user_email": request.state.user.email,
-                    "user_role": request.state.user.role.value,
+                    "user_role": user_role_str,
                 }
             )
 
