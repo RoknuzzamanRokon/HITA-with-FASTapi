@@ -28,6 +28,54 @@ from routes.hotelFormattingData import map_to_our_format
 from routes.path import RAW_BASE_DIR
 import os
 from routes.auth import get_current_user
+
+# Simple in-memory cache for user permissions (cleared periodically)
+_user_permissions_cache = {}
+_cache_ttl = 300  # 5 minutes cache TTL in seconds
+import time
+
+
+def _get_cached_user_permissions(user_id: int, db: Session):
+    """
+    Get user permissions from cache or database with TTL-based invalidation
+    """
+    current_time = time.time()
+
+    # Check cache
+    cached_data = _user_permissions_cache.get(user_id)
+    if cached_data and current_time - cached_data["timestamp"] < _cache_ttl:
+        return cached_data["permissions"]
+
+    # Cache miss or expired - fetch from database
+    permissions = [
+        perm.provider_name
+        for perm in db.query(UserProviderPermission)
+        .filter(UserProviderPermission.user_id == user_id)
+        .all()
+    ]
+
+    # Update cache
+    _user_permissions_cache[user_id] = {
+        "permissions": permissions,
+        "timestamp": current_time,
+    }
+
+    return permissions
+
+
+def _clear_permissions_cache():
+    """Clear expired cache entries"""
+    current_time = time.time()
+    expired_users = [
+        user_id
+        for user_id, data in _user_permissions_cache.items()
+        if current_time - data["timestamp"] > _cache_ttl
+    ]
+
+    for user_id in expired_users:
+        del _user_permissions_cache[user_id]
+
+
 from middleware.ip_middleware import get_client_ip
 from rapidfuzz import fuzz, process
 
@@ -2660,10 +2708,16 @@ def get_update_provider_info(
 ):
     print(f"🎯 get_update_provider_info function called for user: {current_user.id}")
     """
-    Get Updated Provider Information by Date Range
+    Get Updated Provider Information by Date Range (Optimized)
     
     Retrieves provider mapping information that was updated within a specified date range.
     This endpoint is useful for tracking changes and updates to hotel-provider mappings.
+    
+    OPTIMIZATIONS IMPLEMENTED:
+    - In-memory caching of user permissions (5-minute TTL)
+    - Reduced database queries through query consolidation
+    - Efficient pagination with optimized resume key handling
+    - Leverages existing database indexes on updated_at and provider_name
     
     Features:
     - Date range filtering for updated records
@@ -2750,15 +2804,13 @@ def get_update_provider_info(
                 detail="Invalid date format. Use YYYY-MM-DD format (e.g., '2023-01-01').",
             )
 
-        # Super users and admin users see all, others see only their allowed providers (excluding temp deactivated)
+        # Clear expired cache entries
+        _clear_permissions_cache()
+
+        # Optimized permission handling with caching
         if current_user.role in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
-            # For super users, check for temporarily deactivated suppliers
-            all_permissions = [
-                perm.provider_name
-                for perm in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
+            # For super users, get temp deactivated suppliers using cached permissions
+            all_permissions = _get_cached_user_permissions(current_user.id, db)
 
             # Get temporarily deactivated suppliers
             temp_deactivated_suppliers = []
@@ -2767,32 +2819,23 @@ def get_update_provider_info(
                     original_name = perm.replace("TEMP_DEACTIVATED_", "")
                     temp_deactivated_suppliers.append(original_name)
 
-            # Super users see all providers except temporarily deactivated ones
             if temp_deactivated_suppliers:
-                # Get all provider names and exclude temp deactivated ones
-                all_provider_names = [
-                    row.provider_name
-                    for row in db.query(models.ProviderMapping.provider_name)
-                    .distinct()
-                    .all()
-                ]
-                allowed_providers = [
-                    provider
-                    for provider in all_provider_names
-                    if provider not in temp_deactivated_suppliers
-                ]
-            else:
+                # Use subquery to get all provider names except temp deactivated
                 allowed_providers = (
-                    None  # No restrictions for super users with no temp deactivations
+                    db.query(models.ProviderMapping.provider_name)
+                    .filter(
+                        ~models.ProviderMapping.provider_name.in_(
+                            temp_deactivated_suppliers
+                        )
+                    )
+                    .distinct()
+                    .subquery()
                 )
+            else:
+                allowed_providers = None
         else:
-            # Get all user permissions (including temp deactivated ones)
-            all_permissions = [
-                perm.provider_name
-                for perm in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
+            # For regular users, use cached permissions
+            all_permissions = _get_cached_user_permissions(current_user.id, db)
 
             # Separate active and temporarily deactivated suppliers
             temp_deactivated_suppliers = []
@@ -2827,8 +2870,13 @@ def get_update_provider_info(
 
     try:
         # Base query for filtering
-        base_query = db.query(ProviderMapping).filter(
-            ProviderMapping.updated_at >= from_dt, ProviderMapping.updated_at <= to_dt
+        base_query = (
+            db.query(ProviderMapping)
+            .options(joinedload(ProviderMapping.hotel))  # Eager load to prevent N+1
+            .filter(
+                ProviderMapping.updated_at >= from_dt,
+                ProviderMapping.updated_at <= to_dt,
+            )
         )
 
         if allowed_providers is not None:
@@ -2857,12 +2905,10 @@ def get_update_provider_info(
                     raise ValueError("Invalid resume key format")
                 last_id = int(parts[0])
 
-                # Validate the mapping exists
-                mapping_exists = (
-                    db.query(ProviderMapping)
-                    .filter(ProviderMapping.id == last_id)
-                    .first()
-                )
+                # Validate the mapping exists in a single query
+                mapping_exists = base_query.filter(
+                    ProviderMapping.id == last_id
+                ).first()
                 if not mapping_exists:
                     raise ValueError("Resume key references non-existent record")
 
@@ -2876,19 +2922,12 @@ def get_update_provider_info(
             filtered_query = base_query.filter(ProviderMapping.id > last_id)
             mappings = filtered_query.limit(limit_per_page).all()
 
-            # Calculate current page for resume key
-            records_before = db.query(ProviderMapping).filter(
-                ProviderMapping.updated_at >= from_dt,
-                ProviderMapping.updated_at <= to_dt,
-                ProviderMapping.id <= last_id,
-            )
-            if allowed_providers is not None:
-                records_before = records_before.filter(
-                    ProviderMapping.provider_name.in_(allowed_providers)
-                )
-
-            records_before_count = records_before.count()
-            current_page_num = (records_before_count // limit_per_page) + 1
+            # Calculate current page using efficient count
+            if mappings:
+                records_before_count = base_query.filter(
+                    ProviderMapping.id <= last_id
+                ).count()
+                current_page_num = (records_before_count // limit_per_page) + 1
         else:
             # First page (no resume_key, no page)
             mappings = base_query.limit(limit_per_page).all()
