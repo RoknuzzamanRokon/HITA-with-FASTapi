@@ -16,7 +16,7 @@ from contextlib import contextmanager
 load_dotenv()
 
 API_BASE = "http://127.0.0.1:8028/v1.0"
-ENDPOINT = f"{API_BASE}/hotels/add-provider-all-details-with-ittid/"
+ENDPOINT = f"{API_BASE}/hotels/add_provider_all_details_with_ittid/"
 
 # Global engine instance
 _engine = None

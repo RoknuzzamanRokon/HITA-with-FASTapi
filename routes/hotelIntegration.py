@@ -35,13 +35,14 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+
 def log_hotel_activity(
     db: Session,
     user: User,
     request: Request,
     activity_type: str,
     details: Dict[str, Any],
-    security_level: SecurityLevel = SecurityLevel.LOW
+    security_level: SecurityLevel = SecurityLevel.LOW,
 ):
     """Helper function to log hotel-related activities"""
     try:
@@ -54,15 +55,14 @@ def log_hotel_activity(
                 "module": "hotel_integration",
                 "user_role": user.role.value,
                 "user_email": user.email,
-                "activity_category": activity_type
+                "activity_category": activity_type,
             },
             request=request,
             security_level=security_level,
-            success=True
+            success=True,
         )
     except Exception as e:
         logger.error(f"Failed to log hotel activity: {e}")
-
 
 
 # Create hotel
@@ -299,7 +299,7 @@ def create_hotel_with_details(
 
 # Create provider mapping
 @router.post(
-    "/add-provider-all-details-with-ittid",
+    "/add_provider_all_details_with_ittid",
     status_code=status.HTTP_201_CREATED,
 )
 def add_provider(

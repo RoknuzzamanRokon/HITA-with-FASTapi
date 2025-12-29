@@ -365,7 +365,7 @@ This API module provides complete hotel data management, supplier integration, a
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/input_hotel_all_details` | POST | Create complete hotel records with all related data |
-| `/add-provider-all-details-with-ittid` | POST | Add provider mappings to existing hotels |
+| `/add_provider_all_details_with_ittid` | POST | Add provider mappings to existing hotels |
 | `/get-supplier-info` | GET | Retrieve supplier information and hotel counts |
 | `/check-my-active-suppliers-info` | GET | Get user's accessible supplier list with analytics |
 
@@ -966,7 +966,7 @@ Logs are retained for 90 days for compliance and audit purposes.
     openapi_schema["tags"] = tags_metadata
 
     # Also try to get tags from app if they exist and merge them
-    if hasattr(app, 'tags_metadata') and app.tags_metadata:
+    if hasattr(app, "tags_metadata") and app.tags_metadata:
         # Merge app tags with our defined tags, avoiding duplicates
         existing_tag_names = {tag["name"] for tag in tags_metadata}
         for app_tag in app.tags_metadata:
@@ -978,32 +978,26 @@ Logs are retained for 90 days for compliance and audit purposes.
         "url": "/static/images/ittapilogo_1.png",
         "altText": "Hotel API Logo",
         "backgroundColor": "#FFFFFF",
-        "href": "https://example.com"
+        "href": "https://example.com",
     }
 
     # Add contact information
     openapi_schema["info"]["contact"] = {
         "name": "API Support",
         "email": "support@hotelapi.com",
-        "url": "https://hotelapi.com/support"
+        "url": "https://hotelapi.com/support",
     }
 
     # Add license information
     openapi_schema["info"]["license"] = {
         "name": "MIT License",
-        "url": "https://opensource.org/licenses/MIT"
+        "url": "https://opensource.org/licenses/MIT",
     }
 
     # Add server information
     openapi_schema["servers"] = [
-        {
-            "url": "http://localhost:8000",
-            "description": "Development server"
-        },
-        {
-            "url": "https://api.hotelapi.com",
-            "description": "Production server"
-        }
+        {"url": "http://localhost:8000", "description": "Development server"},
+        {"url": "https://api.hotelapi.com", "description": "Production server"},
     ]
 
     # Add security schemes
@@ -1016,7 +1010,7 @@ Logs are retained for 90 days for compliance and audit purposes.
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT token obtained from the authentication endpoint"
+        "description": "JWT token obtained from the authentication endpoint",
     }
 
     # Add global security requirement
@@ -1038,11 +1032,13 @@ Logs are retained for 90 days for compliance and audit purposes.
 def enhance_user_endpoints_documentation(openapi_schema):
     """Enhance documentation for user management endpoints"""
     paths = openapi_schema.get("paths", {})
-    
+
     # Enhanced documentation for /v1.0/user/check-me endpoint
     if "/v1.0/user/check-me" in paths:
         paths["/v1.0/user/check-me"]["get"]["summary"] = "Get Current User Information"
-        paths["/v1.0/user/check-me"]["get"]["description"] = """
+        paths["/v1.0/user/check-me"]["get"][
+            "description"
+        ] = """
         Retrieve detailed information about the currently authenticated user.
         
         **Returns:**
@@ -1057,11 +1053,15 @@ def enhance_user_endpoints_documentation(openapi_schema):
         - Point balance checking
         """
         paths["/v1.0/user/check-me"]["get"]["tags"] = ["User Profile"]
-    
+
     # Enhanced documentation for /v1.0/user/check/all endpoint
     if "/v1.0/user/check/all" in paths:
-        paths["/v1.0/user/check/all"]["get"]["summary"] = "List All Users with Enhanced Features"
-        paths["/v1.0/user/check/all"]["get"]["description"] = """
+        paths["/v1.0/user/check/all"]["get"][
+            "summary"
+        ] = "List All Users with Enhanced Features"
+        paths["/v1.0/user/check/all"]["get"][
+            "description"
+        ] = """
         Retrieve a comprehensive list of users with advanced filtering, searching, and pagination capabilities.
         
         **Enhanced Features:**
@@ -1086,11 +1086,15 @@ def enhance_user_endpoints_documentation(openapi_schema):
         - Caching for frequently accessed data
         """
         paths["/v1.0/user/check/all"]["get"]["tags"] = ["User Management"]
-    
+
     # Enhanced documentation for point checking endpoint
     if "/v1.0/user/points-check" in paths:
-        paths["/v1.0/user/points-check"]["get"]["summary"] = "Get Detailed Point Information"
-        paths["/v1.0/user/points-check"]["get"]["description"] = """
+        paths["/v1.0/user/points-check"]["get"][
+            "summary"
+        ] = "Get Detailed Point Information"
+        paths["/v1.0/user/points-check"]["get"][
+            "description"
+        ] = """
         Retrieve comprehensive point information for the current user including transaction history.
         
         **Returns:**
@@ -1110,18 +1114,22 @@ def enhance_user_endpoints_documentation(openapi_schema):
         - Usage analytics and reporting
         """
         paths["/v1.0/user/points-check"]["get"]["tags"] = ["Point Management"]
-    
+
     # Enhanced documentation for analytics endpoints
     enhance_analytics_endpoints_documentation(paths)
 
 
 def enhance_analytics_endpoints_documentation(paths):
     """Enhance documentation for analytics endpoints"""
-    
+
     # Analytics test health endpoint
     if "/v1.0/analytics/test/health" in paths:
-        paths["/v1.0/analytics/test/health"]["get"]["summary"] = "Analytics Router Health Check"
-        paths["/v1.0/analytics/test/health"]["get"]["description"] = """
+        paths["/v1.0/analytics/test/health"]["get"][
+            "summary"
+        ] = "Analytics Router Health Check"
+        paths["/v1.0/analytics/test/health"]["get"][
+            "description"
+        ] = """
         Simple test endpoint to verify analytics router is working and test IP extraction.
         
         **Returns:**
@@ -1135,11 +1143,13 @@ def enhance_analytics_endpoints_documentation(paths):
         - Router connectivity verification
         """
         paths["/v1.0/analytics/test/health"]["get"]["tags"] = ["Analytics Health"]
-    
+
     # Dashboard analytics endpoint
     if "/v1.0/analytics/dashboard" in paths:
         paths["/v1.0/analytics/dashboard"]["get"]["summary"] = "Get Dashboard Analytics"
-        paths["/v1.0/analytics/dashboard"]["get"]["description"] = """
+        paths["/v1.0/analytics/dashboard"]["get"][
+            "description"
+        ] = """
         Get comprehensive analytics for dashboard display including user statistics, activity trends, and point distribution.
         
         **Returns:**
@@ -1160,11 +1170,13 @@ def enhance_analytics_endpoints_documentation(paths):
         - GENERAL_USER: Can view their own analytics only
         """
         paths["/v1.0/analytics/dashboard"]["get"]["tags"] = ["Dashboard Analytics"]
-    
+
     # User points analytics endpoint
     if "/v1.0/analytics/user_points" in paths:
         paths["/v1.0/analytics/user_points"]["get"]["summary"] = "Get Point Analytics"
-        paths["/v1.0/analytics/user_points"]["get"]["description"] = """
+        paths["/v1.0/analytics/user_points"]["get"][
+            "description"
+        ] = """
         Get detailed point analytics and distribution metrics for administrative users.
         
         **Returns:**
@@ -1184,11 +1196,15 @@ def enhance_analytics_endpoints_documentation(paths):
         - ADMIN_USER: Can view analytics for users they created
         """
         paths["/v1.0/analytics/user_points"]["get"]["tags"] = ["Point Analytics"]
-    
+
     # User activity analytics endpoint
     if "/v1.0/analytics/user_activity" in paths:
-        paths["/v1.0/analytics/user_activity"]["get"]["summary"] = "Get User Activity Analytics"
-        paths["/v1.0/analytics/user_activity"]["get"]["description"] = """
+        paths["/v1.0/analytics/user_activity"]["get"][
+            "summary"
+        ] = "Get User Activity Analytics"
+        paths["/v1.0/analytics/user_activity"]["get"][
+            "description"
+        ] = """
         Get comprehensive user activity analytics for a specified date range with detailed user behavior insights.
         
         **Parameters:**
@@ -1212,12 +1228,18 @@ def enhance_analytics_endpoints_documentation(paths):
         - SUPER_USER: Can view all user activity
         - ADMIN_USER: Can view activity for users they created
         """
-        paths["/v1.0/analytics/user_activity"]["get"]["tags"] = ["User Activity Analytics"]
-    
+        paths["/v1.0/analytics/user_activity"]["get"]["tags"] = [
+            "User Activity Analytics"
+        ]
+
     # User engagement analytics endpoint
     if "/v1.0/analytics/user_engagement" in paths:
-        paths["/v1.0/analytics/user_engagement"]["get"]["summary"] = "Get User Engagement Metrics"
-        paths["/v1.0/analytics/user_engagement"]["get"]["description"] = """
+        paths["/v1.0/analytics/user_engagement"]["get"][
+            "summary"
+        ] = "Get User Engagement Metrics"
+        paths["/v1.0/analytics/user_engagement"]["get"][
+            "description"
+        ] = """
         Get comprehensive user engagement metrics including DAU/WAU/MAU, feature adoption, and user segmentation.
         
         **Engagement Metrics:**
@@ -1243,12 +1265,18 @@ def enhance_analytics_endpoints_documentation(paths):
         - SUPER_USER: Can view all engagement metrics
         - ADMIN_USER: Can view metrics for users they created
         """
-        paths["/v1.0/analytics/user_engagement"]["get"]["tags"] = ["User Engagement Analytics"]
-    
+        paths["/v1.0/analytics/user_engagement"]["get"]["tags"] = [
+            "User Engagement Analytics"
+        ]
+
     # System health analytics endpoint
     if "/v1.0/analytics/system_health" in paths:
-        paths["/v1.0/analytics/system_health"]["get"]["summary"] = "Get System Health Metrics"
-        paths["/v1.0/analytics/system_health"]["get"]["description"] = """
+        paths["/v1.0/analytics/system_health"]["get"][
+            "summary"
+        ] = "Get System Health Metrics"
+        paths["/v1.0/analytics/system_health"]["get"][
+            "description"
+        ] = """
         Get comprehensive system health metrics including performance indicators, API statistics, and database health.
         
         **System Status:**
@@ -1278,12 +1306,18 @@ def enhance_analytics_endpoints_documentation(paths):
         - SUPER_USER: Can view all system health metrics
         - ADMIN_USER: Can view system health metrics
         """
-        paths["/v1.0/analytics/system_health"]["get"]["tags"] = ["System Health Analytics"]
-    
+        paths["/v1.0/analytics/system_health"]["get"]["tags"] = [
+            "System Health Analytics"
+        ]
+
     # Dashboard user activity endpoint
     if "/v1.0/dashboard/user_activity" in paths:
-        paths["/v1.0/dashboard/user_activity"]["get"]["summary"] = "Get Dashboard User Activity"
-        paths["/v1.0/dashboard/user_activity"]["get"]["description"] = """
+        paths["/v1.0/dashboard/user_activity"]["get"][
+            "summary"
+        ] = "Get Dashboard User Activity"
+        paths["/v1.0/dashboard/user_activity"]["get"][
+            "description"
+        ] = """
         Get user activity analytics specifically formatted for dashboard display over a configurable time period.
         
         **Parameters:**
@@ -1320,7 +1354,7 @@ def add_common_response_schemas(openapi_schema):
     """Add common response schemas to the OpenAPI specification"""
     components = openapi_schema.setdefault("components", {})
     schemas = components.setdefault("schemas", {})
-    
+
     # API Error Response Schema
     schemas["APIError"] = {
         "type": "object",
@@ -1328,30 +1362,30 @@ def add_common_response_schemas(openapi_schema):
             "error": {
                 "type": "boolean",
                 "default": True,
-                "description": "Indicates that an error occurred"
+                "description": "Indicates that an error occurred",
             },
             "message": {
                 "type": "string",
-                "description": "Human-readable error message"
+                "description": "Human-readable error message",
             },
             "details": {
                 "type": "object",
                 "description": "Additional error details",
-                "additionalProperties": True
+                "additionalProperties": True,
             },
             "error_code": {
                 "type": "string",
-                "description": "Machine-readable error code"
+                "description": "Machine-readable error code",
             },
             "timestamp": {
                 "type": "string",
                 "format": "date-time",
-                "description": "When the error occurred"
-            }
+                "description": "When the error occurred",
+            },
         },
-        "required": ["error", "message", "timestamp"]
+        "required": ["error", "message", "timestamp"],
     }
-    
+
     # Validation Error Response Schema
     schemas["ValidationError"] = {
         "allOf": [
@@ -1364,87 +1398,76 @@ def add_common_response_schemas(openapi_schema):
                         "description": "Field-specific validation errors",
                         "additionalProperties": {
                             "type": "array",
-                            "items": {"type": "string"}
-                        }
+                            "items": {"type": "string"},
+                        },
                     }
                 },
-                "required": ["field_errors"]
-            }
+                "required": ["field_errors"],
+            },
         ]
     }
-    
+
     # Pagination Metadata Schema
     schemas["PaginationMetadata"] = {
         "type": "object",
         "properties": {
-            "page": {
-                "type": "integer",
-                "description": "Current page number"
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Items per page"
-            },
-            "total": {
-                "type": "integer",
-                "description": "Total number of items"
-            },
-            "total_pages": {
-                "type": "integer",
-                "description": "Total number of pages"
-            },
+            "page": {"type": "integer", "description": "Current page number"},
+            "limit": {"type": "integer", "description": "Items per page"},
+            "total": {"type": "integer", "description": "Total number of items"},
+            "total_pages": {"type": "integer", "description": "Total number of pages"},
             "has_next": {
                 "type": "boolean",
-                "description": "Whether there is a next page"
+                "description": "Whether there is a next page",
             },
             "has_prev": {
                 "type": "boolean",
-                "description": "Whether there is a previous page"
-            }
+                "description": "Whether there is a previous page",
+            },
         },
-        "required": ["page", "limit", "total", "total_pages", "has_next", "has_prev"]
+        "required": ["page", "limit", "total", "total_pages", "has_next", "has_prev"],
     }
-    
+
     # User Statistics Schema
     schemas["UserStatistics"] = {
         "type": "object",
         "properties": {
             "total_users": {
                 "type": "integer",
-                "description": "Total number of users in the system"
+                "description": "Total number of users in the system",
             },
-            "super_users": {
-                "type": "integer",
-                "description": "Number of super users"
-            },
-            "admin_users": {
-                "type": "integer",
-                "description": "Number of admin users"
-            },
+            "super_users": {"type": "integer", "description": "Number of super users"},
+            "admin_users": {"type": "integer", "description": "Number of admin users"},
             "general_users": {
                 "type": "integer",
-                "description": "Number of general users"
+                "description": "Number of general users",
             },
             "active_users": {
                 "type": "integer",
-                "description": "Number of active users"
+                "description": "Number of active users",
             },
             "inactive_users": {
                 "type": "integer",
-                "description": "Number of inactive users"
+                "description": "Number of inactive users",
             },
             "total_points_distributed": {
                 "type": "integer",
-                "description": "Total points distributed across all users"
+                "description": "Total points distributed across all users",
             },
             "recent_signups": {
                 "type": "integer",
-                "description": "Number of users created in the last 7 days"
-            }
+                "description": "Number of users created in the last 7 days",
+            },
         },
-        "required": ["total_users", "super_users", "admin_users", "general_users", "active_users", "inactive_users"]
+        "required": [
+            "total_users",
+            "super_users",
+            "admin_users",
+            "general_users",
+            "active_users",
+            "inactive_users",
+        ],
     }
-    
+
     # Analytics Response Schemas
     schemas["DashboardAnalytics"] = {
         "type": "object",
@@ -1456,9 +1479,9 @@ def add_common_response_schemas(openapi_schema):
                     "type": "object",
                     "properties": {
                         "date": {"type": "string", "format": "date"},
-                        "count": {"type": "integer"}
-                    }
-                }
+                        "count": {"type": "integer"},
+                    },
+                },
             },
             "point_distribution": {
                 "type": "array",
@@ -1468,21 +1491,21 @@ def add_common_response_schemas(openapi_schema):
                         "role": {"type": "string"},
                         "total_points": {"type": "integer"},
                         "user_count": {"type": "integer"},
-                        "average_points": {"type": "number"}
-                    }
-                }
+                        "average_points": {"type": "number"},
+                    },
+                },
             },
             "activity_summary": {
                 "type": "object",
                 "properties": {
                     "active_users_last_7_days": {"type": "integer"},
-                    "total_transactions_last_30_days": {"type": "integer"}
-                }
+                    "total_transactions_last_30_days": {"type": "integer"},
+                },
             },
-            "generated_at": {"type": "string", "format": "date-time"}
-        }
+            "generated_at": {"type": "string", "format": "date-time"},
+        },
     }
-    
+
     schemas["PointAnalytics"] = {
         "type": "object",
         "properties": {
@@ -1494,9 +1517,9 @@ def add_common_response_schemas(openapi_schema):
                         "allocation_type": {"type": "string"},
                         "total_points": {"type": "integer"},
                         "transaction_count": {"type": "integer"},
-                        "average_per_transaction": {"type": "number"}
-                    }
-                }
+                        "average_per_transaction": {"type": "number"},
+                    },
+                },
             },
             "top_users": {
                 "type": "array",
@@ -1506,9 +1529,9 @@ def add_common_response_schemas(openapi_schema):
                         "username": {"type": "string"},
                         "email": {"type": "string"},
                         "current_points": {"type": "integer"},
-                        "total_points": {"type": "integer"}
-                    }
-                }
+                        "total_points": {"type": "integer"},
+                    },
+                },
             },
             "usage_trend": {
                 "type": "array",
@@ -1516,14 +1539,14 @@ def add_common_response_schemas(openapi_schema):
                     "type": "object",
                     "properties": {
                         "date": {"type": "string", "format": "date"},
-                        "points_used": {"type": "integer"}
-                    }
-                }
+                        "points_used": {"type": "integer"},
+                    },
+                },
             },
-            "generated_at": {"type": "string", "format": "date-time"}
-        }
+            "generated_at": {"type": "string", "format": "date-time"},
+        },
     }
-    
+
     schemas["UserActivityAnalytics"] = {
         "type": "object",
         "properties": {
@@ -1533,8 +1556,8 @@ def add_common_response_schemas(openapi_schema):
                     "total_active_users": {"type": "integer"},
                     "new_users_this_period": {"type": "integer"},
                     "total_api_requests": {"type": "integer"},
-                    "average_requests_per_user": {"type": "number"}
-                }
+                    "average_requests_per_user": {"type": "number"},
+                },
             },
             "user_activity": {
                 "type": "array",
@@ -1551,10 +1574,10 @@ def add_common_response_schemas(openapi_schema):
                         "active_days": {"type": "integer"},
                         "favorite_endpoints": {
                             "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    }
-                }
+                            "items": {"type": "string"},
+                        },
+                    },
+                },
             },
             "activity_trends": {
                 "type": "object",
@@ -1565,9 +1588,9 @@ def add_common_response_schemas(openapi_schema):
                             "type": "object",
                             "properties": {
                                 "date": {"type": "string", "format": "date"},
-                                "count": {"type": "integer"}
-                            }
-                        }
+                                "count": {"type": "integer"},
+                            },
+                        },
                     },
                     "peak_usage_hours": {
                         "type": "array",
@@ -1575,15 +1598,15 @@ def add_common_response_schemas(openapi_schema):
                             "type": "object",
                             "properties": {
                                 "hour": {"type": "integer"},
-                                "requests": {"type": "integer"}
-                            }
-                        }
-                    }
-                }
-            }
-        }
+                                "requests": {"type": "integer"},
+                            },
+                        },
+                    },
+                },
+            },
+        },
     }
-    
+
     schemas["UserEngagementMetrics"] = {
         "type": "object",
         "properties": {
@@ -1594,8 +1617,8 @@ def add_common_response_schemas(openapi_schema):
                     "weekly_active_users": {"type": "integer"},
                     "monthly_active_users": {"type": "integer"},
                     "user_retention_rate": {"type": "number"},
-                    "average_session_duration": {"type": "string"}
-                }
+                    "average_session_duration": {"type": "string"},
+                },
             },
             "feature_adoption": {
                 "type": "array",
@@ -1605,9 +1628,9 @@ def add_common_response_schemas(openapi_schema):
                         "feature": {"type": "string"},
                         "usage_count": {"type": "integer"},
                         "unique_users": {"type": "integer"},
-                        "adoption_rate": {"type": "number"}
-                    }
-                }
+                        "adoption_rate": {"type": "number"},
+                    },
+                },
             },
             "user_segments": {
                 "type": "array",
@@ -1617,17 +1640,20 @@ def add_common_response_schemas(openapi_schema):
                         "segment": {"type": "string"},
                         "count": {"type": "integer"},
                         "avg_requests_per_day": {"type": "integer"},
-                        "points_consumption": {"type": "string"}
-                    }
-                }
-            }
-        }
+                        "points_consumption": {"type": "string"},
+                    },
+                },
+            },
+        },
     }
-    
+
     schemas["SystemHealthMetrics"] = {
         "type": "object",
         "properties": {
-            "system_status": {"type": "string", "enum": ["healthy", "degraded", "critical"]},
+            "system_status": {
+                "type": "string",
+                "enum": ["healthy", "degraded", "critical"],
+            },
             "uptime": {"type": "string"},
             "last_updated": {"type": "string", "format": "date-time"},
             "performance_metrics": {
@@ -1638,8 +1664,8 @@ def add_common_response_schemas(openapi_schema):
                     "error_rate": {"type": "number"},
                     "cpu_usage": {"type": "number"},
                     "memory_usage": {"type": "number"},
-                    "disk_usage": {"type": "number"}
-                }
+                    "disk_usage": {"type": "number"},
+                },
             },
             "api_endpoints": {
                 "type": "array",
@@ -1650,9 +1676,9 @@ def add_common_response_schemas(openapi_schema):
                         "avg_response_time": {"type": "integer"},
                         "success_rate": {"type": "number"},
                         "requests_count": {"type": "integer"},
-                        "error_count": {"type": "integer"}
-                    }
-                }
+                        "error_count": {"type": "integer"},
+                    },
+                },
             },
             "database_metrics": {
                 "type": "object",
@@ -1660,17 +1686,17 @@ def add_common_response_schemas(openapi_schema):
                     "connection_pool_usage": {"type": "integer"},
                     "query_avg_time": {"type": "integer"},
                     "slow_queries_count": {"type": "integer"},
-                    "active_connections": {"type": "integer"}
-                }
-            }
-        }
+                    "active_connections": {"type": "integer"},
+                },
+            },
+        },
     }
 
 
 def add_example_responses(openapi_schema):
     """Add example responses to endpoints"""
     paths = openapi_schema.get("paths", {})
-    
+
     # Add examples for user listing endpoint
     if "/v1.0/user/check/all" in paths and "get" in paths["/v1.0/user/check/all"]:
         endpoint = paths["/v1.0/user/check/all"]["get"]
@@ -1694,13 +1720,13 @@ def add_example_responses(openapi_schema):
                                         "points_info": {
                                             "total_points": 1000000,
                                             "current_points": 950000,
-                                            "paid_status": "I am super user, I have unlimited points."
-                                        }
+                                            "paid_status": "I am super user, I have unlimited points.",
+                                        },
                                     },
                                     "super_users": [],
                                     "admin_users": [],
-                                    "general_users": []
-                                }
+                                    "general_users": [],
+                                },
                             },
                             "enhanced_format": {
                                 "summary": "Enhanced format (with pagination)",
@@ -1714,17 +1740,17 @@ def add_example_responses(openapi_schema):
                                         "total": 13,
                                         "total_pages": 1,
                                         "has_next": False,
-                                        "has_prev": False
+                                        "has_prev": False,
                                     },
                                     "root_user": {},
                                     "super_users": [],
                                     "admin_users": [],
-                                    "general_users": []
-                                }
-                            }
+                                    "general_users": [],
+                                },
+                            },
                         }
                     }
-                }
+                },
             },
             "400": {
                 "description": "Bad Request - Invalid parameters",
@@ -1736,12 +1762,12 @@ def add_example_responses(openapi_schema):
                             "message": "Validation failed",
                             "field_errors": {
                                 "page": ["Page must be greater than 0"],
-                                "limit": ["Limit must be between 1 and 100"]
+                                "limit": ["Limit must be between 1 and 100"],
                             },
-                            "timestamp": "2024-01-15T10:30:00Z"
-                        }
+                            "timestamp": "2024-01-15T10:30:00Z",
+                        },
                     }
-                }
+                },
             },
             "403": {
                 "description": "Forbidden - Insufficient permissions",
@@ -1752,13 +1778,13 @@ def add_example_responses(openapi_schema):
                             "error": True,
                             "message": "Only super_user or admin_user can access this endpoint.",
                             "error_code": "INSUFFICIENT_PERMISSIONS",
-                            "timestamp": "2024-01-15T10:30:00Z"
-                        }
+                            "timestamp": "2024-01-15T10:30:00Z",
+                        },
                     }
-                }
-            }
+                },
+            },
         }
-    
+
     # Add examples for current user endpoint
     if "/v1.0/user/check-me" in paths and "get" in paths["/v1.0/user/check-me"]:
         endpoint = paths["/v1.0/user/check-me"]["get"]
@@ -1777,10 +1803,10 @@ def add_example_responses(openapi_schema):
                             "active_supplier": ["hotel_api", "booking_system"],
                             "created_at": "2024-01-01T00:00:00Z",
                             "updated_at": "2024-01-15T10:30:00Z",
-                            "need_to_next_upgrade": "It function is not implemented yet"
+                            "need_to_next_upgrade": "It function is not implemented yet",
                         }
                     }
-                }
+                },
             },
             "401": {
                 "description": "Unauthorized - Invalid or missing token",
@@ -1791,19 +1817,22 @@ def add_example_responses(openapi_schema):
                             "error": True,
                             "message": "Could not validate credentials",
                             "error_code": "INVALID_TOKEN",
-                            "timestamp": "2024-01-15T10:30:00Z"
-                        }
+                            "timestamp": "2024-01-15T10:30:00Z",
+                        },
                     }
-                }
-            }
+                },
+            },
         }
 
 
 def add_analytics_examples(paths):
     """Add example responses for analytics endpoints"""
-    
+
     # Dashboard analytics examples
-    if "/v1.0/analytics/dashboard" in paths and "get" in paths["/v1.0/analytics/dashboard"]:
+    if (
+        "/v1.0/analytics/dashboard" in paths
+        and "get" in paths["/v1.0/analytics/dashboard"]
+    ):
         endpoint = paths["/v1.0/analytics/dashboard"]["get"]
         endpoint["responses"] = {
             "200": {
@@ -1820,46 +1849,51 @@ def add_analytics_examples(paths):
                                 "active_users": 95,
                                 "inactive_users": 55,
                                 "total_points_distributed": 500000,
-                                "recent_signups": 12
+                                "recent_signups": 12,
                             },
                             "user_creation_trend": [
                                 {"date": "2024-01-01", "count": 5},
-                                {"date": "2024-01-02", "count": 3}
+                                {"date": "2024-01-02", "count": 3},
                             ],
                             "point_distribution": [
                                 {
                                     "role": "GENERAL_USER",
                                     "total_points": 450000,
                                     "user_count": 140,
-                                    "average_points": 3214.3
+                                    "average_points": 3214.3,
                                 }
                             ],
                             "activity_summary": {
                                 "active_users_last_7_days": 45,
-                                "total_transactions_last_30_days": 1250
+                                "total_transactions_last_30_days": 1250,
                             },
-                            "generated_at": "2024-01-15T10:30:00Z"
-                        }
+                            "generated_at": "2024-01-15T10:30:00Z",
+                        },
                     }
-                }
+                },
             }
         }
-    
+
     # User activity analytics examples
-    if "/v1.0/analytics/user_activity" in paths and "get" in paths["/v1.0/analytics/user_activity"]:
+    if (
+        "/v1.0/analytics/user_activity" in paths
+        and "get" in paths["/v1.0/analytics/user_activity"]
+    ):
         endpoint = paths["/v1.0/analytics/user_activity"]["get"]
         endpoint["responses"] = {
             "200": {
                 "description": "User activity analytics data",
                 "content": {
                     "application/json": {
-                        "schema": {"$ref": "#/components/schemas/UserActivityAnalytics"},
+                        "schema": {
+                            "$ref": "#/components/schemas/UserActivityAnalytics"
+                        },
                         "example": {
                             "summary": {
                                 "total_active_users": 45,
                                 "new_users_this_period": 8,
                                 "total_api_requests": 1250,
-                                "average_requests_per_user": 27.78
+                                "average_requests_per_user": 27.78,
                             },
                             "user_activity": [
                                 {
@@ -1871,27 +1905,33 @@ def add_analytics_examples(paths):
                                     "total_requests": 45,
                                     "points_used": 450,
                                     "active_days": 12,
-                                    "favorite_endpoints": ["/v1.0/hotel/details", "/v1.0/content/get-all-basic-hotel-info"]
+                                    "favorite_endpoints": [
+                                        "/v1.0/hotel/details",
+                                        "/v1.0/content/get-all-basic-hotel-info",
+                                    ],
                                 }
                             ],
                             "activity_trends": {
                                 "daily_active_users": [
                                     {"date": "2024-01-01", "count": 25},
-                                    {"date": "2024-01-02", "count": 30}
+                                    {"date": "2024-01-02", "count": 30},
                                 ],
                                 "peak_usage_hours": [
                                     {"hour": 9, "requests": 100},
-                                    {"hour": 14, "requests": 150}
-                                ]
-                            }
-                        }
+                                    {"hour": 14, "requests": 150},
+                                ],
+                            },
+                        },
                     }
-                }
+                },
             }
         }
-    
+
     # System health examples
-    if "/v1.0/analytics/system_health" in paths and "get" in paths["/v1.0/analytics/system_health"]:
+    if (
+        "/v1.0/analytics/system_health" in paths
+        and "get" in paths["/v1.0/analytics/system_health"]
+    ):
         endpoint = paths["/v1.0/analytics/system_health"]["get"]
         endpoint["responses"] = {
             "200": {
@@ -1909,7 +1949,7 @@ def add_analytics_examples(paths):
                                 "error_rate": 0.02,
                                 "cpu_usage": 45.5,
                                 "memory_usage": 67.2,
-                                "disk_usage": 38.1
+                                "disk_usage": 38.1,
                             },
                             "api_endpoints": [
                                 {
@@ -1917,18 +1957,18 @@ def add_analytics_examples(paths):
                                     "avg_response_time": 180,
                                     "success_rate": 99.8,
                                     "requests_count": 850,
-                                    "error_count": 2
+                                    "error_count": 2,
                                 }
                             ],
                             "database_metrics": {
                                 "connection_pool_usage": 75,
                                 "query_avg_time": 45,
                                 "slow_queries_count": 12,
-                                "active_connections": 150
-                            }
-                        }
+                                "active_connections": 150,
+                            },
+                        },
                     }
-                }
+                },
             }
         }
 
@@ -1946,7 +1986,7 @@ def get_swagger_ui_html(
 ) -> str:
     """
     Generate custom Swagger UI HTML with enhanced styling and features
-    
+
     This function creates a customized Swagger UI interface with:
     - Professional Hotel API branding and styling
     - Enhanced user experience with loading screen
@@ -1955,7 +1995,7 @@ def get_swagger_ui_html(
     - Responsive design for all devices
     """
     import json
-    
+
     current_swagger_ui_parameters = {
         "dom_id": "#swagger-ui",
         "layout": "BaseLayout",
@@ -1969,7 +2009,7 @@ def get_swagger_ui_html(
         "filter": True,
         "tryItOutEnabled": True,
         "supportedSubmitMethods": ["get", "post", "put", "delete", "patch"],
-        "validatorUrl": None
+        "validatorUrl": None,
     }
     if swagger_ui_parameters:
         current_swagger_ui_parameters.update(swagger_ui_parameters)
@@ -2170,24 +2210,24 @@ def get_swagger_ui_html(
     </body>
     </html>
     """
-    
+
     return html
 
 
 def create_custom_swagger_ui_response(app):
     """
     Create a custom Swagger UI HTML response with enhanced features
-    
+
     This function generates the complete HTML response for the Swagger UI
     with all custom styling and interactive features applied.
     """
     from fastapi.responses import HTMLResponse
-    
+
     return HTMLResponse(
         content=get_swagger_ui_html(
             openapi_url=app.openapi_url,
             title=f"{app.title} - Interactive API Documentation",
-            swagger_ui_parameters=getattr(app, 'swagger_ui_parameters', {}),
-            init_oauth=getattr(app, 'swagger_ui_init_oauth', {}),
+            swagger_ui_parameters=getattr(app, "swagger_ui_parameters", {}),
+            init_oauth=getattr(app, "swagger_ui_init_oauth", {}),
         )
-    ) 
+    )

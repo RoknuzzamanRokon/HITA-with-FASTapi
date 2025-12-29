@@ -16,10 +16,11 @@ from contextlib import contextmanager
 load_dotenv()
 
 API_BASE = "http://127.0.0.1:8028/v1.0"
-ENDPOINT = f"{API_BASE}/hotels/add-provider-all-details-with-ittid/"
+ENDPOINT = f"{API_BASE}/hotels/add_provider_all_details_with_ittid/"
 
 # Global engine instance
 _engine = None
+
 
 def get_database_engine():
     global _engine
@@ -31,15 +32,16 @@ def get_database_engine():
             f"{os.getenv('DB_NAME')}"
         )
         _engine = create_engine(
-            db_uri, 
+            db_uri,
             pool_pre_ping=True,
-            pool_size=3,          # Reduced pool size
-            max_overflow=5,       # Reduced overflow
-            pool_recycle=1800,    # 30 minutes
-            pool_timeout=20,      # Reduced timeout
-            echo=False
+            pool_size=3,  # Reduced pool size
+            max_overflow=5,  # Reduced overflow
+            pool_recycle=1800,  # 30 minutes
+            pool_timeout=20,  # Reduced timeout
+            echo=False,
         )
     return _engine
+
 
 @contextmanager
 def get_db_session():
@@ -55,6 +57,7 @@ def get_db_session():
     finally:
         session.close()
 
+
 def get_pool_status():
     """Get current connection pool status for monitoring"""
     try:
@@ -66,58 +69,68 @@ def get_pool_status():
             "checked_out": pool.checkedout(),
             "overflow": pool.overflow(),
         }
-        
+
         # Try to get invalid count if available (not all pool types have this)
         try:
             status["invalid"] = pool.invalid()
         except AttributeError:
             status["invalid"] = "N/A"
-        
+
         return status
     except Exception as e:
         return {"error": f"Could not get pool status: {e}"}
 
+
 def get_auth_token():
     url = f"{API_BASE}/auth/token/"
-    payload = {
-        'username': os.getenv('API_USER'),
-        'password': os.getenv('API_PASS')
-    }
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    payload = {"username": os.getenv("API_USER"), "password": os.getenv("API_PASS")}
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
     resp = requests.post(url, headers=headers, data=payload)
     resp.raise_for_status()
-    return resp.json()['access_token']
+    return resp.json()["access_token"]
+
 
 def get_headers():
     token = get_auth_token()
-    return {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {token}'
-    }
+    return {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
 
 
 # --- MAPPING DEFINITIONS --- #
 
 PROVIDERS = [
-    "hotelbeds", "ean", "agoda", "mgholiday", "restel", "stuba",
-    "hyperguestdirect", "tbohotel", "goglobal", "ratehawkhotel",
-    "adivahahotel", "grnconnect", "juniperhotel", "mikihotel",
-    "paximumhotel", "adonishotel", "w2mhotel", "oryxhotel",
-    "dotw", "hotelston", "letsflyhotel", "illusionshotel",
-    "innstanttravel", "roomerang", "kiwihotel", "rnrhotel"
+    "hotelbeds",
+    "ean",
+    "agoda",
+    "mgholiday",
+    "restel",
+    "stuba",
+    "hyperguestdirect",
+    "tbohotel",
+    "goglobal",
+    "ratehawkhotel",
+    "adivahahotel",
+    "grnconnect",
+    "juniperhotel",
+    "mikihotel",
+    "paximumhotel",
+    "adonishotel",
+    "w2mhotel",
+    "oryxhotel",
+    "dotw",
+    "hotelston",
+    "letsflyhotel",
+    "illusionshotel",
+    "innstanttravel",
+    "roomerang",
+    "kiwihotel",
+    "rnrhotel",
 ]
 
-SUFFIX_MAP = {
-    "":   "g",
-    "_a": "b",
-    "_b": "c",
-    "_c": "d",
-    "_d": "e",
-    "_e": "f"
-}
+SUFFIX_MAP = {"": "g", "_a": "b", "_b": "c", "_c": "d", "_d": "e", "_e": "f"}
 
 
 # --- CORE LOGIC --- #
+
 
 def build_payload(row, provider, suffix):
     col_name = provider + suffix
@@ -126,15 +139,15 @@ def build_payload(row, provider, suffix):
         return None
 
     vervo = getattr(row, "VervotechId", None)
-    giata = getattr(row, "GiataCode",    None)
+    giata = getattr(row, "GiataCode", None)
 
     return {
-        "ittid":           row.ittid,
-        "provider_name":   provider,
-        "provider_id":     provider_id,
-        "system_type":     SUFFIX_MAP[suffix],
-        "vervotech_id":    vervo,
-        "giata_code":      giata
+        "ittid": row.ittid,
+        "provider_name": provider,
+        "provider_id": provider_id,
+        "system_type": SUFFIX_MAP[suffix],
+        "vervotech_id": vervo,
+        "giata_code": giata,
     }
 
 
@@ -189,12 +202,14 @@ counter_lock = threading.Lock()
 # Global flag for graceful shutdown
 shutdown_requested = False
 
+
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Initiating graceful shutdown...")
     print("📊 Current progress will be saved. Please wait...")
     shutdown_requested = True
+
 
 # Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
@@ -234,7 +249,9 @@ def post_mapping(session, headers, payload):
             return payload
         elif e.response is not None and e.response.status_code == 404:
             # Handle 404 - Hotel not found
-            print(f"⚠️ Hotel with ittid '{payload['ittid']}' not found (404). Marking as 'new id'")
+            print(
+                f"⚠️ Hotel with ittid '{payload['ittid']}' not found (404). Marking as 'new id'"
+            )
             update_map_status(payload["ittid"], "new id")
             with counter_lock:
                 not_found_count += 1
@@ -251,13 +268,14 @@ def save_progress(offset, success_count, not_found_count, error_count):
             "success_count": success_count,
             "not_found_count": not_found_count,
             "error_count": error_count,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
         with open("mapping_progress.json", "w") as f:
             json.dump(progress_data, f)
         print(f"💾 Progress saved at offset {offset}")
     except Exception as e:
         print(f"⚠️ Could not save progress: {e}")
+
 
 def load_progress():
     """Load progress from file if it exists"""
@@ -268,7 +286,7 @@ def load_progress():
             progress_data.get("offset", 0),
             progress_data.get("success_count", 0),
             progress_data.get("not_found_count", 0),
-            progress_data.get("error_count", 0)
+            progress_data.get("error_count", 0),
         )
     except FileNotFoundError:
         return 0, 0, 0, 0
@@ -276,23 +294,26 @@ def load_progress():
         print(f"⚠️ Could not load progress: {e}")
         return 0, 0, 0, 0
 
+
 def main():
     global success_count, not_found_count, error_count, shutdown_requested
-    
+
     print("🚀 Starting mapping data insertion process...")
-    
+
     # Try to load previous progress
     offset, loaded_success, loaded_not_found, loaded_error = load_progress()
     success_count = loaded_success
     not_found_count = loaded_not_found
     error_count = loaded_error
-    
+
     if offset > 0:
         print(f"📂 Resuming from previous session at offset {offset}")
-        print(f"📊 Previous progress: Success={success_count}, Not Found={not_found_count}, Errors={error_count}")
+        print(
+            f"📊 Previous progress: Success={success_count}, Not Found={not_found_count}, Errors={error_count}"
+        )
     else:
         print(f"📊 Starting fresh: Success=0, Not Found=0, Errors=0")
-    
+
     batch_size = 500  # Reduced batch size
     max_retries = 3
     retry_count = 0
@@ -300,14 +321,16 @@ def main():
     while retry_count < max_retries:
         try:
             headers = get_headers()
-            
-            with requests.Session() as sess, ThreadPoolExecutor(max_workers=3) as executor:  # Reduced workers
+
+            with requests.Session() as sess, ThreadPoolExecutor(
+                max_workers=3
+            ) as executor:  # Reduced workers
                 while True:
                     # Check for shutdown request
                     if shutdown_requested:
                         print("🛑 Shutdown requested. Stopping gracefully...")
                         break
-                        
+
                     try:
                         rows = fetch_all_mappings(offset=offset, limit=batch_size)
                         if not rows:
@@ -323,7 +346,10 @@ def main():
                                     if not payload:
                                         continue
 
-                                    key = (payload["provider_name"], payload["provider_id"])
+                                    key = (
+                                        payload["provider_name"],
+                                        payload["provider_id"],
+                                    )
 
                                     with seen_lock:
                                         if key in seen:
@@ -340,7 +366,9 @@ def main():
                         batch_futures = []
                         for i, fut in enumerate(futures):
                             batch_futures.append(fut)
-                            if len(batch_futures) >= 50 or i == len(futures) - 1:  # Process in batches of 50
+                            if (
+                                len(batch_futures) >= 50 or i == len(futures) - 1
+                            ):  # Process in batches of 50
                                 for completed_fut in as_completed(batch_futures):
                                     try:
                                         payload = completed_fut.result()
@@ -362,7 +390,7 @@ def main():
                                 time.sleep(0.1)  # Small delay between batches
 
                         offset += batch_size
-                        
+
                         # Monitor connection pool and show progress every 10 batches
                         if offset % (batch_size * 10) == 0:
                             try:
@@ -370,14 +398,18 @@ def main():
                                 print(f"🔍 Pool Status: {pool_status}")
                             except Exception as e:
                                 print(f"⚠️ Could not get pool status: {e}")
-                            
-                            print(f"📊 Progress: Success={success_count}, Not Found={not_found_count}, Errors={error_count}")
-                            
+
+                            print(
+                                f"📊 Progress: Success={success_count}, Not Found={not_found_count}, Errors={error_count}"
+                            )
+
                             # Save progress periodically
-                            save_progress(offset, success_count, not_found_count, error_count)
-                        
+                            save_progress(
+                                offset, success_count, not_found_count, error_count
+                            )
+
                         time.sleep(1.0)  # Longer delay between main batches
-                        
+
                     except KeyboardInterrupt:
                         print("\n⚠️ Process interrupted by user (Ctrl+C)")
                         shutdown_requested = True
@@ -387,14 +419,16 @@ def main():
                         print("⏳ Waiting 5 seconds before continuing...")
                         time.sleep(5)
                         continue
-            
+
             # If we reach here, processing completed successfully
             break
-            
+
         except Exception as main_error:
             retry_count += 1
-            print(f"❌ Main process error (attempt {retry_count}/{max_retries}): {main_error}")
-            
+            print(
+                f"❌ Main process error (attempt {retry_count}/{max_retries}): {main_error}"
+            )
+
             if retry_count < max_retries:
                 wait_time = retry_count * 10  # Exponential backoff
                 print(f"⏳ Waiting {wait_time} seconds before retry...")
@@ -402,7 +436,7 @@ def main():
             else:
                 print("❌ Max retries reached. Stopping process.")
                 break
-    
+
     # Final cleanup and summary
     try:
         if _engine:
@@ -410,10 +444,10 @@ def main():
             print("🔄 Database connections cleaned up")
     except Exception as cleanup_error:
         print(f"⚠️ Cleanup error: {cleanup_error}")
-    
+
     # Save final progress
     save_progress(offset, success_count, not_found_count, error_count)
-    
+
     # Final summary
     print(f"\n📈 Final Summary:")
     print(f"   ✅ Successful insertions: {success_count}")
@@ -421,7 +455,7 @@ def main():
     print(f"   ❌ Other errors: {error_count}")
     print(f"   📊 Total processed: {success_count + not_found_count + error_count}")
     print(f"   🏁 Process completed at offset: {offset}")
-    
+
     if shutdown_requested:
         print(f"   ⚠️ Process was interrupted but progress has been saved")
         print(f"   🔄 Run the script again to resume from offset {offset}")
@@ -432,6 +466,7 @@ def main():
             print(f"   🧹 Progress file cleaned up")
         except:
             pass
+
 
 if __name__ == "__main__":
     main()
