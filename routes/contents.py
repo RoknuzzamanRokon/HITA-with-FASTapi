@@ -2181,10 +2181,14 @@ async def get_all_ittid(
     request: Request,
     current_user: Annotated[models.User, Depends(get_current_user)],
     db: Session = Depends(get_db),
-    limit: int = Query(1000, ge=100, le=10000, description="Number of ITTIDs to return per request"),
+    limit: int = Query(
+        1000, ge=100, le=10000, description="Number of ITTIDs to return per request"
+    ),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ):
-    print(f"🎯 get_all_ittid → User: {current_user.id}, limit: {limit}, offset: {offset}")
+    print(
+        f"🎯 get_all_ittid → User: {current_user.id}, limit: {limit}, offset: {offset}"
+    )
 
     # ---------------------------------------------------------
     # 1️⃣ IP WHITELIST CHECK
@@ -2250,7 +2254,9 @@ async def get_all_ittid(
             total_count = db.query(Hotel.ittid).distinct().count()
             supplier_count = db.query(ProviderMapping.provider_name).distinct().count()
 
-        print(f"📊 Total ITTIDs available: {total_count} from {supplier_count} suppliers")
+        print(
+            f"📊 Total ITTIDs available: {total_count} from {supplier_count} suppliers"
+        )
 
         # Now fetch paginated results
         if allowed_providers:
@@ -2265,17 +2271,13 @@ async def get_all_ittid(
             )
         else:
             # Fetch all - paginated
-            records = (
-                db.query(Hotel.ittid)
-                .distinct()
-                .limit(limit)
-                .offset(offset)
-                .all()
-            )
+            records = db.query(Hotel.ittid).distinct().limit(limit).offset(offset).all()
 
         ittid_list = [row[0] for row in records if row[0]]
 
-        print(f"📊 Returning {len(ittid_list)} ITTIDs (offset: {offset}, limit: {limit})")
+        print(
+            f"📊 Returning {len(ittid_list)} ITTIDs (offset: {offset}, limit: {limit})"
+        )
 
     except Exception as e:
         raise HTTPException(
@@ -2336,7 +2338,9 @@ async def get_all_ittid(
                     if allowed_providers:
                         all_records = (
                             db.query(ProviderMapping.ittid)
-                            .filter(ProviderMapping.provider_name.in_(allowed_providers))
+                            .filter(
+                                ProviderMapping.provider_name.in_(allowed_providers)
+                            )
                             .distinct()
                             .all()
                         )
@@ -2746,8 +2750,8 @@ def get_update_provider_info(
                 detail="Invalid date format. Use YYYY-MM-DD format (e.g., '2023-01-01').",
             )
 
-        # Super users see all, others see only their allowed providers (excluding temp deactivated)
-        if current_user.role == UserRole.SUPER_USER:
+        # Super users and admin users see all, others see only their allowed providers (excluding temp deactivated)
+        if current_user.role in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
             # For super users, check for temporarily deactivated suppliers
             all_permissions = [
                 perm.provider_name
