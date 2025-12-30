@@ -934,7 +934,7 @@ async def raw_data_push_our_system(
         for hid in hotel_ids:
             item_result: dict = {"hotel_id": hid}
             raw_data = fetch_ean_raw(hid)
-            print(raw_data)
+            # print(raw_data)  # Commented out to prevent None output
 
             if raw_data is None:
                 item_result["status"] = "failed"
@@ -1169,7 +1169,7 @@ async def raw_data_push_our_system(
         for hid in hotel_ids:
             item_result: dict = {"hotel_id": hid}
             raw_data = fetch_innstant_raw(hid)
-            print(raw_data)
+            # print(raw_data)  # Commented out to prevent None output
 
             if raw_data is None:
                 item_result["status"] = "failed"

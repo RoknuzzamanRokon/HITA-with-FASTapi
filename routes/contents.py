@@ -918,6 +918,8 @@ def get_hotel_mapping_data_using_provider_name_and_id(
         # (or everyone else is None → full access)
 
         result = []
+        denied_providers = []  # Track providers user is not allowed to access
+
         for identity in request.provider_hotel_identity:
             name = identity.provider_name
             pid = identity.provider_id
@@ -925,6 +927,7 @@ def get_hotel_mapping_data_using_provider_name_and_id(
             # Check provider access
             if allowed_providers and name not in allowed_providers:
                 print(f"User not allowed for provider: {name}")
+                denied_providers.append(name)
                 continue
 
             # Find provider mapping
@@ -962,11 +965,21 @@ def get_hotel_mapping_data_using_provider_name_and_id(
 
             result.append({"provider_mappings": provider_mappings_list})
 
+        # Handle different error scenarios
         if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Cannot find mapping for any of the requested suppliers in our system.",
-            )
+            if denied_providers:
+                # If user was denied access to providers, show permission error
+                denied_list = ", ".join(denied_providers)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Not allowed for this supplier: {denied_list}. Please contact your administrator for access.",
+                )
+            else:
+                # If no permission issues, show generic not found error
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Cannot find mapping for any of the requested suppliers in our system.",
+                )
 
         return result
 
@@ -1489,11 +1502,6 @@ async def get_hotel_using_ittid(
 @router.get(
     "/get-full-hotel-with-itt-mapping-id/{ittid}", status_code=status.HTTP_200_OK
 )
-@log_content_activity(
-    security_level=SecurityLevel.LOW,
-    content_type="hotel_data",
-    operation="get_hotel_with_ittid",
-)
 async def get_full_hotel_with_primary_photo(
     http_request: Request,
     ittid: str,
@@ -1565,7 +1573,11 @@ async def get_full_hotel_with_primary_photo(
                 "category": "content",
                 "content_type": "hotel_data",
                 "operation": "get_hotel_with_ittid",
-                "user_role": current_user.role.value,
+                "user_role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
                 "user_email": current_user.email,
             },
             request=http_request,

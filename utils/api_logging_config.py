@@ -81,9 +81,10 @@ class APILoggingConfig:
     def should_count_endpoint(self, endpoint_path: str) -> bool:
         """
         Check if an endpoint should be counted in usage logs.
+        Supports both exact matching and pattern matching for dynamic endpoints.
 
         Args:
-            endpoint_path (str): The API endpoint path (e.g., "/v1.0/user/all-general-user")
+            endpoint_path (str): The API endpoint path (e.g., "/v1.0/content/get-hotel-with-ittid/11639309")
 
         Returns:
             bool: True if the endpoint should be counted, False otherwise
@@ -92,8 +93,43 @@ class APILoggingConfig:
         if self.should_exclude_endpoint(endpoint_path):
             return False
 
-        # Then check if it's in the count list
-        return endpoint_path in self.count_endpoints
+        # Check for exact match first
+        if endpoint_path in self.count_endpoints:
+            return True
+
+        # Check for pattern matching for dynamic endpoints
+        for count_endpoint in self.count_endpoints:
+            # Handle dynamic path parameters like /v1.0/content/get-hotel-with-ittid/{ittid}
+            if "{" in count_endpoint and "}" in count_endpoint:
+                # Convert pattern to regex-like matching
+                pattern_parts = count_endpoint.split("/")
+                path_parts = endpoint_path.split("/")
+
+                if len(pattern_parts) == len(path_parts):
+                    match = True
+                    for i, (pattern_part, path_part) in enumerate(
+                        zip(pattern_parts, path_parts)
+                    ):
+                        # Skip empty parts
+                        if not pattern_part and not path_part:
+                            continue
+                        # Check if pattern part is a parameter (contains {})
+                        if "{" in pattern_part and "}" in pattern_part:
+                            # This is a parameter, so it matches any value
+                            continue
+                        # Exact match required for non-parameter parts
+                        elif pattern_part != path_part:
+                            match = False
+                            break
+
+                    if match:
+                        return True
+
+            # Handle prefix matching for endpoints that start with a base path
+            elif endpoint_path.startswith(count_endpoint + "/"):
+                return True
+
+        return False
 
     def should_exclude_endpoint(self, endpoint_path: str) -> bool:
         """

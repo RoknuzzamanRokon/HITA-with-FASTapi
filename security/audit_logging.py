@@ -179,16 +179,17 @@ class AuditLogger:
             self.db.refresh(audit_log)
 
             # Also log to application logger for immediate visibility
-            log_message = self._format_log_message(
-                activity_type, user_id, target_user_id, audit_details, ip_address
-            )
+            # DISABLED: Preventing duplicate log entries - only database logging needed
+            # log_message = self._format_log_message(
+            #     activity_type, user_id, target_user_id, audit_details, ip_address
+            # )
 
-            if security_level == SecurityLevel.CRITICAL:
-                self.logger.critical(log_message)
-            elif security_level == SecurityLevel.HIGH:
-                self.logger.warning(log_message)
-            else:
-                self.logger.info(log_message)
+            # if security_level == SecurityLevel.CRITICAL:
+            #     self.logger.critical(log_message)
+            # elif security_level == SecurityLevel.HIGH:
+            #     self.logger.warning(log_message)
+            # else:
+            #     self.logger.info(log_message)
 
             return audit_log
 
