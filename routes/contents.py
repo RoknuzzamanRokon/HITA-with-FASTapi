@@ -3712,3 +3712,257 @@ def get_all_hotel_with_supplier(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving hotel data: {str(e)}",
         )
+
+
+@router.get("/get-all-hotel-id/{supplier_name}", status_code=status.HTTP_200_OK)
+def get_all_hotel_id_by_supplier(
+    supplier_name: str,
+    http_request: Request,
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    limit_per_page: int = Query(
+        1000, ge=1, le=10000, description="Number of hotel IDs per page"
+    ),
+    resume_key: Optional[str] = Query(None, description="Resume key for pagination"),
+) -> Dict[str, Any]:
+    """
+    Get All Hotel IDs for a Specific Supplier
+
+    Retrieves the complete list of hotel IDs for a specified supplier from the
+    static file system. This endpoint provides access to the full inventory of
+    hotel IDs available for each supplier.
+
+    Features:
+    - ✅ IP whitelist validation
+    - ✅ Role-based supplier access control
+    - ✅ Temporary supplier deactivation support
+    - ✅ Fast file-based data retrieval
+    - ✅ Complete hotel ID inventory access
+
+    Args:
+        supplier_name (str): Supplier/provider name (e.g., "agoda", "booking", "expedia")
+        http_request (Request): FastAPI request object for IP validation
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+
+    Returns:
+        dict: {
+            "provider_name": "Agoda",
+            "all_hotel_id": [list of all hotel IDs]
+        }
+
+    Access Control:
+        - GENERAL_USER: Only permitted suppliers
+        - SUPER_USER/ADMIN_USER: All suppliers (except temp deactivated)
+
+    Errors:
+        - 403: IP not whitelisted / No supplier permission / Supplier deactivated
+        - 404: Supplier file not found
+        - 500: File read error or system failure
+
+    Example Response:
+        {
+            "provider_name": "Agoda",
+            "all_hotel_id": ["1", "6", "7", "10", "13", ...]
+        }
+    """
+
+    # 🔒 IP WHITELIST VALIDATION
+    print(
+        f"🚀 About to call IP whitelist check for user: {current_user.id} in get-all-hotel-id"
+    )
+    if not check_ip_whitelist(current_user.id, http_request, db):
+        # Extract client IP for error message using middleware
+        client_ip = get_client_ip(http_request) or "unknown"
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": True,
+                "message": "Access denied: IP address not whitelisted",
+                "error_code": "IP_NOT_WHITELISTED",
+                "details": {
+                    "status_code": 403,
+                    "client_ip": client_ip,
+                    "user_id": current_user.id,
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist.",
+                },
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        )
+
+    # 🔍 CHECK FOR ACTIVE SUPPLIERS (Provider Mappings)
+    try:
+        # Normalize supplier name to lowercase for consistency
+        supplier_name_lower = supplier_name.lower()
+
+        # Check user permissions for the requested supplier
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            # Get user permissions efficiently (single query)
+            user_permissions = (
+                db.query(UserProviderPermission.provider_name)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            )
+
+            if not user_permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to access any suppliers. Please contact your administrator.",
+                )
+
+            # Extract permission names and check for temporary deactivations
+            permission_names = [perm.provider_name for perm in user_permissions]
+            temp_deactivated_suppliers = []
+            active_suppliers = []
+
+            for perm_name in permission_names:
+                if perm_name.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm_name.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name.lower())
+                else:
+                    active_suppliers.append(perm_name.lower())
+
+            # Remove temporarily deactivated suppliers from active list
+            final_active_suppliers = [
+                supplier
+                for supplier in active_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
+
+            # Check if user has permission for the requested supplier
+            if supplier_name_lower not in final_active_suppliers:
+                if supplier_name_lower in temp_deactivated_suppliers:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Supplier '{supplier_name}' is temporarily deactivated. Please reactivate it to access data.",
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Not allowed for this supplier: {supplier_name}. Please contact your administrator for access.",
+                    )
+        else:
+            # For super/admin users, check for temporary deactivations
+            user_permissions = (
+                db.query(UserProviderPermission.provider_name)
+                .filter(
+                    UserProviderPermission.user_id == current_user.id,
+                    UserProviderPermission.provider_name.like("TEMP_DEACTIVATED_%"),
+                )
+                .all()
+            )
+
+            temp_deactivated_suppliers = [
+                perm.provider_name.replace("TEMP_DEACTIVATED_", "").lower()
+                for perm in user_permissions
+            ]
+
+            if supplier_name_lower in temp_deactivated_suppliers:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Supplier '{supplier_name}' is temporarily deactivated. Please reactivate it to access data.",
+                )
+
+        # Construct the file path
+        base_dir = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )  # Go up to backend directory
+        file_path = os.path.join(
+            base_dir,
+            "static",
+            "supplierIdList",
+            f"{supplier_name_lower}_hotel_id_list.txt",
+        )
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Hotel ID list not found for supplier '{supplier_name}'. The supplier may not be supported or the data file is missing.",
+            )
+
+        # Read the hotel IDs from the file with pagination
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                all_hotel_ids = []
+                for line in file:
+                    line = line.strip()
+                    if line:  # Skip empty lines
+                        all_hotel_ids.append(line)
+
+            total_count = len(all_hotel_ids)
+
+            # Handle pagination
+            start_index = 0
+            current_page = 1
+
+            if resume_key:
+                # Parse resume key to get the last hotel ID and position
+                try:
+                    parts = resume_key.split("_", 1)
+                    if len(parts) != 2:
+                        raise ValueError("Invalid resume key format")
+
+                    last_hotel_id = parts[0]
+
+                    # Find the index of the last hotel ID
+                    try:
+                        last_index = all_hotel_ids.index(last_hotel_id)
+                        start_index = last_index + 1  # Start from next item
+                        current_page = (start_index // limit_per_page) + 1
+                    except ValueError:
+                        raise ValueError("Resume key references non-existent hotel ID")
+
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid resume_key: {str(e)}. Please use a valid resume_key from a previous response.",
+                    )
+
+            # Get the paginated slice
+            end_index = start_index + limit_per_page
+            paginated_hotel_ids = all_hotel_ids[start_index:end_index]
+
+            # Generate next resume key if there are more items
+            next_resume_key = None
+            if end_index < total_count:
+                last_hotel_id = paginated_hotel_ids[-1]
+                rand_str = "".join(
+                    secrets.choice(string.ascii_letters + string.digits)
+                    for _ in range(50)
+                )
+                next_resume_key = f"{last_hotel_id}_{rand_str}"
+
+            # Calculate pagination metadata
+            import math
+
+            total_pages = (
+                math.ceil(total_count / limit_per_page) if total_count > 0 else 1
+            )
+
+            # Return the paginated response
+            return {
+                "provider_name": supplier_name.title(),  # Capitalize first letter
+                "total_hotel_ids": total_count,
+                "current_page": current_page,
+                "total_pages": total_pages,
+                "hotel_ids_this_page": len(paginated_hotel_ids),
+                "resume_key": next_resume_key,
+                "hotel_ids": paginated_hotel_ids,
+            }
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error reading hotel ID list for supplier '{supplier_name}': {str(e)}",
+            )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already properly formatted
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing request for supplier '{supplier_name}': {str(e)}",
+        )

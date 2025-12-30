@@ -10,6 +10,7 @@
         "/v1.0/content/get-full-hotel-with-itt-mapping-id/{ittid}",
         "/v1.0/content/get-hotel-data-with-provider-name-and-id",
         "/v1.0/content/get-hotel-mapping-info-using-provider-name-and-id",
+        "/v1.0/content/get-all-hotel-id/{supplier_name}",
         "/v1.0/content/get-all-hotel-basic-info-with-supplier",
         "/v1.0/content/get-all-basic-hotel-info",
         "/v1.0/hotel/details",
