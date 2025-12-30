@@ -14,11 +14,11 @@ router = APIRouter(
 )
 
 
-@router.delete("/delete_user/{user_id}", include_in_schema = False)
+@router.delete("/delete_user/{user_id}", include_in_schema=False)
 def delete_user(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     **Delete User Account**
@@ -51,64 +51,101 @@ def delete_user(
         if current_user.role != models.UserRole.SUPER_USER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super_user can delete users."
+                detail="Only super_user can delete users.",
             )
 
         # Find the user by ID
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found."
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
             )
 
         # Delete related records first to avoid foreign key constraint errors
-        
+
+        # Delete export jobs (CRITICAL: must be deleted before user to avoid FK constraint)
+        try:
+            db.query(models.ExportJob).filter(
+                models.ExportJob.user_id == user_id
+            ).delete(synchronize_session=False)
+            print(f"✅ Deleted export jobs for user {user_id}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete export jobs: {e}")
+            # Continue anyway - table might not exist
+
         # Delete user points
-        db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserPoint).filter(
+                models.UserPoint.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user points: {e}")
+
         # Delete user provider permissions
-        db.query(models.UserProviderPermission).filter(models.UserProviderPermission.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserProviderPermission).filter(
+                models.UserProviderPermission.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user provider permissions: {e}")
+
         # Delete user sessions
-        db.query(models.UserSession).filter(models.UserSession.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserSession).filter(
+                models.UserSession.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user sessions: {e}")
+
         # Delete user activity logs (optional - you may want to keep these for compliance)
-        db.query(models.UserActivityLog).filter(models.UserActivityLog.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserActivityLog).filter(
+                models.UserActivityLog.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user activity logs: {e}")
+
         # Delete IP whitelist entries
-        db.query(models.UserIPWhitelist).filter(models.UserIPWhitelist.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserIPWhitelist).filter(
+                models.UserIPWhitelist.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete IP whitelist entries: {e}")
+
         # Delete point transactions where user is giver or receiver
-        db.query(models.PointTransaction).filter(
-            (models.PointTransaction.giver_id == user_id) | 
-            (models.PointTransaction.receiver_id == user_id)
-        ).delete(synchronize_session=False)
-        
+        try:
+            db.query(models.PointTransaction).filter(
+                (models.PointTransaction.giver_id == user_id)
+                | (models.PointTransaction.receiver_id == user_id)
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete point transactions: {e}")
+
         # Finally, delete the user
         db.delete(user)
         db.commit()
 
         return {
             "success": True,
-            "message": f"User with ID {user_id} has been deleted successfully."
+            "message": f"User with ID {user_id} has been deleted successfully.",
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete user: {str(e)}"
+            detail=f"Failed to delete user: {str(e)}",
         )
 
 
-@router.delete("/delete_super_user/{user_id}", include_in_schema = False)
+@router.delete("/delete_super_user/{user_id}", include_in_schema=False)
 def delete_supper_user(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     **Delete Super User Account**
@@ -141,64 +178,105 @@ def delete_supper_user(
         if current_user.role != models.UserRole.SUPER_USER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super_user can delete users."
+                detail="Only super_user can delete users.",
             )
 
         # Find the user by ID
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found."
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
             )
 
         # Delete related records first to avoid foreign key constraint errors
-        
+
+        # Delete export jobs (CRITICAL: must be deleted before user to avoid FK constraint)
+        try:
+            db.query(models.ExportJob).filter(
+                models.ExportJob.user_id == user_id
+            ).delete(synchronize_session=False)
+            print(f"✅ Deleted export jobs for super user {user_id}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete export jobs: {e}")
+            # Continue anyway - table might not exist
+
         # Delete user points
-        db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserPoint).filter(
+                models.UserPoint.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user points: {e}")
+
         # Delete user provider permissions
-        db.query(models.UserProviderPermission).filter(models.UserProviderPermission.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserProviderPermission).filter(
+                models.UserProviderPermission.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user provider permissions: {e}")
+
         # Delete user sessions
-        db.query(models.UserSession).filter(models.UserSession.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserSession).filter(
+                models.UserSession.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user sessions: {e}")
+
         # Delete user activity logs (optional - you may want to keep these for compliance)
-        db.query(models.UserActivityLog).filter(models.UserActivityLog.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserActivityLog).filter(
+                models.UserActivityLog.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete user activity logs: {e}")
+
         # Delete IP whitelist entries
-        db.query(models.UserIPWhitelist).filter(models.UserIPWhitelist.user_id == user_id).delete()
-        
+        try:
+            db.query(models.UserIPWhitelist).filter(
+                models.UserIPWhitelist.user_id == user_id
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete IP whitelist entries: {e}")
+
         # Delete point transactions where user is giver or receiver
-        db.query(models.PointTransaction).filter(
-            (models.PointTransaction.giver_id == user_id) | 
-            (models.PointTransaction.receiver_id == user_id)
-        ).delete(synchronize_session=False)
-        
+        try:
+            db.query(models.PointTransaction).filter(
+                (models.PointTransaction.giver_id == user_id)
+                | (models.PointTransaction.receiver_id == user_id)
+            ).delete(synchronize_session=False)
+        except Exception as e:
+            print(f"⚠️ Warning: Could not delete point transactions: {e}")
+
         # Finally, delete the user
         db.delete(user)
         db.commit()
 
         return {
             "success": True,
-            "message": f"Super user with ID {user_id} has been deleted successfully."
+            "message": f"Super user with ID {user_id} has been deleted successfully.",
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete super user: {str(e)}"
+            detail=f"Failed to delete super user: {str(e)}",
         )
 
 
-@router.delete("/delete_hotel_by_ittid/{ittid}", status_code=status.HTTP_200_OK, include_in_schema = False)
+@router.delete(
+    "/delete_hotel_by_ittid/{ittid}",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 def delete_hotel_by_ittid(
     ittid: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     **Delete Hotel & Related Data**
@@ -236,14 +314,14 @@ def delete_hotel_by_ittid(
     if current_user.role != UserRole.SUPER_USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super users can delete hotels."
+            detail="Only super users can delete hotels.",
         )
 
     hotel = db.query(Hotel).filter(Hotel.ittid == ittid).first()
     if not hotel:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Hotel with ittid '{ittid}' not found."
+            detail=f"Hotel with ittid '{ittid}' not found.",
         )
 
     # Delete related data
@@ -255,15 +333,19 @@ def delete_hotel_by_ittid(
     db.delete(hotel)
     db.commit()
 
-    return {"message": f"Hotel with ittid '{ittid}' and all related data deleted successfully."}
+    return {
+        "message": f"Hotel with ittid '{ittid}' and all related data deleted successfully."
+    }
 
 
-@router.delete("/delete_a_hotel_mapping", status_code=status.HTTP_200_OK, include_in_schema = False)
+@router.delete(
+    "/delete_a_hotel_mapping", status_code=status.HTTP_200_OK, include_in_schema=False
+)
 def delete_a_hotel_mapping(
     current_user: Annotated[models.User, Depends(get_current_user)],
     provider_name: str = Query(..., description="Provider name"),
     provider_id: str = Query(..., description="Provider ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     **Delete Hotel Provider Mapping**
@@ -298,21 +380,26 @@ def delete_a_hotel_mapping(
     if current_user.role != UserRole.SUPER_USER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super users can delete hotel mappings."
+            detail="Only super users can delete hotel mappings.",
         )
 
-    mapping = db.query(ProviderMapping).filter(
-        ProviderMapping.provider_name == provider_name,
-        ProviderMapping.provider_id == provider_id
-    ).first()
+    mapping = (
+        db.query(ProviderMapping)
+        .filter(
+            ProviderMapping.provider_name == provider_name,
+            ProviderMapping.provider_id == provider_id,
+        )
+        .first()
+    )
 
     if not mapping:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Provider mapping not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Provider mapping not found."
         )
 
     db.delete(mapping)
     db.commit()
 
-    return {"message": f"Mapping for provider '{provider_name}', provider_id '{provider_id}' deleted successfully."}
+    return {
+        "message": f"Mapping for provider '{provider_name}', provider_id '{provider_id}' deleted successfully."
+    }

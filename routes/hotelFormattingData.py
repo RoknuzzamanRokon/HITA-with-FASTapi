@@ -34,31 +34,35 @@ router = APIRouter(
 def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
     """
     Check if the user's IP address is in the whitelist.
-    
+
     Args:
         user_id (str): The user ID to check
         request (Request): The FastAPI request object
         db (Session): Database session
-    
+
     Returns:
         bool: True if IP is whitelisted, False otherwise
     """
     try:
         # Get client IP using the middleware function
         client_ip = get_client_ip(request)
-        
+
         if not client_ip:
             return False
-        
+
         # Check if the user has any active IP whitelist entries for this IP
-        whitelist_entry = db.query(UserIPWhitelist).filter(
-            UserIPWhitelist.user_id == user_id,
-            UserIPWhitelist.ip_address == client_ip,
-            UserIPWhitelist.is_active == True
-        ).first()
-        
+        whitelist_entry = (
+            db.query(UserIPWhitelist)
+            .filter(
+                UserIPWhitelist.user_id == user_id,
+                UserIPWhitelist.ip_address == client_ip,
+                UserIPWhitelist.is_active == True,
+            )
+            .first()
+        )
+
         return whitelist_entry is not None
-        
+
     except Exception as e:
         print(f"Error checking IP whitelist: {str(e)}")
         return False
@@ -4581,7 +4585,7 @@ def map_to_our_format(supplier_code: str, data: dict) -> dict:
         # print(image_data)
         primar = safe_get(image_data, [0, "url"])
 
-        print(primar)
+        # print(primar)  # Commented out to prevent None output
 
         # Map coordinates
         map_data = safe_get(hotel, ["Map"], "")
@@ -6140,7 +6144,7 @@ async def convert_row_to_our_formate(
     print(f"🚀 IP whitelist check for user: {current_user.id} in /v1.0/hotel/details")
     if not check_ip_whitelist(current_user.id, request, db):
         client_ip = get_client_ip(request) or "unknown"
-        
+
         # 📝 AUDIT LOG: Record IP whitelist violation
         audit_logger = AuditLogger(db)
         audit_logger.log_security_event(
@@ -6157,7 +6161,7 @@ async def convert_row_to_our_formate(
             },
             security_level=SecurityLevel.HIGH,
         )
-        
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -6168,10 +6172,10 @@ async def convert_row_to_our_formate(
                     "status_code": 403,
                     "client_ip": client_ip,
                     "user_id": current_user.id,
-                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist."
+                    "message": "Your IP address is not in the whitelist. Please contact your administrator to add your IP address to the whitelist.",
                 },
-                "timestamp": datetime.utcnow().isoformat()
-            }
+                "timestamp": datetime.utcnow().isoformat(),
+            },
         )
 
     # 🔒 SUPPLIER PERMISSION CHECK: Verify user has access to this supplier

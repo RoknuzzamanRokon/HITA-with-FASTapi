@@ -1,0 +1,43 @@
+{
+    "count_log_endpoints": [
+        "/v1.0/auth/token",
+        "/v1.0/user/all-general-user",
+        "/v1.0/content/get-hotel-with-ittid",
+        "/v1.0/content/get-hotel-with-ittid/{ittid}",
+        "/v1.0/content/get-update-provider-info",
+        "/v1.0/content/get-basic-info-follow-countryCode",
+        "/v1.0/content/get-full-hotel-with-itt-mapping-id",
+        "/v1.0/content/get-full-hotel-with-itt-mapping-id/{ittid}",
+        "/v1.0/content/get-hotel-data-with-provider-name-and-id",
+        "/v1.0/content/get-hotel-mapping-info-using-provider-name-and-id",
+        "/v1.0/content/get-all-hotel-id/{supplier_name}",
+        "/v1.0/content/get-all-hotel-basic-info-with-supplier",
+        "/v1.0/content/get-all-basic-hotel-info",
+        "/v1.0/hotel/details",
+        "/v1.0/hotel/search-hotel-with-location",
+        "/v1.0/mapping/get-all-supplier-mapping-data",
+        "/v1.0/mapping/get-mapping-hotel-with-ittid",
+        "/v1.0/export/export-all-hotels"
+    ],
+    "cannot_count_log_endpoints": [
+        "/v1.0/auth/check-me",
+        "/v1.0/auth/refresh-token",
+        "/v1.0/auth/logout",
+        "/v1.0/auth/health",
+        "/v1.0/user/check-me",
+        "/v1.0/user/{user_id}/activity",
+        "/v1.0/dashboard/points-summary",
+        "/v1.0/dashboard/user-activity-summary",
+        "/v1.0/health",
+        "/docs",
+        "/openapi.json",
+        "/favicon.ico",
+        "/v1.0/hotels/add_provider_all_details_with_ittid",
+        "/v1.0/hotels/check-my-active-suppliers-info",
+        "/v1.0/hotels/get-supplier-info"
+    ],
+    "description": {
+        "count_log_endpoints": "API endpoints that should be counted in usage logs and analytics",
+        "cannot_count_log_endpoints": "API endpoints that should NOT be counted (health checks, auth, docs, etc.)"
+    }
+}

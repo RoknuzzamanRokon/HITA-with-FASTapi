@@ -30,6 +30,10 @@ def enable_sqlite_fk_constraints(dbapi_connection, connection_record):
     if isinstance(engine.dialect, sqlalchemy.dialects.sqlite.dialect):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # Enable WAL mode for better concurrency (allows reads during writes)
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes, still safe
+        cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout for locks
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

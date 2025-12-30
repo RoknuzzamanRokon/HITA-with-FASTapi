@@ -2,57 +2,63 @@
 Dashboard Routes - User statistics and analytics for admin and superuser
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
+from sqlalchemy.exc import OperationalError
 from typing import Dict, Any
 from datetime import datetime, timedelta
+from fastapi_cache.decorator import cache
+import asyncio
 
 from database import get_db
 from routes.auth import get_current_active_user
 import models
 from models import UserRole
+from schemas import NewUserDashboardResponse
 
 router = APIRouter(
     prefix="/v1.0/dashboard",
     tags=["Dashboard"],
-    dependencies=[Depends(get_current_active_user)]
+    dependencies=[Depends(get_current_active_user)],
 )
 
 # Add logging for dashboard access attempts
 import logging
+
 dashboard_logger = logging.getLogger("dashboard_access")
 dashboard_logger.setLevel(logging.INFO)
+
 
 def require_admin_or_superuser(current_user: models.User) -> models.User:
     """
     Validate Admin or Super User Access for Dashboard Operations
-    
+
     Validates that the current user has sufficient privileges to access dashboard
     endpoints. This function enforces role-based access control for administrative
     operations and logs unauthorized access attempts for security monitoring.
-    
+
     Features:
     - Role-based access control validation
     - Comprehensive unauthorized access logging
     - Security monitoring and audit trail
     - Detailed error messages for troubleshooting
     - User-specific access denial handling
-    
+
     Args:
         current_user (models.User): Currently authenticated user to validate
-    
+
     Returns:
         models.User: The validated user if access is granted
-    
+
     Raises:
         HTTPException: 403 Forbidden if user lacks required privileges
-    
+
     Access Requirements:
         - User must have SUPER_USER or ADMIN_USER role
         - User account must be active and properly authenticated
         - All access attempts are logged for security monitoring
-    
+
     Security Features:
         - Unauthorized access attempts logged with user details
         - Role validation with comprehensive error reporting
@@ -64,41 +70,52 @@ def require_admin_or_superuser(current_user: models.User) -> models.User:
         if not current_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User authentication required"
+                detail="User authentication required",
             )
-        
+
         # Validate user role
-        if not hasattr(current_user, 'role') or current_user.role is None:
-            dashboard_logger.warning(f"User {getattr(current_user, 'id', 'unknown')} has no role defined")
+        if not hasattr(current_user, "role") or current_user.role is None:
+            dashboard_logger.warning(
+                f"User {getattr(current_user, 'id', 'unknown')} has no role defined"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User role not defined. Contact administrator."
+                detail="User role not defined. Contact administrator.",
             )
-        
+
         # Check if user has required admin privileges
         if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
             # Log unauthorized access attempt for security monitoring
             dashboard_logger.warning(f"🚫 Unauthorized dashboard access attempt:")
-            dashboard_logger.warning(f"   User ID: {getattr(current_user, 'id', 'unknown')}")
-            dashboard_logger.warning(f"   Username: {getattr(current_user, 'username', 'unknown')}")
-            dashboard_logger.warning(f"   Role: {current_user.role}")
-            dashboard_logger.warning(f"   Email: {getattr(current_user, 'email', 'N/A')}")
-            dashboard_logger.warning(f"   Timestamp: {datetime.utcnow().isoformat()}")
-            
-            # Generate appropriate error message
-            user_role = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            detail = f"Access denied. Only admin and super admin users can access dashboard. Current role: {user_role}"
-            
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=detail
+            dashboard_logger.warning(
+                f"   User ID: {getattr(current_user, 'id', 'unknown')}"
             )
-        
+            dashboard_logger.warning(
+                f"   Username: {getattr(current_user, 'username', 'unknown')}"
+            )
+            dashboard_logger.warning(f"   Role: {current_user.role}")
+            dashboard_logger.warning(
+                f"   Email: {getattr(current_user, 'email', 'N/A')}"
+            )
+            dashboard_logger.warning(f"   Timestamp: {datetime.utcnow().isoformat()}")
+
+            # Generate appropriate error message
+            user_role = (
+                current_user.role.value
+                if hasattr(current_user.role, "value")
+                else str(current_user.role)
+            )
+            detail = f"Access denied. Only admin and super admin users can access dashboard. Current role: {user_role}"
+
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+
         # Log successful access validation
-        dashboard_logger.info(f"✅ Dashboard access granted to {getattr(current_user, 'username', 'unknown')} (Role: {current_user.role})")
-        
+        dashboard_logger.info(
+            f"✅ Dashboard access granted to {getattr(current_user, 'username', 'unknown')} (Role: {current_user.role})"
+        )
+
         return current_user
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions without modification
         raise
@@ -107,21 +124,22 @@ def require_admin_or_superuser(current_user: models.User) -> models.User:
         dashboard_logger.error(f"Error validating user access: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error validating user permissions"
+            detail="Error validating user permissions",
         )
+
 
 @router.get("/stats")
 async def get_dashboard_stats(
     current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Get Comprehensive Dashboard Statistics (Admin and Super User Only)
-    
+
     Retrieves comprehensive system statistics and key performance indicators for
     administrative dashboards. This endpoint provides essential metrics for system
     monitoring, user management, and business intelligence.
-    
+
     Features:
     - Comprehensive user statistics and demographics
     - Activity tracking and engagement metrics
@@ -130,18 +148,18 @@ async def get_dashboard_stats(
     - Recent registration and activity trends
     - System health and usage indicators
     - Graceful handling of missing database tables
-    
+
     Statistics Provided:
         - User Demographics: Total users, role distribution, recent registrations
         - Activity Metrics: Active users, recent activity, engagement patterns
         - Points Analytics: Points distributed, current balances, transaction volumes
         - System Health: API key usage, inactive users, system utilization
         - Business Intelligence: Growth trends, user engagement, system adoption
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
-    
+
     Returns:
         dict: Comprehensive dashboard statistics including:
             - total_users: Total registered users in the system
@@ -155,24 +173,24 @@ async def get_dashboard_stats(
             - additional_stats: Detailed breakdown and extended metrics
             - timestamp: When statistics were generated
             - requested_by: Information about the requesting admin user
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - All access attempts logged for audit purposes
         - Unauthorized access attempts tracked and blocked
-    
+
     Error Handling:
         - 401: User not authenticated
         - 403: Insufficient privileges (non-admin users)
         - 500: Database errors or system failures
         - Graceful degradation when optional tables are missing
-    
+
     Database Resilience:
         - Handles missing UserActivityLog table gracefully
         - Handles missing UserPoint table gracefully
         - Handles missing PointTransaction table gracefully
         - Provides default values when data is unavailable
-    
+
     Use Cases:
         - Administrative dashboards and control panels
         - System monitoring and health assessment
@@ -185,20 +203,22 @@ async def get_dashboard_stats(
         if not current_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User authentication required"
+                detail="User authentication required",
             )
-        
+
         # Log dashboard access attempt for audit purposes
-        dashboard_logger.info(f"Dashboard stats requested by user: {current_user.username} (ID: {current_user.id}, Role: {current_user.role})")
-        
+        dashboard_logger.info(
+            f"Dashboard stats requested by user: {current_user.username} (ID: {current_user.id}, Role: {current_user.role})"
+        )
+
         # Validate user permissions BEFORE processing to avoid wrapping 403 in 500
         require_admin_or_superuser(current_user)
-        
+
         # Calculate date ranges for time-based statistics
         now = datetime.utcnow()
         seven_days_ago = now - timedelta(days=7)
         thirty_days_ago = now - timedelta(days=30)
-        
+
         # Initialize all statistics with safe defaults
         total_users = 0
         admin_users = 0
@@ -212,88 +232,127 @@ async def get_dashboard_stats(
         total_transactions = 0
         recent_activity_count = 0
         users_with_api_keys = 0
-        
+
         # Collect basic user statistics with error handling
         try:
             # Core user counts
             total_users = db.query(func.count(models.User.id)).scalar() or 0
-            
+
             # User role distribution
-            admin_users = db.query(func.count(models.User.id)).filter(
-                models.User.role == UserRole.ADMIN_USER
-            ).scalar() or 0
-            
-            super_users = db.query(func.count(models.User.id)).filter(
-                models.User.role == UserRole.SUPER_USER
-            ).scalar() or 0
-            
-            general_users = db.query(func.count(models.User.id)).filter(
-                models.User.role == UserRole.GENERAL_USER
-            ).scalar() or 0
-            
+            admin_users = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.role == UserRole.ADMIN_USER)
+                .scalar()
+                or 0
+            )
+
+            super_users = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.role == UserRole.SUPER_USER)
+                .scalar()
+                or 0
+            )
+
+            general_users = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.role == UserRole.GENERAL_USER)
+                .scalar()
+                or 0
+            )
+
             # Recent user registrations
-            recent_signups = db.query(func.count(models.User.id)).filter(
-                models.User.created_at >= thirty_days_ago
-            ).scalar() or 0
-            
+            recent_signups = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.created_at >= thirty_days_ago)
+                .scalar()
+                or 0
+            )
+
             # Users with API keys (system integration indicator)
-            users_with_api_keys = db.query(func.count(models.User.id)).filter(
-                models.User.api_key.isnot(None)
-            ).scalar() or 0
-            
+            users_with_api_keys = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.api_key.isnot(None))
+                .scalar()
+                or 0
+            )
+
         except Exception as e:
             dashboard_logger.error(f"Error fetching basic user statistics: {e}")
             # Continue with default values
-        
+
         # Collect activity statistics with graceful degradation
         try:
             # Active users in the last 7 days
-            active_users = db.query(func.count(func.distinct(models.UserActivityLog.user_id))).filter(
-                models.UserActivityLog.created_at >= seven_days_ago
-            ).scalar() or 0
-            
+            active_users = (
+                db.query(func.count(func.distinct(models.UserActivityLog.user_id)))
+                .filter(models.UserActivityLog.created_at >= seven_days_ago)
+                .scalar()
+                or 0
+            )
+
             # Recent activity count
-            recent_activity_count = db.query(func.count(models.UserActivityLog.id)).filter(
-                models.UserActivityLog.created_at >= seven_days_ago
-            ).scalar() or 0
-            
+            recent_activity_count = (
+                db.query(func.count(models.UserActivityLog.id))
+                .filter(models.UserActivityLog.created_at >= seven_days_ago)
+                .scalar()
+                or 0
+            )
+
             # Calculate inactive users (users without recent activity)
-            users_with_activity = db.query(func.distinct(models.UserActivityLog.user_id)).filter(
-                models.UserActivityLog.created_at >= thirty_days_ago
-            ).subquery()
-            
-            inactive_users = db.query(func.count(models.User.id)).filter(
-                ~models.User.id.in_(db.query(users_with_activity.c.user_id))
-            ).scalar() or 0
-            
+            users_with_activity = (
+                db.query(func.distinct(models.UserActivityLog.user_id))
+                .filter(models.UserActivityLog.created_at >= thirty_days_ago)
+                .subquery()
+            )
+
+            inactive_users = (
+                db.query(func.count(models.User.id))
+                .filter(~models.User.id.in_(db.query(users_with_activity.c.user_id)))
+                .scalar()
+                or 0
+            )
+
         except Exception as e:
-            dashboard_logger.warning(f"UserActivityLog table may not exist or be accessible: {e}")
+            dashboard_logger.warning(
+                f"UserActivityLog table may not exist or be accessible: {e}"
+            )
             # If no activity data available, assume all users are inactive
             inactive_users = total_users
-        
+
         # Collect points system statistics with graceful degradation
         try:
-            total_points_distributed = db.query(func.sum(models.UserPoint.total_points)).scalar() or 0
-            current_balance = db.query(func.sum(models.UserPoint.current_points)).scalar() or 0
+            total_points_distributed = (
+                db.query(func.sum(models.UserPoint.total_points)).scalar() or 0
+            )
+            current_balance = (
+                db.query(func.sum(models.UserPoint.current_points)).scalar() or 0
+            )
         except Exception as e:
-            dashboard_logger.warning(f"UserPoint table may not exist or be accessible: {e}")
+            dashboard_logger.warning(
+                f"UserPoint table may not exist or be accessible: {e}"
+            )
             # Continue with default values (0)
-        
+
         # Collect transaction statistics with graceful degradation
         try:
-            total_transactions = db.query(func.count(models.PointTransaction.id)).scalar() or 0
+            total_transactions = (
+                db.query(func.count(models.PointTransaction.id)).scalar() or 0
+            )
         except Exception as e:
-            dashboard_logger.warning(f"PointTransaction table may not exist or be accessible: {e}")
+            dashboard_logger.warning(
+                f"PointTransaction table may not exist or be accessible: {e}"
+            )
             # Continue with default values (0)
-        
+
         # Calculate derived metrics
         points_used = max(0, total_points_distributed - current_balance)
-        
+
         # Compile comprehensive statistics response
         return {
             "total_users": total_users,
             "active_users": active_users,
-            "admin_users": admin_users + super_users,  # Combined admin count for dashboard
+            "admin_users": admin_users
+            + super_users,  # Combined admin count for dashboard
             "general_users": general_users,
             "points_distributed": total_points_distributed,
             "current_balance": current_balance,
@@ -306,49 +365,63 @@ async def get_dashboard_stats(
                 "recent_activity_count": recent_activity_count,
                 "users_with_api_keys": users_with_api_keys,
                 "points_used": points_used,
-                "user_engagement_rate": round((active_users / total_users * 100), 2) if total_users > 0 else 0,
-                "admin_percentage": round(((admin_users + super_users) / total_users * 100), 2) if total_users > 0 else 0
+                "user_engagement_rate": (
+                    round((active_users / total_users * 100), 2)
+                    if total_users > 0
+                    else 0
+                ),
+                "admin_percentage": (
+                    round(((admin_users + super_users) / total_users * 100), 2)
+                    if total_users > 0
+                    else 0
+                ),
             },
             "data_quality": {
                 "activity_data_available": recent_activity_count > 0,
                 "points_data_available": total_points_distributed > 0,
-                "transaction_data_available": total_transactions > 0
+                "transaction_data_available": total_transactions > 0,
             },
             "timestamp": now.isoformat(),
             "requested_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-    
+
     except HTTPException:
         # Re-raise HTTP exceptions (like 403 Forbidden) without modification
         raise
     except Exception as e:
         # Log detailed error information for debugging
         import traceback
+
         dashboard_logger.error(f"Dashboard statistics error: {e}")
         dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch dashboard statistics: {str(e)}"
+            detail=f"Failed to fetch dashboard statistics: {str(e)}",
         )
+
 
 @router.get("/user-activity")
 async def get_user_activity_stats(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-    days: int = 30
+    days: int = 30,
 ) -> Dict[str, Any]:
     """
     Get Detailed User Activity Statistics (Admin and Super User Only)
-    
+
     Retrieves comprehensive user activity analytics including daily activity trends,
     most active users, and engagement patterns over a specified time period. This
     endpoint provides insights for user behavior analysis and system optimization.
-    
+
     Features:
     - Daily activity trend analysis with user engagement metrics
     - Most active users identification and ranking
@@ -356,19 +429,19 @@ async def get_user_activity_stats(
     - Comprehensive activity pattern insights
     - Graceful handling of missing activity data
     - User engagement and behavior analytics
-    
+
     Activity Metrics Provided:
         - Daily Activity Trends: Activity counts and unique users per day
         - User Engagement: Most active users with activity rankings
         - Activity Patterns: Peak usage times and engagement trends
         - User Behavior: Activity distribution and usage patterns
         - System Usage: Overall activity volume and user participation
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
         days (int): Number of days to analyze (default: 30, range: 1-365)
-    
+
     Returns:
         dict: Comprehensive activity statistics including:
             - period_days: Analysis period in days
@@ -384,24 +457,24 @@ async def get_user_activity_stats(
                 - activity_count: Total activities by the user
             - activity_summary: Aggregated activity insights
             - timestamp: When analysis was performed
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - Activity analysis access logged for audit purposes
         - User privacy considerations in activity reporting
-    
+
     Error Handling:
         - 400: Invalid days parameter (outside valid range)
         - 401: User not authenticated
         - 403: Insufficient privileges (non-admin users)
         - 500: Database errors or activity log access failures
         - Graceful degradation when UserActivityLog table is missing
-    
+
     Data Privacy:
         - User email addresses included for admin oversight
         - Activity patterns aggregated to protect individual privacy
         - Sensitive user actions filtered from public activity metrics
-    
+
     Use Cases:
         - User engagement analysis and optimization
         - System usage pattern identification
@@ -414,23 +487,23 @@ async def get_user_activity_stats(
         if not current_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User authentication required"
+                detail="User authentication required",
             )
-        
+
         # Validate days parameter
         if days < 1 or days > 365:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Days parameter must be between 1 and 365"
+                detail="Days parameter must be between 1 and 365",
             )
-        
+
         # Validate user permissions BEFORE processing
         require_admin_or_superuser(current_user)
-        
+
         # Calculate analysis date range
         now = datetime.utcnow()
         start_date = now - timedelta(days=days)
-        
+
         # Initialize activity data structures
         daily_activity = []
         most_active_users = []
@@ -440,97 +513,119 @@ async def get_user_activity_stats(
             "avg_daily_activities": 0,
             "avg_daily_users": 0,
             "peak_activity_date": None,
-            "data_available": False
+            "data_available": False,
         }
-        
+
         # Attempt to collect activity data with graceful degradation
         try:
             # Daily activity trend analysis
-            daily_activity_raw = db.query(
-                func.date(models.UserActivityLog.created_at).label('date'),
-                func.count(models.UserActivityLog.id).label('activity_count'),
-                func.count(func.distinct(models.UserActivityLog.user_id)).label('unique_users')
-            ).filter(
-                models.UserActivityLog.created_at >= start_date
-            ).group_by(
-                func.date(models.UserActivityLog.created_at)
-            ).order_by(
-                func.date(models.UserActivityLog.created_at)
-            ).all()
-            
+            daily_activity_raw = (
+                db.query(
+                    func.date(models.UserActivityLog.created_at).label("date"),
+                    func.count(models.UserActivityLog.id).label("activity_count"),
+                    func.count(func.distinct(models.UserActivityLog.user_id)).label(
+                        "unique_users"
+                    ),
+                )
+                .filter(models.UserActivityLog.created_at >= start_date)
+                .group_by(func.date(models.UserActivityLog.created_at))
+                .order_by(func.date(models.UserActivityLog.created_at))
+                .all()
+            )
+
             # Process daily activity data
             daily_activity = [
                 {
                     "date": str(day.date),
                     "activity_count": day.activity_count,
-                    "unique_users": day.unique_users
+                    "unique_users": day.unique_users,
                 }
                 for day in daily_activity_raw
             ]
-            
+
             # Most active users analysis
-            most_active_users_raw = db.query(
-                models.User.id,
-                models.User.username,
-                models.User.email,
-                models.User.role,
-                func.count(models.UserActivityLog.id).label('activity_count')
-            ).join(
-                models.UserActivityLog, models.User.id == models.UserActivityLog.user_id
-            ).filter(
-                models.UserActivityLog.created_at >= start_date
-            ).group_by(
-                models.User.id, models.User.username, models.User.email, models.User.role
-            ).order_by(
-                func.count(models.UserActivityLog.id).desc()
-            ).limit(10).all()
-            
+            most_active_users_raw = (
+                db.query(
+                    models.User.id,
+                    models.User.username,
+                    models.User.email,
+                    models.User.role,
+                    func.count(models.UserActivityLog.id).label("activity_count"),
+                )
+                .join(
+                    models.UserActivityLog,
+                    models.User.id == models.UserActivityLog.user_id,
+                )
+                .filter(models.UserActivityLog.created_at >= start_date)
+                .group_by(
+                    models.User.id,
+                    models.User.username,
+                    models.User.email,
+                    models.User.role,
+                )
+                .order_by(func.count(models.UserActivityLog.id).desc())
+                .limit(10)
+                .all()
+            )
+
             # Process most active users data
             most_active_users = [
                 {
                     "user_id": user.id,
                     "username": user.username,
                     "email": user.email,
-                    "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
-                    "activity_count": user.activity_count
+                    "role": (
+                        user.role.value
+                        if hasattr(user.role, "value")
+                        else str(user.role)
+                    ),
+                    "activity_count": user.activity_count,
                 }
                 for user in most_active_users_raw
             ]
-            
+
             # Calculate activity summary metrics
             if daily_activity:
-                activity_summary["total_activities"] = sum(day["activity_count"] for day in daily_activity)
-                activity_summary["total_unique_users"] = len(set(
-                    user["user_id"] for user in most_active_users
-                ))
+                activity_summary["total_activities"] = sum(
+                    day["activity_count"] for day in daily_activity
+                )
+                activity_summary["total_unique_users"] = len(
+                    set(user["user_id"] for user in most_active_users)
+                )
                 activity_summary["avg_daily_activities"] = round(
                     activity_summary["total_activities"] / len(daily_activity), 2
                 )
                 activity_summary["avg_daily_users"] = round(
-                    sum(day["unique_users"] for day in daily_activity) / len(daily_activity), 2
+                    sum(day["unique_users"] for day in daily_activity)
+                    / len(daily_activity),
+                    2,
                 )
-                
+
                 # Find peak activity date
                 peak_day = max(daily_activity, key=lambda x: x["activity_count"])
                 activity_summary["peak_activity_date"] = peak_day["date"]
                 activity_summary["data_available"] = True
-            
+
         except Exception as e:
-            dashboard_logger.warning(f"UserActivityLog table may not exist or be accessible: {e}")
+            dashboard_logger.warning(
+                f"UserActivityLog table may not exist or be accessible: {e}"
+            )
             # Continue with empty data structures if activity log is not available
             daily_activity = []
             most_active_users = []
             activity_summary["data_available"] = False
-        
+
         # Log activity analysis access
-        dashboard_logger.info(f"User activity analysis requested by {current_user.username} for {days} days")
-        
+        dashboard_logger.info(
+            f"User activity analysis requested by {current_user.username} for {days} days"
+        )
+
         return {
             "period_days": days,
             "analysis_period": {
                 "start_date": start_date.isoformat(),
                 "end_date": now.isoformat(),
-                "total_days_analyzed": days
+                "total_days_analyzed": days,
             },
             "daily_activity": daily_activity,
             "most_active_users": most_active_users,
@@ -538,42 +633,48 @@ async def get_user_activity_stats(
             "data_quality": {
                 "activity_log_available": activity_summary["data_available"],
                 "days_with_data": len(daily_activity),
-                "users_with_activity": len(most_active_users)
+                "users_with_activity": len(most_active_users),
             },
             "timestamp": now.isoformat(),
             "requested_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-    
+
     except HTTPException:
         # Re-raise HTTP exceptions without modification
         raise
     except Exception as e:
         # Log detailed error information
         import traceback
+
         dashboard_logger.error(f"User activity statistics error: {e}")
         dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch user activity statistics: {str(e)}"
+            detail=f"Failed to fetch user activity statistics: {str(e)}",
         )
+
 
 @router.get("/points-summary")
 async def get_points_summary(
     current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Get Detailed Points and Transaction Statistics (Admin and Super User Only)
-    
+
     Retrieves comprehensive points system analytics including points distribution
     by user role, transaction patterns, top point holders, and financial insights.
     This endpoint provides essential data for points system management and analysis.
-    
+
     Features:
     - Points distribution analysis by user role
     - Transaction volume and pattern analysis
@@ -581,7 +682,7 @@ async def get_points_summary(
     - Financial insights and points economy metrics
     - Transaction type breakdown and analytics
     - Graceful handling of missing points/transaction data
-    
+
     Points Analytics Provided:
         - Role-based Points Distribution: Points allocation across user roles
         - Transaction Analytics: Recent transaction volumes and patterns
@@ -589,11 +690,11 @@ async def get_points_summary(
         - Financial Metrics: Points economy health and distribution
         - Usage Patterns: Points earning and spending behaviors
         - System Health: Points system utilization and engagement
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
-    
+
     Returns:
         dict: Comprehensive points system statistics including:
             - points_by_role: Points distribution breakdown by user role
@@ -603,31 +704,31 @@ async def get_points_summary(
             - points_economy: Overall points system health metrics
             - financial_insights: Points distribution and utilization analysis
             - timestamp: When analysis was performed
-    
+
     Points by Role Structure:
         - role: User role (GENERAL_USER, ADMIN_USER, SUPER_USER)
         - user_count: Number of users in this role with points
         - total_points: Total points ever distributed to this role
         - current_points: Current point balance for this role
         - avg_points: Average points per user in this role
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - Points system access logged for audit purposes
         - Financial data access tracked for compliance
-    
+
     Error Handling:
         - 401: User not authenticated
         - 403: Insufficient privileges (non-admin users)
         - 500: Database errors or points system access failures
         - Graceful degradation when UserPoint table is missing
         - Graceful degradation when PointTransaction table is missing
-    
+
     Data Privacy:
         - User identifiers included for administrative oversight
         - Points balances visible for system management
         - Transaction patterns aggregated for privacy protection
-    
+
     Use Cases:
         - Points system administration and management
         - Financial analysis and points economy monitoring
@@ -640,12 +741,12 @@ async def get_points_summary(
         if not current_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User authentication required"
+                detail="User authentication required",
             )
-        
+
         # Validate user permissions BEFORE processing
         require_admin_or_superuser(current_user)
-        
+
         # Initialize data structures with safe defaults
         points_by_role = []
         recent_transactions = 0
@@ -656,100 +757,149 @@ async def get_points_summary(
             "total_points_distributed": 0,
             "points_utilization_rate": 0,
             "average_user_balance": 0,
-            "data_available": False
+            "data_available": False,
         }
-        
+
         # Attempt to collect points distribution data
         try:
             # Points distribution analysis by user role
-            points_by_role_raw = db.query(
-                models.User.role,
-                func.count(models.User.id).label('user_count'),
-                func.sum(models.UserPoint.total_points).label('total_points'),
-                func.sum(models.UserPoint.current_points).label('current_points'),
-                func.avg(models.UserPoint.current_points).label('avg_points')
-            ).join(
-                models.UserPoint, models.User.id == models.UserPoint.user_id
-            ).group_by(
-                models.User.role
-            ).all()
-            
+            points_by_role_raw = (
+                db.query(
+                    models.User.role,
+                    func.count(models.User.id).label("user_count"),
+                    func.sum(models.UserPoint.total_points).label("total_points"),
+                    func.sum(models.UserPoint.current_points).label("current_points"),
+                    func.avg(models.UserPoint.current_points).label("avg_points"),
+                )
+                .join(models.UserPoint, models.User.id == models.UserPoint.user_id)
+                .group_by(models.User.role)
+                .all()
+            )
+
             # Process points by role data
             points_by_role = [
                 {
-                    "role": role.role.value if hasattr(role.role, 'value') else str(role.role),
+                    "role": (
+                        role.role.value
+                        if hasattr(role.role, "value")
+                        else str(role.role)
+                    ),
                     "user_count": role.user_count,
                     "total_points": role.total_points or 0,
                     "current_points": role.current_points or 0,
                     "avg_points": float(role.avg_points or 0),
-                    "points_utilization": round(
-                        ((role.total_points - role.current_points) / role.total_points * 100), 2
-                    ) if role.total_points and role.total_points > 0 else 0
+                    "points_utilization": (
+                        round(
+                            (
+                                (role.total_points - role.current_points)
+                                / role.total_points
+                                * 100
+                            ),
+                            2,
+                        )
+                        if role.total_points and role.total_points > 0
+                        else 0
+                    ),
                 }
                 for role in points_by_role_raw
             ]
-            
+
             # Top point holders analysis
-            top_point_holders_raw = db.query(
-                models.User.id,
-                models.User.username,
-                models.User.role,
-                models.UserPoint.current_points,
-                models.UserPoint.total_points
-            ).join(
-                models.UserPoint, models.User.id == models.UserPoint.user_id
-            ).order_by(
-                models.UserPoint.current_points.desc()
-            ).limit(10).all()
-            
+            top_point_holders_raw = (
+                db.query(
+                    models.User.id,
+                    models.User.username,
+                    models.User.role,
+                    models.UserPoint.current_points,
+                    models.UserPoint.total_points,
+                )
+                .join(models.UserPoint, models.User.id == models.UserPoint.user_id)
+                .order_by(models.UserPoint.current_points.desc())
+                .limit(10)
+                .all()
+            )
+
             # Process top point holders data
             top_point_holders = [
                 {
                     "user_id": user.id,
                     "username": user.username,
-                    "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+                    "role": (
+                        user.role.value
+                        if hasattr(user.role, "value")
+                        else str(user.role)
+                    ),
                     "current_points": user.current_points or 0,
                     "total_points": user.total_points or 0,
-                    "points_used": (user.total_points or 0) - (user.current_points or 0)
+                    "points_used": (user.total_points or 0)
+                    - (user.current_points or 0),
                 }
                 for user in top_point_holders_raw
             ]
-            
+
             # Calculate points economy metrics
             if points_by_role:
-                points_economy["total_points_distributed"] = sum(role["total_points"] for role in points_by_role)
-                points_economy["total_points_in_system"] = sum(role["current_points"] for role in points_by_role)
-                points_economy["points_utilization_rate"] = round(
-                    ((points_economy["total_points_distributed"] - points_economy["total_points_in_system"]) 
-                     / points_economy["total_points_distributed"] * 100), 2
-                ) if points_economy["total_points_distributed"] > 0 else 0
-                points_economy["average_user_balance"] = round(
-                    points_economy["total_points_in_system"] / sum(role["user_count"] for role in points_by_role), 2
-                ) if sum(role["user_count"] for role in points_by_role) > 0 else 0
+                points_economy["total_points_distributed"] = sum(
+                    role["total_points"] for role in points_by_role
+                )
+                points_economy["total_points_in_system"] = sum(
+                    role["current_points"] for role in points_by_role
+                )
+                points_economy["points_utilization_rate"] = (
+                    round(
+                        (
+                            (
+                                points_economy["total_points_distributed"]
+                                - points_economy["total_points_in_system"]
+                            )
+                            / points_economy["total_points_distributed"]
+                            * 100
+                        ),
+                        2,
+                    )
+                    if points_economy["total_points_distributed"] > 0
+                    else 0
+                )
+                points_economy["average_user_balance"] = (
+                    round(
+                        points_economy["total_points_in_system"]
+                        / sum(role["user_count"] for role in points_by_role),
+                        2,
+                    )
+                    if sum(role["user_count"] for role in points_by_role) > 0
+                    else 0
+                )
                 points_economy["data_available"] = True
-            
+
         except Exception as e:
-            dashboard_logger.warning(f"UserPoint table may not exist or be accessible: {e}")
+            dashboard_logger.warning(
+                f"UserPoint table may not exist or be accessible: {e}"
+            )
             # Continue with empty data if points system is not available
-        
+
         # Attempt to collect transaction data
         try:
             # Recent transactions analysis (last 30 days)
             thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-            recent_transactions = db.query(func.count(models.PointTransaction.id)).filter(
-                models.PointTransaction.created_at >= thirty_days_ago
-            ).scalar() or 0
-            
+            recent_transactions = (
+                db.query(func.count(models.PointTransaction.id))
+                .filter(models.PointTransaction.created_at >= thirty_days_ago)
+                .scalar()
+                or 0
+            )
+
             # Transaction type breakdown and analysis
-            transaction_types_raw = db.query(
-                models.PointTransaction.transaction_type,
-                func.count(models.PointTransaction.id).label('count'),
-                func.sum(models.PointTransaction.points).label('total_points'),
-                func.avg(models.PointTransaction.points).label('avg_points')
-            ).group_by(
-                models.PointTransaction.transaction_type
-            ).all()
-            
+            transaction_types_raw = (
+                db.query(
+                    models.PointTransaction.transaction_type,
+                    func.count(models.PointTransaction.id).label("count"),
+                    func.sum(models.PointTransaction.points).label("total_points"),
+                    func.avg(models.PointTransaction.points).label("avg_points"),
+                )
+                .group_by(models.PointTransaction.transaction_type)
+                .all()
+            )
+
             # Process transaction types data
             transaction_types = [
                 {
@@ -757,24 +907,28 @@ async def get_points_summary(
                     "count": tx.count,
                     "total_points": tx.total_points or 0,
                     "avg_points": float(tx.avg_points or 0),
-                    "percentage_of_total": 0  # Will be calculated after processing all types
+                    "percentage_of_total": 0,  # Will be calculated after processing all types
                 }
                 for tx in transaction_types_raw
             ]
-            
+
             # Calculate transaction type percentages
             total_transaction_count = sum(tx["count"] for tx in transaction_types)
             if total_transaction_count > 0:
                 for tx in transaction_types:
-                    tx["percentage_of_total"] = round((tx["count"] / total_transaction_count * 100), 2)
-            
+                    tx["percentage_of_total"] = round(
+                        (tx["count"] / total_transaction_count * 100), 2
+                    )
+
         except Exception as e:
-            dashboard_logger.warning(f"PointTransaction table may not exist or be accessible: {e}")
+            dashboard_logger.warning(
+                f"PointTransaction table may not exist or be accessible: {e}"
+            )
             # Continue with empty data if transaction system is not available
-        
+
         # Log points summary access
         dashboard_logger.info(f"Points summary requested by {current_user.username}")
-        
+
         return {
             "points_by_role": points_by_role,
             "recent_transactions_30d": recent_transactions,
@@ -783,50 +937,67 @@ async def get_points_summary(
             "points_economy": points_economy,
             "financial_insights": {
                 "total_roles_with_points": len(points_by_role),
-                "most_active_transaction_type": max(transaction_types, key=lambda x: x["count"])["type"] if transaction_types else None,
-                "highest_point_holder": top_point_holders[0] if top_point_holders else None,
-                "transaction_activity_level": "high" if recent_transactions > 100 else "medium" if recent_transactions > 10 else "low"
+                "most_active_transaction_type": (
+                    max(transaction_types, key=lambda x: x["count"])["type"]
+                    if transaction_types
+                    else None
+                ),
+                "highest_point_holder": (
+                    top_point_holders[0] if top_point_holders else None
+                ),
+                "transaction_activity_level": (
+                    "high"
+                    if recent_transactions > 100
+                    else "medium" if recent_transactions > 10 else "low"
+                ),
             },
             "data_quality": {
                 "points_data_available": points_economy["data_available"],
-                "transaction_data_available": recent_transactions > 0 or len(transaction_types) > 0,
+                "transaction_data_available": recent_transactions > 0
+                or len(transaction_types) > 0,
                 "users_with_points": sum(role["user_count"] for role in points_by_role),
-                "transaction_types_count": len(transaction_types)
+                "transaction_types_count": len(transaction_types),
             },
             "timestamp": datetime.utcnow().isoformat(),
             "requested_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-    
+
     except HTTPException:
         # Re-raise HTTP exceptions without modification
         raise
     except Exception as e:
         # Log detailed error information
         import traceback
+
         dashboard_logger.error(f"Points summary error: {e}")
         dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch points summary: {str(e)}"
+            detail=f"Failed to fetch points summary: {str(e)}",
         )
+
 
 @router.get("/system-health")
 async def get_system_health(
     current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Get System Health and Performance Metrics (Admin and Super User Only)
-    
+
     Provides comprehensive system health monitoring including database performance,
     user engagement metrics, API usage statistics, and overall system status.
     Essential for system administrators to monitor platform health and performance.
-    
+
     Features:
     - Database health and performance metrics
     - User engagement and activity analysis
@@ -834,7 +1005,7 @@ async def get_system_health(
     - System resource utilization monitoring
     - Error rate and system stability metrics
     - Real-time system status indicators
-    
+
     Health Metrics Provided:
         - Database Performance: Query performance and connection health
         - User Engagement: Active users, session statistics, engagement rates
@@ -842,11 +1013,11 @@ async def get_system_health(
         - System Resources: Memory usage, processing capacity, storage metrics
         - Security Status: Failed login attempts, security incidents, IP monitoring
         - Data Quality: Data integrity checks, backup status, sync health
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
-    
+
     Returns:
         dict: Comprehensive system health report including:
             - overall_status: System health status (healthy/warning/critical)
@@ -857,12 +1028,12 @@ async def get_system_health(
             - data_quality: Data integrity and backup status
             - recommendations: System optimization recommendations
             - timestamp: When health check was performed
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - System health access logged for audit purposes
         - Critical system information access tracked
-    
+
     Use Cases:
         - System monitoring and alerting
         - Performance optimization and capacity planning
@@ -873,21 +1044,21 @@ async def get_system_health(
     try:
         # Validate user permissions
         require_admin_or_superuser(current_user)
-        
+
         # Initialize health metrics
         now = datetime.utcnow()
         seven_days_ago = now - timedelta(days=7)
         twenty_four_hours_ago = now - timedelta(hours=24)
-        
+
         # Database health metrics
         database_health = {
             "status": "healthy",
             "total_tables": 0,
             "active_connections": 1,  # Current connection
             "query_performance": "good",
-            "data_integrity": "verified"
+            "data_integrity": "verified",
         }
-        
+
         # User engagement metrics
         user_engagement = {
             "total_users": 0,
@@ -895,134 +1066,175 @@ async def get_system_health(
             "active_users_24h": 0,
             "new_registrations_7d": 0,
             "engagement_rate": 0,
-            "session_activity": 0
+            "session_activity": 0,
         }
-        
+
         # API performance metrics
         api_performance = {
             "total_requests_24h": 0,
             "error_rate": 0,
             "avg_response_time": "< 200ms",
             "peak_usage_time": "N/A",
-            "api_health": "operational"
+            "api_health": "operational",
         }
-        
+
         # Security status
         security_status = {
             "failed_login_attempts_24h": 0,
             "active_sessions": 0,
             "ip_whitelist_entries": 0,
             "security_incidents": 0,
-            "threat_level": "low"
+            "threat_level": "low",
         }
-        
+
         # Data quality metrics
         data_quality = {
             "hotels_count": 0,
             "locations_count": 0,
             "provider_mappings": 0,
             "data_completeness": 0,
-            "last_backup": "N/A"
+            "last_backup": "N/A",
         }
-        
+
         try:
             # Collect user engagement data
-            user_engagement["total_users"] = db.query(func.count(models.User.id)).scalar() or 0
-            user_engagement["new_registrations_7d"] = db.query(func.count(models.User.id)).filter(
-                models.User.created_at >= seven_days_ago
-            ).scalar() or 0
-            
+            user_engagement["total_users"] = (
+                db.query(func.count(models.User.id)).scalar() or 0
+            )
+            user_engagement["new_registrations_7d"] = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.created_at >= seven_days_ago)
+                .scalar()
+                or 0
+            )
+
             # Active users metrics
             try:
-                user_engagement["active_users_7d"] = db.query(
-                    func.count(func.distinct(models.UserActivityLog.user_id))
-                ).filter(
-                    models.UserActivityLog.created_at >= seven_days_ago
-                ).scalar() or 0
-                
-                user_engagement["active_users_24h"] = db.query(
-                    func.count(func.distinct(models.UserActivityLog.user_id))
-                ).filter(
-                    models.UserActivityLog.created_at >= twenty_four_hours_ago
-                ).scalar() or 0
-                
+                user_engagement["active_users_7d"] = (
+                    db.query(func.count(func.distinct(models.UserActivityLog.user_id)))
+                    .filter(models.UserActivityLog.created_at >= seven_days_ago)
+                    .scalar()
+                    or 0
+                )
+
+                user_engagement["active_users_24h"] = (
+                    db.query(func.count(func.distinct(models.UserActivityLog.user_id)))
+                    .filter(models.UserActivityLog.created_at >= twenty_four_hours_ago)
+                    .scalar()
+                    or 0
+                )
+
                 # API performance from activity logs
-                api_performance["total_requests_24h"] = db.query(
-                    func.count(models.UserActivityLog.id)
-                ).filter(
-                    models.UserActivityLog.created_at >= twenty_four_hours_ago
-                ).scalar() or 0
-                
+                api_performance["total_requests_24h"] = (
+                    db.query(func.count(models.UserActivityLog.id))
+                    .filter(models.UserActivityLog.created_at >= twenty_four_hours_ago)
+                    .scalar()
+                    or 0
+                )
+
             except Exception:
-                dashboard_logger.warning("UserActivityLog table not accessible for health metrics")
-            
+                dashboard_logger.warning(
+                    "UserActivityLog table not accessible for health metrics"
+                )
+
             # Session activity
             try:
-                security_status["active_sessions"] = db.query(
-                    func.count(models.UserSession.id)
-                ).filter(
-                    models.UserSession.is_active == True
-                ).scalar() or 0
+                security_status["active_sessions"] = (
+                    db.query(func.count(models.UserSession.id))
+                    .filter(models.UserSession.is_active == True)
+                    .scalar()
+                    or 0
+                )
             except Exception:
-                dashboard_logger.warning("UserSession table not accessible for health metrics")
-            
+                dashboard_logger.warning(
+                    "UserSession table not accessible for health metrics"
+                )
+
             # IP whitelist entries
             try:
-                security_status["ip_whitelist_entries"] = db.query(
-                    func.count(models.UserIPWhitelist.id)
-                ).filter(
-                    models.UserIPWhitelist.is_active == True
-                ).scalar() or 0
+                security_status["ip_whitelist_entries"] = (
+                    db.query(func.count(models.UserIPWhitelist.id))
+                    .filter(models.UserIPWhitelist.is_active == True)
+                    .scalar()
+                    or 0
+                )
             except Exception:
-                dashboard_logger.warning("UserIPWhitelist table not accessible for health metrics")
-            
+                dashboard_logger.warning(
+                    "UserIPWhitelist table not accessible for health metrics"
+                )
+
             # Data quality metrics
             try:
-                data_quality["hotels_count"] = db.query(func.count(models.Hotel.id)).scalar() or 0
-                data_quality["locations_count"] = db.query(func.count(models.Location.id)).scalar() or 0
-                data_quality["provider_mappings"] = db.query(func.count(models.ProviderMapping.id)).scalar() or 0
+                data_quality["hotels_count"] = (
+                    db.query(func.count(models.Hotel.id)).scalar() or 0
+                )
+                data_quality["locations_count"] = (
+                    db.query(func.count(models.Location.id)).scalar() or 0
+                )
+                data_quality["provider_mappings"] = (
+                    db.query(func.count(models.ProviderMapping.id)).scalar() or 0
+                )
             except Exception:
-                dashboard_logger.warning("Hotel/Location tables not accessible for health metrics")
-            
+                dashboard_logger.warning(
+                    "Hotel/Location tables not accessible for health metrics"
+                )
+
             # Calculate engagement rate
             if user_engagement["total_users"] > 0:
                 user_engagement["engagement_rate"] = round(
-                    (user_engagement["active_users_7d"] / user_engagement["total_users"]) * 100, 2
+                    (
+                        user_engagement["active_users_7d"]
+                        / user_engagement["total_users"]
+                    )
+                    * 100,
+                    2,
                 )
-            
+
             # Calculate data completeness
             total_data_points = (
-                data_quality["hotels_count"] + 
-                data_quality["locations_count"] + 
-                data_quality["provider_mappings"]
+                data_quality["hotels_count"]
+                + data_quality["locations_count"]
+                + data_quality["provider_mappings"]
             )
-            data_quality["data_completeness"] = min(100, (total_data_points / 1000) * 100) if total_data_points > 0 else 0
-            
+            data_quality["data_completeness"] = (
+                min(100, (total_data_points / 1000) * 100)
+                if total_data_points > 0
+                else 0
+            )
+
         except Exception as e:
             dashboard_logger.error(f"Error collecting health metrics: {e}")
-        
+
         # Determine overall system status
         overall_status = "healthy"
         recommendations = []
-        
+
         # Health checks and recommendations
         if user_engagement["engagement_rate"] < 10:
             overall_status = "warning"
-            recommendations.append("Low user engagement detected - consider user retention strategies")
-        
+            recommendations.append(
+                "Low user engagement detected - consider user retention strategies"
+            )
+
         if user_engagement["active_users_24h"] == 0:
             overall_status = "warning"
-            recommendations.append("No active users in last 24 hours - check system accessibility")
-        
+            recommendations.append(
+                "No active users in last 24 hours - check system accessibility"
+            )
+
         if data_quality["hotels_count"] == 0:
             recommendations.append("No hotel data found - verify data import processes")
-        
+
         if security_status["active_sessions"] > user_engagement["total_users"]:
-            recommendations.append("High session count detected - monitor for unusual activity")
-        
+            recommendations.append(
+                "High session count detected - monitor for unusual activity"
+            )
+
         if not recommendations:
-            recommendations.append("System operating normally - no immediate actions required")
-        
+            recommendations.append(
+                "System operating normally - no immediate actions required"
+            )
+
         return {
             "overall_status": overall_status,
             "database_health": database_health,
@@ -1033,45 +1245,54 @@ async def get_system_health(
             "system_uptime": {
                 "status": "operational",
                 "last_restart": "N/A",
-                "uptime_percentage": 99.9
+                "uptime_percentage": 99.9,
             },
             "recommendations": recommendations,
             "health_score": {
-                "overall": 85 if overall_status == "healthy" else 65 if overall_status == "warning" else 30,
+                "overall": (
+                    85
+                    if overall_status == "healthy"
+                    else 65 if overall_status == "warning" else 30
+                ),
                 "database": 90,
                 "security": 85,
                 "performance": 80,
-                "data_quality": int(data_quality["data_completeness"])
+                "data_quality": int(data_quality["data_completeness"]),
             },
             "timestamp": now.isoformat(),
             "checked_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         dashboard_logger.error(f"System health check error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to perform system health check: {str(e)}"
+            detail=f"Failed to perform system health check: {str(e)}",
         )
+
 
 @router.get("/hotel-analytics")
 async def get_hotel_analytics(
     current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Get Hotel and Location Analytics (Admin and Super User Only)
-    
+
     Provides comprehensive analytics for hotel data, location distribution,
     provider mappings, and content management metrics. Essential for understanding
     hotel inventory, geographic coverage, and data quality.
-    
+
     Features:
     - Hotel inventory and distribution analysis
     - Geographic coverage and location analytics
@@ -1079,7 +1300,7 @@ async def get_hotel_analytics(
     - Content completeness and quality metrics
     - Chain and brand distribution analysis
     - Data integrity and validation insights
-    
+
     Analytics Provided:
         - Hotel Distribution: Total hotels, geographic spread, rating distribution
         - Location Analytics: City/country coverage, coordinate completeness
@@ -1087,11 +1308,11 @@ async def get_hotel_analytics(
         - Content Quality: Data completeness, missing information, validation status
         - Chain Analysis: Hotel chain distribution, brand coverage, hierarchy
         - Performance Metrics: Data update frequency, sync performance, error rates
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
-    
+
     Returns:
         dict: Comprehensive hotel analytics including:
             - hotel_overview: Total hotels, active properties, rating distribution
@@ -1101,12 +1322,12 @@ async def get_hotel_analytics(
             - chain_analysis: Hotel chain and brand distribution
             - data_insights: Performance metrics and recommendations
             - timestamp: When analytics were generated
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - Hotel data access logged for audit purposes
         - Business intelligence access tracked
-    
+
     Use Cases:
         - Hotel inventory management and planning
         - Geographic expansion analysis
@@ -1117,236 +1338,289 @@ async def get_hotel_analytics(
     try:
         # Validate user permissions
         require_admin_or_superuser(current_user)
-        
+
         # Initialize analytics data
         hotel_overview = {
             "total_hotels": 0,
             "active_hotels": 0,
             "hotels_with_coordinates": 0,
             "hotels_with_ratings": 0,
-            "avg_rating": 0
+            "avg_rating": 0,
         }
-        
+
         geographic_distribution = {
             "total_locations": 0,
             "unique_countries": 0,
             "unique_cities": 0,
             "top_countries": [],
-            "top_cities": []
+            "top_cities": [],
         }
-        
+
         provider_analytics = {
             "total_mappings": 0,
             "unique_providers": 0,
             "hotels_with_mappings": 0,
             "mapping_coverage": 0,
-            "top_providers": []
+            "top_providers": [],
         }
-        
+
         content_quality = {
             "hotels_with_complete_data": 0,
             "missing_descriptions": 0,
             "missing_contacts": 0,
-            "data_completeness_score": 0
+            "data_completeness_score": 0,
         }
-        
+
         chain_analysis = {
             "total_chains": 0,
             "hotels_in_chains": 0,
             "independent_hotels": 0,
-            "top_chains": []
+            "top_chains": [],
         }
-        
+
         try:
             # Hotel overview analytics
-            hotel_overview["total_hotels"] = db.query(func.count(models.Hotel.id)).scalar() or 0
-            
+            hotel_overview["total_hotels"] = (
+                db.query(func.count(models.Hotel.id)).scalar() or 0
+            )
+
             # Hotels with coordinates
-            hotel_overview["hotels_with_coordinates"] = db.query(
-                func.count(models.Hotel.id)
-            ).filter(
-                and_(
-                    models.Hotel.latitude.isnot(None),
-                    models.Hotel.longitude.isnot(None)
+            hotel_overview["hotels_with_coordinates"] = (
+                db.query(func.count(models.Hotel.id))
+                .filter(
+                    and_(
+                        models.Hotel.latitude.isnot(None),
+                        models.Hotel.longitude.isnot(None),
+                    )
                 )
-            ).scalar() or 0
-            
+                .scalar()
+                or 0
+            )
+
             # Hotels with ratings
-            hotels_with_ratings = db.query(models.Hotel).filter(
-                models.Hotel.rating.isnot(None)
-            ).all()
+            hotels_with_ratings = (
+                db.query(models.Hotel).filter(models.Hotel.rating.isnot(None)).all()
+            )
             hotel_overview["hotels_with_ratings"] = len(hotels_with_ratings)
-            
+
             if hotels_with_ratings:
-                total_rating = sum(hotel.rating for hotel in hotels_with_ratings if hotel.rating)
-                hotel_overview["avg_rating"] = round(total_rating / len(hotels_with_ratings), 2)
-            
+                total_rating = sum(
+                    hotel.rating for hotel in hotels_with_ratings if hotel.rating
+                )
+                hotel_overview["avg_rating"] = round(
+                    total_rating / len(hotels_with_ratings), 2
+                )
+
         except Exception as e:
             dashboard_logger.warning(f"Error collecting hotel overview: {e}")
-        
+
         try:
             # Geographic distribution analytics
-            geographic_distribution["total_locations"] = db.query(func.count(models.Location.id)).scalar() or 0
-            
+            geographic_distribution["total_locations"] = (
+                db.query(func.count(models.Location.id)).scalar() or 0
+            )
+
             # Unique countries and cities
-            geographic_distribution["unique_countries"] = db.query(
-                func.count(func.distinct(models.Location.country))
-            ).scalar() or 0
-            
-            geographic_distribution["unique_cities"] = db.query(
-                func.count(func.distinct(models.Location.city))
-            ).scalar() or 0
-            
+            geographic_distribution["unique_countries"] = (
+                db.query(func.count(func.distinct(models.Location.country))).scalar()
+                or 0
+            )
+
+            geographic_distribution["unique_cities"] = (
+                db.query(func.count(func.distinct(models.Location.city))).scalar() or 0
+            )
+
             # Top countries by hotel count
-            top_countries_raw = db.query(
-                models.Location.country,
-                func.count(models.Hotel.id).label('hotel_count')
-            ).join(
-                models.Hotel, models.Location.id == models.Hotel.location_id
-            ).group_by(
-                models.Location.country
-            ).order_by(
-                func.count(models.Hotel.id).desc()
-            ).limit(5).all()
-            
+            top_countries_raw = (
+                db.query(
+                    models.Location.country,
+                    func.count(models.Hotel.id).label("hotel_count"),
+                )
+                .join(models.Hotel, models.Location.id == models.Hotel.location_id)
+                .group_by(models.Location.country)
+                .order_by(func.count(models.Hotel.id).desc())
+                .limit(5)
+                .all()
+            )
+
             geographic_distribution["top_countries"] = [
                 {"country": country.country, "hotel_count": country.hotel_count}
                 for country in top_countries_raw
             ]
-            
+
             # Top cities by hotel count
-            top_cities_raw = db.query(
-                models.Location.city,
-                models.Location.country,
-                func.count(models.Hotel.id).label('hotel_count')
-            ).join(
-                models.Hotel, models.Location.id == models.Hotel.location_id
-            ).group_by(
-                models.Location.city, models.Location.country
-            ).order_by(
-                func.count(models.Hotel.id).desc()
-            ).limit(5).all()
-            
+            top_cities_raw = (
+                db.query(
+                    models.Location.city,
+                    models.Location.country,
+                    func.count(models.Hotel.id).label("hotel_count"),
+                )
+                .join(models.Hotel, models.Location.id == models.Hotel.location_id)
+                .group_by(models.Location.city, models.Location.country)
+                .order_by(func.count(models.Hotel.id).desc())
+                .limit(5)
+                .all()
+            )
+
             geographic_distribution["top_cities"] = [
                 {
                     "city": city.city,
                     "country": city.country,
-                    "hotel_count": city.hotel_count
+                    "hotel_count": city.hotel_count,
                 }
                 for city in top_cities_raw
             ]
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error collecting geographic distribution: {e}")
-        
+
         try:
             # Provider analytics
-            provider_analytics["total_mappings"] = db.query(func.count(models.ProviderMapping.id)).scalar() or 0
-            
+            provider_analytics["total_mappings"] = (
+                db.query(func.count(models.ProviderMapping.id)).scalar() or 0
+            )
+
             # Unique providers
-            provider_analytics["unique_providers"] = db.query(
-                func.count(func.distinct(models.ProviderMapping.provider_name))
-            ).scalar() or 0
-            
+            provider_analytics["unique_providers"] = (
+                db.query(
+                    func.count(func.distinct(models.ProviderMapping.provider_name))
+                ).scalar()
+                or 0
+            )
+
             # Hotels with provider mappings
-            provider_analytics["hotels_with_mappings"] = db.query(
-                func.count(func.distinct(models.ProviderMapping.hotel_id))
-            ).scalar() or 0
-            
+            provider_analytics["hotels_with_mappings"] = (
+                db.query(
+                    func.count(func.distinct(models.ProviderMapping.hotel_id))
+                ).scalar()
+                or 0
+            )
+
             # Calculate mapping coverage
             if hotel_overview["total_hotels"] > 0:
                 provider_analytics["mapping_coverage"] = round(
-                    (provider_analytics["hotels_with_mappings"] / hotel_overview["total_hotels"]) * 100, 2
+                    (
+                        provider_analytics["hotels_with_mappings"]
+                        / hotel_overview["total_hotels"]
+                    )
+                    * 100,
+                    2,
                 )
-            
+
             # Top providers by mapping count
-            top_providers_raw = db.query(
-                models.ProviderMapping.provider_name,
-                func.count(models.ProviderMapping.id).label('mapping_count')
-            ).group_by(
-                models.ProviderMapping.provider_name
-            ).order_by(
-                func.count(models.ProviderMapping.id).desc()
-            ).limit(5).all()
-            
+            top_providers_raw = (
+                db.query(
+                    models.ProviderMapping.provider_name,
+                    func.count(models.ProviderMapping.id).label("mapping_count"),
+                )
+                .group_by(models.ProviderMapping.provider_name)
+                .order_by(func.count(models.ProviderMapping.id).desc())
+                .limit(5)
+                .all()
+            )
+
             provider_analytics["top_providers"] = [
-                {"provider": provider.provider_name, "mapping_count": provider.mapping_count}
+                {
+                    "provider": provider.provider_name,
+                    "mapping_count": provider.mapping_count,
+                }
                 for provider in top_providers_raw
             ]
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error collecting provider analytics: {e}")
-        
+
         try:
             # Content quality analytics
-            hotels_with_contacts = db.query(
-                func.count(func.distinct(models.Contact.hotel_id))
-            ).scalar() or 0
-            
-            content_quality["missing_contacts"] = max(0, hotel_overview["total_hotels"] - hotels_with_contacts)
-            
+            hotels_with_contacts = (
+                db.query(func.count(func.distinct(models.Contact.hotel_id))).scalar()
+                or 0
+            )
+
+            content_quality["missing_contacts"] = max(
+                0, hotel_overview["total_hotels"] - hotels_with_contacts
+            )
+
             # Calculate data completeness score
             completeness_factors = [
-                hotel_overview["hotels_with_coordinates"] / max(1, hotel_overview["total_hotels"]),
-                hotel_overview["hotels_with_ratings"] / max(1, hotel_overview["total_hotels"]),
+                hotel_overview["hotels_with_coordinates"]
+                / max(1, hotel_overview["total_hotels"]),
+                hotel_overview["hotels_with_ratings"]
+                / max(1, hotel_overview["total_hotels"]),
                 hotels_with_contacts / max(1, hotel_overview["total_hotels"]),
-                provider_analytics["hotels_with_mappings"] / max(1, hotel_overview["total_hotels"])
+                provider_analytics["hotels_with_mappings"]
+                / max(1, hotel_overview["total_hotels"]),
             ]
-            
+
             content_quality["data_completeness_score"] = round(
                 (sum(completeness_factors) / len(completeness_factors)) * 100, 2
             )
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error collecting content quality: {e}")
-        
+
         try:
             # Chain analysis
-            chain_analysis["total_chains"] = db.query(func.count(models.Chain.id)).scalar() or 0
-            
+            chain_analysis["total_chains"] = (
+                db.query(func.count(models.Chain.id)).scalar() or 0
+            )
+
             # Hotels in chains vs independent
-            hotels_in_chains = db.query(
-                func.count(func.distinct(models.Hotel.id))
-            ).join(
-                models.Chain, models.Hotel.id == models.Chain.hotel_id
-            ).scalar() or 0
-            
+            hotels_in_chains = (
+                db.query(func.count(func.distinct(models.Hotel.id)))
+                .join(models.Chain, models.Hotel.id == models.Chain.hotel_id)
+                .scalar()
+                or 0
+            )
+
             chain_analysis["hotels_in_chains"] = hotels_in_chains
-            chain_analysis["independent_hotels"] = hotel_overview["total_hotels"] - hotels_in_chains
-            
+            chain_analysis["independent_hotels"] = (
+                hotel_overview["total_hotels"] - hotels_in_chains
+            )
+
             # Top chains by hotel count
-            top_chains_raw = db.query(
-                models.Chain.chain_name,
-                func.count(models.Chain.hotel_id).label('hotel_count')
-            ).group_by(
-                models.Chain.chain_name
-            ).order_by(
-                func.count(models.Chain.hotel_id).desc()
-            ).limit(5).all()
-            
+            top_chains_raw = (
+                db.query(
+                    models.Chain.chain_name,
+                    func.count(models.Chain.hotel_id).label("hotel_count"),
+                )
+                .group_by(models.Chain.chain_name)
+                .order_by(func.count(models.Chain.hotel_id).desc())
+                .limit(5)
+                .all()
+            )
+
             chain_analysis["top_chains"] = [
                 {"chain_name": chain.chain_name, "hotel_count": chain.hotel_count}
                 for chain in top_chains_raw
             ]
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error collecting chain analysis: {e}")
-        
+
         # Generate insights and recommendations
         insights = []
-        
+
         if provider_analytics["mapping_coverage"] < 50:
-            insights.append("Low provider mapping coverage - consider expanding integration efforts")
-        
+            insights.append(
+                "Low provider mapping coverage - consider expanding integration efforts"
+            )
+
         if content_quality["data_completeness_score"] < 70:
-            insights.append("Data completeness below optimal - focus on data quality improvements")
-        
+            insights.append(
+                "Data completeness below optimal - focus on data quality improvements"
+            )
+
         if geographic_distribution["unique_countries"] < 10:
-            insights.append("Limited geographic coverage - consider expanding to new markets")
-        
+            insights.append(
+                "Limited geographic coverage - consider expanding to new markets"
+            )
+
         if not insights:
-            insights.append("Hotel data quality and coverage are within acceptable ranges")
-        
+            insights.append(
+                "Hotel data quality and coverage are within acceptable ranges"
+            )
+
         return {
             "hotel_overview": hotel_overview,
             "geographic_distribution": geographic_distribution,
@@ -1357,49 +1631,59 @@ async def get_hotel_analytics(
                 "recommendations": insights,
                 "quality_score": content_quality["data_completeness_score"],
                 "coverage_score": provider_analytics["mapping_coverage"],
-                "geographic_diversity": geographic_distribution["unique_countries"]
+                "geographic_diversity": geographic_distribution["unique_countries"],
             },
             "performance_metrics": {
                 "total_data_points": (
-                    hotel_overview["total_hotels"] + 
-                    geographic_distribution["total_locations"] + 
-                    provider_analytics["total_mappings"]
+                    hotel_overview["total_hotels"]
+                    + geographic_distribution["total_locations"]
+                    + provider_analytics["total_mappings"]
                 ),
                 "data_density": round(
-                    provider_analytics["total_mappings"] / max(1, hotel_overview["total_hotels"]), 2
+                    provider_analytics["total_mappings"]
+                    / max(1, hotel_overview["total_hotels"]),
+                    2,
                 ),
                 "geographic_coverage": round(
-                    geographic_distribution["unique_cities"] / max(1, geographic_distribution["unique_countries"]), 2
-                )
+                    geographic_distribution["unique_cities"]
+                    / max(1, geographic_distribution["unique_countries"]),
+                    2,
+                ),
             },
             "timestamp": datetime.utcnow().isoformat(),
             "analyzed_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         dashboard_logger.error(f"Hotel analytics error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate hotel analytics: {str(e)}"
+            detail=f"Failed to generate hotel analytics: {str(e)}",
         )
+
+
 @router.get("/user-management")
 async def get_user_management_stats(
     current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Get User Management and Administration Statistics (Admin and Super User Only)
-    
+
     Provides comprehensive user management analytics including role distribution,
     user activity patterns, account status monitoring, and administrative insights.
     Essential for user administration and account management operations.
-    
+
     Features:
     - User role distribution and hierarchy analysis
     - Account status monitoring and user lifecycle tracking
@@ -1407,7 +1691,7 @@ async def get_user_management_stats(
     - User engagement and activity pattern analysis
     - Administrative action tracking and audit insights
     - User onboarding and retention metrics
-    
+
     User Management Metrics:
         - Role Distribution: User counts by role, privilege analysis
         - Account Status: Active/inactive users, account health monitoring
@@ -1415,11 +1699,11 @@ async def get_user_management_stats(
         - User Lifecycle: Registration trends, activation rates, retention metrics
         - Administrative Actions: User modifications, role changes, access grants
         - Security Monitoring: Login patterns, access violations, security events
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
-    
+
     Returns:
         dict: Comprehensive user management statistics including:
             - role_distribution: User counts and percentages by role
@@ -1429,12 +1713,12 @@ async def get_user_management_stats(
             - recent_activity: Recent user actions and engagement
             - administrative_insights: Management recommendations and alerts
             - timestamp: When analysis was performed
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - User management access logged for audit purposes
         - Administrative data access tracked for compliance
-    
+
     Use Cases:
         - User administration and account management
         - Role-based access control monitoring
@@ -1445,172 +1729,252 @@ async def get_user_management_stats(
     try:
         # Validate user permissions
         require_admin_or_superuser(current_user)
-        
+
         # Initialize management statistics
         now = datetime.utcnow()
         thirty_days_ago = now - timedelta(days=30)
         seven_days_ago = now - timedelta(days=7)
-        
+
         role_distribution = {
             "super_users": 0,
             "admin_users": 0,
             "general_users": 0,
             "total_users": 0,
-            "role_percentages": {}
+            "role_percentages": {},
         }
-        
+
         account_status = {
             "active_users": 0,
             "inactive_users": 0,
             "users_with_api_keys": 0,
             "users_without_api_keys": 0,
-            "recent_registrations": 0
+            "recent_registrations": 0,
         }
-        
+
         api_integration = {
             "total_api_keys": 0,
             "active_api_users": 0,
             "api_adoption_rate": 0,
-            "users_by_provider_access": {}
+            "users_by_provider_access": {},
         }
-        
+
         user_lifecycle = {
             "new_users_30d": 0,
             "new_users_7d": 0,
             "user_growth_rate": 0,
-            "activation_rate": 0
+            "activation_rate": 0,
         }
-        
+
         try:
             # Role distribution analysis
-            role_counts = db.query(
-                models.User.role,
-                func.count(models.User.id).label('count')
-            ).group_by(models.User.role).all()
-            
+            role_counts = (
+                db.query(models.User.role, func.count(models.User.id).label("count"))
+                .group_by(models.User.role)
+                .all()
+            )
+
             for role_count in role_counts:
-                role_name = role_count.role.value if hasattr(role_count.role, 'value') else str(role_count.role)
+                role_name = (
+                    role_count.role.value
+                    if hasattr(role_count.role, "value")
+                    else str(role_count.role)
+                )
                 if role_name == "super_user":
                     role_distribution["super_users"] = role_count.count
                 elif role_name == "admin_user":
                     role_distribution["admin_users"] = role_count.count
                 elif role_name == "general_user":
                     role_distribution["general_users"] = role_count.count
-            
-            role_distribution["total_users"] = sum([
-                role_distribution["super_users"],
-                role_distribution["admin_users"],
-                role_distribution["general_users"]
-            ])
-            
+
+            role_distribution["total_users"] = sum(
+                [
+                    role_distribution["super_users"],
+                    role_distribution["admin_users"],
+                    role_distribution["general_users"],
+                ]
+            )
+
             # Calculate role percentages
             if role_distribution["total_users"] > 0:
                 role_distribution["role_percentages"] = {
-                    "super_users": round((role_distribution["super_users"] / role_distribution["total_users"]) * 100, 2),
-                    "admin_users": round((role_distribution["admin_users"] / role_distribution["total_users"]) * 100, 2),
-                    "general_users": round((role_distribution["general_users"] / role_distribution["total_users"]) * 100, 2)
+                    "super_users": round(
+                        (
+                            role_distribution["super_users"]
+                            / role_distribution["total_users"]
+                        )
+                        * 100,
+                        2,
+                    ),
+                    "admin_users": round(
+                        (
+                            role_distribution["admin_users"]
+                            / role_distribution["total_users"]
+                        )
+                        * 100,
+                        2,
+                    ),
+                    "general_users": round(
+                        (
+                            role_distribution["general_users"]
+                            / role_distribution["total_users"]
+                        )
+                        * 100,
+                        2,
+                    ),
                 }
-            
+
             # Account status analysis
-            account_status["active_users"] = db.query(func.count(models.User.id)).filter(
-                models.User.is_active == True
-            ).scalar() or 0
-            
-            account_status["inactive_users"] = db.query(func.count(models.User.id)).filter(
-                models.User.is_active == False
-            ).scalar() or 0
-            
-            account_status["users_with_api_keys"] = db.query(func.count(models.User.id)).filter(
-                models.User.api_key.isnot(None)
-            ).scalar() or 0
-            
-            account_status["users_without_api_keys"] = role_distribution["total_users"] - account_status["users_with_api_keys"]
-            
-            account_status["recent_registrations"] = db.query(func.count(models.User.id)).filter(
-                models.User.created_at >= thirty_days_ago
-            ).scalar() or 0
-            
+            account_status["active_users"] = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.is_active == True)
+                .scalar()
+                or 0
+            )
+
+            account_status["inactive_users"] = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.is_active == False)
+                .scalar()
+                or 0
+            )
+
+            account_status["users_with_api_keys"] = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.api_key.isnot(None))
+                .scalar()
+                or 0
+            )
+
+            account_status["users_without_api_keys"] = (
+                role_distribution["total_users"] - account_status["users_with_api_keys"]
+            )
+
+            account_status["recent_registrations"] = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.created_at >= thirty_days_ago)
+                .scalar()
+                or 0
+            )
+
             # API integration analysis
             api_integration["total_api_keys"] = account_status["users_with_api_keys"]
-            api_integration["active_api_users"] = account_status["users_with_api_keys"]  # Assuming users with keys are active
-            
+            api_integration["active_api_users"] = account_status[
+                "users_with_api_keys"
+            ]  # Assuming users with keys are active
+
             if role_distribution["total_users"] > 0:
                 api_integration["api_adoption_rate"] = round(
-                    (api_integration["active_api_users"] / role_distribution["total_users"]) * 100, 2
+                    (
+                        api_integration["active_api_users"]
+                        / role_distribution["total_users"]
+                    )
+                    * 100,
+                    2,
                 )
-            
+
             # Provider access analysis
             try:
-                provider_access = db.query(
-                    models.UserProviderPermission.provider_name,
-                    func.count(models.UserProviderPermission.user_id).label('user_count')
-                ).group_by(
-                    models.UserProviderPermission.provider_name
-                ).all()
-                
+                provider_access = (
+                    db.query(
+                        models.UserProviderPermission.provider_name,
+                        func.count(models.UserProviderPermission.user_id).label(
+                            "user_count"
+                        ),
+                    )
+                    .group_by(models.UserProviderPermission.provider_name)
+                    .all()
+                )
+
                 api_integration["users_by_provider_access"] = {
-                    access.provider_name: access.user_count for access in provider_access
+                    access.provider_name: access.user_count
+                    for access in provider_access
                 }
             except Exception:
                 dashboard_logger.warning("UserProviderPermission table not accessible")
-            
+
             # User lifecycle analysis
             user_lifecycle["new_users_30d"] = account_status["recent_registrations"]
-            user_lifecycle["new_users_7d"] = db.query(func.count(models.User.id)).filter(
-                models.User.created_at >= seven_days_ago
-            ).scalar() or 0
-            
+            user_lifecycle["new_users_7d"] = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.created_at >= seven_days_ago)
+                .scalar()
+                or 0
+            )
+
             # Calculate growth rate (new users in last 30 days vs total)
             if role_distribution["total_users"] > 0:
                 user_lifecycle["user_growth_rate"] = round(
-                    (user_lifecycle["new_users_30d"] / role_distribution["total_users"]) * 100, 2
+                    (user_lifecycle["new_users_30d"] / role_distribution["total_users"])
+                    * 100,
+                    2,
                 )
-            
+
             # Activation rate (users with API keys vs total new users)
             if user_lifecycle["new_users_30d"] > 0:
-                new_users_with_keys = db.query(func.count(models.User.id)).filter(
-                    and_(
-                        models.User.created_at >= thirty_days_ago,
-                        models.User.api_key.isnot(None)
+                new_users_with_keys = (
+                    db.query(func.count(models.User.id))
+                    .filter(
+                        and_(
+                            models.User.created_at >= thirty_days_ago,
+                            models.User.api_key.isnot(None),
+                        )
                     )
-                ).scalar() or 0
-                
+                    .scalar()
+                    or 0
+                )
+
                 user_lifecycle["activation_rate"] = round(
                     (new_users_with_keys / user_lifecycle["new_users_30d"]) * 100, 2
                 )
-            
+
         except Exception as e:
             dashboard_logger.error(f"Error collecting user management stats: {e}")
-        
+
         # Generate administrative insights and recommendations
         insights = []
         alerts = []
-        
+
         # Role distribution insights
         if role_distribution["role_percentages"].get("general_users", 0) > 95:
-            insights.append("High percentage of general users - consider user engagement programs")
-        
-        if role_distribution["role_percentages"].get("admin_users", 0) + role_distribution["role_percentages"].get("super_users", 0) < 1:
-            alerts.append("Very low admin user percentage - ensure adequate administrative coverage")
-        
+            insights.append(
+                "High percentage of general users - consider user engagement programs"
+            )
+
+        if (
+            role_distribution["role_percentages"].get("admin_users", 0)
+            + role_distribution["role_percentages"].get("super_users", 0)
+            < 1
+        ):
+            alerts.append(
+                "Very low admin user percentage - ensure adequate administrative coverage"
+            )
+
         # API adoption insights
         if api_integration["api_adoption_rate"] < 20:
-            insights.append("Low API adoption rate - consider improving onboarding and documentation")
-        
+            insights.append(
+                "Low API adoption rate - consider improving onboarding and documentation"
+            )
+
         # User growth insights
         if user_lifecycle["user_growth_rate"] < 5:
-            insights.append("Low user growth rate - consider marketing and user acquisition strategies")
-        
+            insights.append(
+                "Low user growth rate - consider marketing and user acquisition strategies"
+            )
+
         if user_lifecycle["activation_rate"] < 50:
-            insights.append("Low user activation rate - improve onboarding process and API key distribution")
-        
+            insights.append(
+                "Low user activation rate - improve onboarding process and API key distribution"
+            )
+
         # Account status insights
         if account_status["inactive_users"] > account_status["active_users"] * 0.2:
-            alerts.append("High inactive user count - review account management policies")
-        
+            alerts.append(
+                "High inactive user count - review account management policies"
+            )
+
         if not insights:
             insights.append("User management metrics are within normal ranges")
-        
+
         return {
             "role_distribution": role_distribution,
             "account_status": account_status,
@@ -1621,54 +1985,83 @@ async def get_user_management_stats(
                 "new_registrations_30d": user_lifecycle["new_users_30d"],
                 "api_keys_issued": api_integration["total_api_keys"],
                 "active_user_percentage": round(
-                    (account_status["active_users"] / max(1, role_distribution["total_users"])) * 100, 2
-                )
+                    (
+                        account_status["active_users"]
+                        / max(1, role_distribution["total_users"])
+                    )
+                    * 100,
+                    2,
+                ),
             },
             "administrative_insights": {
                 "recommendations": insights,
                 "alerts": alerts,
                 "management_score": {
-                    "role_balance": min(100, max(0, 100 - abs(role_distribution["role_percentages"].get("general_users", 0) - 90))),
+                    "role_balance": min(
+                        100,
+                        max(
+                            0,
+                            100
+                            - abs(
+                                role_distribution["role_percentages"].get(
+                                    "general_users", 0
+                                )
+                                - 90
+                            ),
+                        ),
+                    ),
                     "api_adoption": api_integration["api_adoption_rate"],
                     "user_growth": min(100, user_lifecycle["user_growth_rate"] * 10),
-                    "activation_success": user_lifecycle["activation_rate"]
-                }
+                    "activation_success": user_lifecycle["activation_rate"],
+                },
             },
             "security_overview": {
                 "users_with_secure_access": account_status["users_with_api_keys"],
-                "admin_coverage": role_distribution["admin_users"] + role_distribution["super_users"],
+                "admin_coverage": role_distribution["admin_users"]
+                + role_distribution["super_users"],
                 "account_security_score": round(
-                    (account_status["active_users"] / max(1, role_distribution["total_users"])) * 100, 2
-                )
+                    (
+                        account_status["active_users"]
+                        / max(1, role_distribution["total_users"])
+                    )
+                    * 100,
+                    2,
+                ),
             },
             "timestamp": now.isoformat(),
             "analyzed_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         dashboard_logger.error(f"User management statistics error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch user management statistics: {str(e)}"
-        )@router.get("/performance_metrics")
+            detail=f"Failed to fetch user management statistics: {str(e)}",
+        ) @ router.get("/performance_metrics")
+
+
 async def get_performance_metrics(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-    days: int = 7
+    days: int = 7,
 ) -> Dict[str, Any]:
     """
     Get System Performance and Usage Metrics (Admin and Super User Only)
-    
+
     Provides detailed performance analytics including response times, throughput,
     error rates, and system utilization metrics. Essential for performance monitoring,
     optimization, and capacity planning.
-    
+
     Features:
     - API performance and response time analysis
     - System throughput and request volume metrics
@@ -1676,7 +2069,7 @@ async def get_performance_metrics(
     - Database performance and query optimization insights
     - User activity patterns and peak usage identification
     - Resource utilization and capacity planning metrics
-    
+
     Performance Metrics:
         - API Performance: Response times, throughput, success rates
         - System Load: Request volumes, peak usage times, capacity utilization
@@ -1684,12 +2077,12 @@ async def get_performance_metrics(
         - Database Performance: Query performance, connection health, data access patterns
         - User Patterns: Activity distribution, usage trends, engagement metrics
         - Resource Metrics: System resource usage, performance bottlenecks
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
         days (int): Analysis period in days (default: 7, range: 1-30)
-    
+
     Returns:
         dict: Comprehensive performance metrics including:
             - api_performance: Response times and throughput metrics
@@ -1699,12 +2092,12 @@ async def get_performance_metrics(
             - user_activity_patterns: Usage trends and peak times
             - performance_insights: Optimization recommendations
             - timestamp: When metrics were collected
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - Performance data access logged for audit purposes
         - System metrics access tracked for security
-    
+
     Use Cases:
         - Performance monitoring and alerting
         - System optimization and tuning
@@ -1715,144 +2108,167 @@ async def get_performance_metrics(
     try:
         # Validate user permissions and parameters
         require_admin_or_superuser(current_user)
-        
+
         if days < 1 or days > 30:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Days parameter must be between 1 and 30"
+                detail="Days parameter must be between 1 and 30",
             )
-        
+
         # Initialize performance metrics
         now = datetime.utcnow()
         start_date = now - timedelta(days=days)
-        
+
         api_performance = {
             "total_requests": 0,
             "avg_response_time": "< 200ms",
             "success_rate": 100.0,
             "throughput_per_hour": 0,
-            "peak_requests_hour": 0
+            "peak_requests_hour": 0,
         }
-        
+
         system_load = {
             "requests_per_day": [],
             "peak_usage_times": [],
             "capacity_utilization": 0,
-            "load_distribution": {}
+            "load_distribution": {},
         }
-        
+
         error_analysis = {
             "total_errors": 0,
             "error_rate": 0,
             "error_types": {},
             "critical_errors": 0,
-            "system_stability": "stable"
+            "system_stability": "stable",
         }
-        
+
         database_performance = {
             "query_count": 0,
             "avg_query_time": "< 50ms",
             "connection_health": "healthy",
-            "data_access_patterns": {}
+            "data_access_patterns": {},
         }
-        
+
         user_activity_patterns = {
             "active_users_period": 0,
             "activity_distribution": {},
             "peak_activity_hours": [],
-            "user_engagement_score": 0
+            "user_engagement_score": 0,
         }
-        
+
         try:
             # API performance analysis from activity logs
-            total_activities = db.query(func.count(models.UserActivityLog.id)).filter(
-                models.UserActivityLog.created_at >= start_date
-            ).scalar() or 0
-            
+            total_activities = (
+                db.query(func.count(models.UserActivityLog.id))
+                .filter(models.UserActivityLog.created_at >= start_date)
+                .scalar()
+                or 0
+            )
+
             api_performance["total_requests"] = total_activities
-            
+
             if days > 0:
-                api_performance["throughput_per_hour"] = round(total_activities / (days * 24), 2)
-            
+                api_performance["throughput_per_hour"] = round(
+                    total_activities / (days * 24), 2
+                )
+
             # Daily request distribution
-            daily_requests = db.query(
-                func.date(models.UserActivityLog.created_at).label('date'),
-                func.count(models.UserActivityLog.id).label('request_count')
-            ).filter(
-                models.UserActivityLog.created_at >= start_date
-            ).group_by(
-                func.date(models.UserActivityLog.created_at)
-            ).all()
-            
+            daily_requests = (
+                db.query(
+                    func.date(models.UserActivityLog.created_at).label("date"),
+                    func.count(models.UserActivityLog.id).label("request_count"),
+                )
+                .filter(models.UserActivityLog.created_at >= start_date)
+                .group_by(func.date(models.UserActivityLog.created_at))
+                .all()
+            )
+
             system_load["requests_per_day"] = [
-                {
-                    "date": str(day.date),
-                    "requests": day.request_count
-                }
+                {"date": str(day.date), "requests": day.request_count}
                 for day in daily_requests
             ]
-            
+
             # Peak usage analysis
             if daily_requests:
                 peak_day = max(daily_requests, key=lambda x: x.request_count)
-                api_performance["peak_requests_hour"] = round(peak_day.request_count / 24, 2)
-            
+                api_performance["peak_requests_hour"] = round(
+                    peak_day.request_count / 24, 2
+                )
+
             # User activity patterns
-            user_activity_patterns["active_users_period"] = db.query(
-                func.count(func.distinct(models.UserActivityLog.user_id))
-            ).filter(
-                models.UserActivityLog.created_at >= start_date
-            ).scalar() or 0
-            
+            user_activity_patterns["active_users_period"] = (
+                db.query(func.count(func.distinct(models.UserActivityLog.user_id)))
+                .filter(models.UserActivityLog.created_at >= start_date)
+                .scalar()
+                or 0
+            )
+
             # Activity distribution by hour (simulated)
             hourly_distribution = {}
             for hour in range(24):
-                # This is a simplified simulation - in real implementation, 
+                # This is a simplified simulation - in real implementation,
                 # you'd extract hour from timestamp and group by it
-                hourly_distribution[f"{hour:02d}:00"] = round(total_activities / 24 * (0.5 + 0.5 * abs(12 - hour) / 12), 0)
-            
+                hourly_distribution[f"{hour:02d}:00"] = round(
+                    total_activities / 24 * (0.5 + 0.5 * abs(12 - hour) / 12), 0
+                )
+
             user_activity_patterns["activity_distribution"] = hourly_distribution
-            
+
             # Peak activity hours (top 3 hours)
-            sorted_hours = sorted(hourly_distribution.items(), key=lambda x: x[1], reverse=True)
-            user_activity_patterns["peak_activity_hours"] = [hour for hour, _ in sorted_hours[:3]]
-            
+            sorted_hours = sorted(
+                hourly_distribution.items(), key=lambda x: x[1], reverse=True
+            )
+            user_activity_patterns["peak_activity_hours"] = [
+                hour for hour, _ in sorted_hours[:3]
+            ]
+
         except Exception as e:
-            dashboard_logger.warning(f"UserActivityLog not accessible for performance metrics: {e}")
-        
+            dashboard_logger.warning(
+                f"UserActivityLog not accessible for performance metrics: {e}"
+            )
+
         try:
             # Database performance metrics
             # Count total database operations (approximated by user queries)
             total_users = db.query(func.count(models.User.id)).scalar() or 0
             total_hotels = db.query(func.count(models.Hotel.id)).scalar() or 0
             total_locations = db.query(func.count(models.Location.id)).scalar() or 0
-            
-            database_performance["query_count"] = total_users + total_hotels + total_locations
-            
+
+            database_performance["query_count"] = (
+                total_users + total_hotels + total_locations
+            )
+
             # Data access patterns (simplified)
             database_performance["data_access_patterns"] = {
                 "user_queries": total_users,
                 "hotel_queries": total_hotels,
                 "location_queries": total_locations,
-                "most_accessed": "users" if total_users >= max(total_hotels, total_locations) else "hotels"
+                "most_accessed": (
+                    "users"
+                    if total_users >= max(total_hotels, total_locations)
+                    else "hotels"
+                ),
             }
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error collecting database performance: {e}")
-        
+
         # Calculate derived metrics
         if api_performance["total_requests"] > 0:
             # Simulate success rate (in real implementation, track actual errors)
             api_performance["success_rate"] = 99.5  # Simulated high success rate
             error_analysis["error_rate"] = 100 - api_performance["success_rate"]
-            error_analysis["total_errors"] = round(api_performance["total_requests"] * (error_analysis["error_rate"] / 100))
-        
+            error_analysis["total_errors"] = round(
+                api_performance["total_requests"] * (error_analysis["error_rate"] / 100)
+            )
+
         # User engagement score
         total_users_system = db.query(func.count(models.User.id)).scalar() or 1
         user_activity_patterns["user_engagement_score"] = round(
-            (user_activity_patterns["active_users_period"] / total_users_system) * 100, 2
+            (user_activity_patterns["active_users_period"] / total_users_system) * 100,
+            2,
         )
-        
+
         # System stability assessment
         if error_analysis["error_rate"] < 1:
             error_analysis["system_stability"] = "excellent"
@@ -1862,44 +2278,60 @@ async def get_performance_metrics(
             error_analysis["system_stability"] = "fair"
         else:
             error_analysis["system_stability"] = "needs_attention"
-        
+
         # Capacity utilization (simplified calculation)
-        max_theoretical_requests = days * 24 * 1000  # 1000 requests per hour theoretical max
-        system_load["capacity_utilization"] = round(
-            (api_performance["total_requests"] / max_theoretical_requests) * 100, 2
-        ) if max_theoretical_requests > 0 else 0
-        
+        max_theoretical_requests = (
+            days * 24 * 1000
+        )  # 1000 requests per hour theoretical max
+        system_load["capacity_utilization"] = (
+            round(
+                (api_performance["total_requests"] / max_theoretical_requests) * 100, 2
+            )
+            if max_theoretical_requests > 0
+            else 0
+        )
+
         # Generate performance insights
         insights = []
         recommendations = []
-        
+
         if api_performance["throughput_per_hour"] > 500:
-            insights.append("High API throughput detected - monitor for performance bottlenecks")
+            insights.append(
+                "High API throughput detected - monitor for performance bottlenecks"
+            )
         elif api_performance["throughput_per_hour"] < 10:
             insights.append("Low API usage - consider user engagement strategies")
-        
+
         if system_load["capacity_utilization"] > 80:
-            recommendations.append("High capacity utilization - consider scaling resources")
+            recommendations.append(
+                "High capacity utilization - consider scaling resources"
+            )
         elif system_load["capacity_utilization"] < 20:
-            recommendations.append("Low capacity utilization - resources may be over-provisioned")
-        
+            recommendations.append(
+                "Low capacity utilization - resources may be over-provisioned"
+            )
+
         if user_activity_patterns["user_engagement_score"] < 30:
-            recommendations.append("Low user engagement - review user experience and onboarding")
-        
+            recommendations.append(
+                "Low user engagement - review user experience and onboarding"
+            )
+
         if error_analysis["error_rate"] > 5:
-            recommendations.append("High error rate detected - investigate system issues")
-        
+            recommendations.append(
+                "High error rate detected - investigate system issues"
+            )
+
         if not insights:
             insights.append("System performance is within normal operating parameters")
-        
+
         if not recommendations:
             recommendations.append("No immediate performance optimizations required")
-        
+
         return {
             "analysis_period": {
                 "days": days,
                 "start_date": start_date.isoformat(),
-                "end_date": now.isoformat()
+                "end_date": now.isoformat(),
             },
             "api_performance": api_performance,
             "system_load": system_load,
@@ -1911,47 +2343,54 @@ async def get_performance_metrics(
                 "recommendations": recommendations,
                 "overall_score": {
                     "performance": 90 if api_performance["success_rate"] > 99 else 70,
-                    "stability": 95 if error_analysis["system_stability"] == "excellent" else 75,
+                    "stability": (
+                        95 if error_analysis["system_stability"] == "excellent" else 75
+                    ),
                     "efficiency": min(100, 100 - system_load["capacity_utilization"]),
-                    "engagement": user_activity_patterns["user_engagement_score"]
-                }
+                    "engagement": user_activity_patterns["user_engagement_score"],
+                },
             },
             "benchmarks": {
                 "target_success_rate": 99.9,
                 "target_response_time": "< 200ms",
                 "target_capacity_utilization": "60-80%",
-                "target_engagement_score": "> 50%"
+                "target_engagement_score": "> 50%",
             },
             "timestamp": now.isoformat(),
             "analyzed_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         dashboard_logger.error(f"Performance metrics error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to collect performance metrics: {str(e)}"
+            detail=f"Failed to collect performance metrics: {str(e)}",
         )
+
 
 @router.get("/export-data")
 async def export_dashboard_data(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-    format: str = "json"
+    format: str = "json",
 ) -> Dict[str, Any]:
     """
     Export Dashboard Data for Reporting and Analysis (Admin and Super User Only)
-    
+
     Provides comprehensive data export functionality for dashboard analytics,
     supporting multiple formats for reporting, analysis, and integration with
     external business intelligence tools.
-    
+
     Features:
     - Multi-format data export (JSON, CSV-ready structure)
     - Comprehensive dashboard data aggregation
@@ -1959,7 +2398,7 @@ async def export_dashboard_data(
     - Audit trail and export logging
     - Data privacy and security compliance
     - Customizable export scope and filtering
-    
+
     Export Data Includes:
         - User Statistics: Role distribution, activity metrics, engagement data
         - System Health: Performance metrics, error rates, capacity utilization
@@ -1967,12 +2406,12 @@ async def export_dashboard_data(
         - Points System: Transaction data, distribution metrics, financial insights
         - Performance Data: API metrics, throughput analysis, system stability
         - Administrative Data: Management statistics, security metrics, audit data
-    
+
     Args:
         current_user: Currently authenticated user (injected by dependency)
         db (Session): Database session (injected by dependency)
         format (str): Export format - "json" or "csv_structure" (default: "json")
-    
+
     Returns:
         dict: Comprehensive dashboard data export including:
             - export_metadata: Export information and timestamps
@@ -1982,12 +2421,12 @@ async def export_dashboard_data(
             - points_analytics: Points system and transaction data
             - performance_analytics: System performance metrics
             - export_summary: Data export summary and statistics
-    
+
     Access Control:
         - Requires ADMIN_USER or SUPER_USER role
         - Data export access logged for audit and compliance
         - Sensitive data export tracked for security monitoring
-    
+
     Use Cases:
         - Business intelligence and reporting
         - Data analysis and visualization
@@ -1998,20 +2437,22 @@ async def export_dashboard_data(
     try:
         # Validate user permissions
         require_admin_or_superuser(current_user)
-        
+
         # Validate format parameter
         if format not in ["json", "csv_structure"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Format must be 'json' or 'csv_structure'"
+                detail="Format must be 'json' or 'csv_structure'",
             )
-        
+
         # Log data export request
-        dashboard_logger.info(f"Dashboard data export requested by {current_user.username} in {format} format")
-        
+        dashboard_logger.info(
+            f"Dashboard data export requested by {current_user.username} in {format} format"
+        )
+
         # Initialize export data structure
         export_timestamp = datetime.utcnow()
-        
+
         # Collect comprehensive dashboard data
         export_data = {
             "export_metadata": {
@@ -2020,163 +2461,220 @@ async def export_dashboard_data(
                 "exported_by": {
                     "user_id": current_user.id,
                     "username": current_user.username,
-                    "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+                    "role": (
+                        current_user.role.value
+                        if hasattr(current_user.role, "value")
+                        else str(current_user.role)
+                    ),
                 },
                 "data_scope": "complete_dashboard",
-                "export_version": "1.0"
+                "export_version": "1.0",
             }
         }
-        
+
         try:
             # User analytics export
             total_users = db.query(func.count(models.User.id)).scalar() or 0
-            active_users = db.query(func.count(models.User.id)).filter(
-                models.User.is_active == True
-            ).scalar() or 0
-            
-            users_with_api_keys = db.query(func.count(models.User.id)).filter(
-                models.User.api_key.isnot(None)
-            ).scalar() or 0
-            
+            active_users = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.is_active == True)
+                .scalar()
+                or 0
+            )
+
+            users_with_api_keys = (
+                db.query(func.count(models.User.id))
+                .filter(models.User.api_key.isnot(None))
+                .scalar()
+                or 0
+            )
+
             # Role distribution
-            role_counts = db.query(
-                models.User.role,
-                func.count(models.User.id).label('count')
-            ).group_by(models.User.role).all()
-            
+            role_counts = (
+                db.query(models.User.role, func.count(models.User.id).label("count"))
+                .group_by(models.User.role)
+                .all()
+            )
+
             role_distribution = {}
             for role_count in role_counts:
-                role_name = role_count.role.value if hasattr(role_count.role, 'value') else str(role_count.role)
+                role_name = (
+                    role_count.role.value
+                    if hasattr(role_count.role, "value")
+                    else str(role_count.role)
+                )
                 role_distribution[role_name] = role_count.count
-            
+
             export_data["user_analytics"] = {
                 "total_users": total_users,
                 "active_users": active_users,
                 "inactive_users": total_users - active_users,
                 "users_with_api_keys": users_with_api_keys,
-                "api_adoption_rate": round((users_with_api_keys / max(1, total_users)) * 100, 2),
+                "api_adoption_rate": round(
+                    (users_with_api_keys / max(1, total_users)) * 100, 2
+                ),
                 "role_distribution": role_distribution,
                 "user_engagement_metrics": {
-                    "activation_rate": round((active_users / max(1, total_users)) * 100, 2),
-                    "api_integration_rate": round((users_with_api_keys / max(1, total_users)) * 100, 2)
-                }
+                    "activation_rate": round(
+                        (active_users / max(1, total_users)) * 100, 2
+                    ),
+                    "api_integration_rate": round(
+                        (users_with_api_keys / max(1, total_users)) * 100, 2
+                    ),
+                },
             }
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error exporting user analytics: {e}")
             export_data["user_analytics"] = {"error": "Data not available"}
-        
+
         try:
             # System analytics export
             hotel_count = db.query(func.count(models.Hotel.id)).scalar() or 0
             location_count = db.query(func.count(models.Location.id)).scalar() or 0
-            
+
             export_data["system_analytics"] = {
                 "database_health": {
                     "total_hotels": hotel_count,
                     "total_locations": location_count,
                     "data_integrity": "verified",
-                    "system_status": "operational"
+                    "system_status": "operational",
                 },
                 "capacity_metrics": {
                     "hotel_capacity": hotel_count,
                     "location_coverage": location_count,
-                    "system_utilization": "normal"
-                }
+                    "system_utilization": "normal",
+                },
             }
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error exporting system analytics: {e}")
             export_data["system_analytics"] = {"error": "Data not available"}
-        
+
         try:
             # Hotel analytics export
-            provider_mappings = db.query(func.count(models.ProviderMapping.id)).scalar() or 0
-            
+            provider_mappings = (
+                db.query(func.count(models.ProviderMapping.id)).scalar() or 0
+            )
+
             # Geographic distribution
-            country_distribution = db.query(
-                models.Location.country,
-                func.count(models.Hotel.id).label('hotel_count')
-            ).join(
-                models.Hotel, models.Location.id == models.Hotel.location_id
-            ).group_by(
-                models.Location.country
-            ).limit(10).all()
-            
+            country_distribution = (
+                db.query(
+                    models.Location.country,
+                    func.count(models.Hotel.id).label("hotel_count"),
+                )
+                .join(models.Hotel, models.Location.id == models.Hotel.location_id)
+                .group_by(models.Location.country)
+                .limit(10)
+                .all()
+            )
+
             export_data["hotel_analytics"] = {
                 "inventory_summary": {
                     "total_hotels": hotel_count,
                     "total_locations": location_count,
                     "provider_mappings": provider_mappings,
-                    "mapping_coverage": round((provider_mappings / max(1, hotel_count)) * 100, 2)
+                    "mapping_coverage": round(
+                        (provider_mappings / max(1, hotel_count)) * 100, 2
+                    ),
                 },
                 "geographic_distribution": [
                     {"country": country.country, "hotel_count": country.hotel_count}
                     for country in country_distribution
                 ],
-                "data_quality_score": min(100, (hotel_count + location_count + provider_mappings) / 100)
+                "data_quality_score": min(
+                    100, (hotel_count + location_count + provider_mappings) / 100
+                ),
             }
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Error exporting hotel analytics: {e}")
             export_data["hotel_analytics"] = {"error": "Data not available"}
-        
+
         try:
             # Points analytics export (if available)
-            total_points = db.query(func.sum(models.UserPoint.total_points)).scalar() or 0
-            current_points = db.query(func.sum(models.UserPoint.current_points)).scalar() or 0
-            
+            total_points = (
+                db.query(func.sum(models.UserPoint.total_points)).scalar() or 0
+            )
+            current_points = (
+                db.query(func.sum(models.UserPoint.current_points)).scalar() or 0
+            )
+
             export_data["points_analytics"] = {
                 "points_economy": {
                     "total_points_distributed": total_points,
                     "current_points_balance": current_points,
-                    "points_utilization_rate": round(((total_points - current_points) / max(1, total_points)) * 100, 2),
-                    "points_system_health": "operational" if total_points > 0 else "inactive"
+                    "points_utilization_rate": round(
+                        ((total_points - current_points) / max(1, total_points)) * 100,
+                        2,
+                    ),
+                    "points_system_health": (
+                        "operational" if total_points > 0 else "inactive"
+                    ),
                 }
             }
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Points system not available for export: {e}")
             export_data["points_analytics"] = {"points_system_status": "not_configured"}
-        
+
         try:
             # Performance analytics export
             seven_days_ago = export_timestamp - timedelta(days=7)
-            recent_activity = db.query(func.count(models.UserActivityLog.id)).filter(
-                models.UserActivityLog.created_at >= seven_days_ago
-            ).scalar() or 0
-            
+            recent_activity = (
+                db.query(func.count(models.UserActivityLog.id))
+                .filter(models.UserActivityLog.created_at >= seven_days_ago)
+                .scalar()
+                or 0
+            )
+
             export_data["performance_analytics"] = {
                 "activity_metrics": {
                     "recent_activity_7d": recent_activity,
                     "avg_daily_activity": round(recent_activity / 7, 2),
-                    "system_performance": "optimal" if recent_activity > 0 else "low_activity"
+                    "system_performance": (
+                        "optimal" if recent_activity > 0 else "low_activity"
+                    ),
                 },
                 "system_health_score": 85,  # Calculated based on various metrics
                 "performance_benchmarks": {
                     "response_time": "< 200ms",
                     "uptime": "99.9%",
-                    "error_rate": "< 1%"
-                }
+                    "error_rate": "< 1%",
+                },
             }
-            
+
         except Exception as e:
             dashboard_logger.warning(f"Activity data not available for export: {e}")
-            export_data["performance_analytics"] = {"activity_tracking": "not_available"}
-        
+            export_data["performance_analytics"] = {
+                "activity_tracking": "not_available"
+            }
+
         # Export summary
         export_data["export_summary"] = {
-            "total_data_points": sum([
-                export_data.get("user_analytics", {}).get("total_users", 0),
-                export_data.get("hotel_analytics", {}).get("inventory_summary", {}).get("total_hotels", 0),
-                export_data.get("hotel_analytics", {}).get("inventory_summary", {}).get("total_locations", 0)
-            ]),
-            "data_categories_exported": len([k for k in export_data.keys() if k not in ["export_metadata", "export_summary"]]),
+            "total_data_points": sum(
+                [
+                    export_data.get("user_analytics", {}).get("total_users", 0),
+                    export_data.get("hotel_analytics", {})
+                    .get("inventory_summary", {})
+                    .get("total_hotels", 0),
+                    export_data.get("hotel_analytics", {})
+                    .get("inventory_summary", {})
+                    .get("total_locations", 0),
+                ]
+            ),
+            "data_categories_exported": len(
+                [
+                    k
+                    for k in export_data.keys()
+                    if k not in ["export_metadata", "export_summary"]
+                ]
+            ),
             "export_completeness": "complete",
             "data_quality": "high",
-            "export_size_estimate": "medium"
+            "export_size_estimate": "medium",
         }
-        
+
         # Format-specific processing
         if format == "csv_structure":
             # Provide CSV-friendly structure
@@ -2188,37 +2686,40 @@ async def export_dashboard_data(
                     "users_summary.csv",
                     "hotels_inventory.csv",
                     "geographic_distribution.csv",
-                    "performance_metrics.csv"
-                ]
+                    "performance_metrics.csv",
+                ],
             }
-        
+
         # Log successful export
-        dashboard_logger.info(f"Dashboard data export completed successfully for {current_user.username}")
-        
+        dashboard_logger.info(
+            f"Dashboard data export completed successfully for {current_user.username}"
+        )
+
         return export_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
         dashboard_logger.error(f"Dashboard data export error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export dashboard data: {str(e)}"
+            detail=f"Failed to export dashboard data: {str(e)}",
         )
-        
+
+
 @router.get("/current-active-user-check")
 async def get_current_active_user_info(
     current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     Get Current Active User Complete Information and Activity Analysis
-    
+
     Provides comprehensive information about the currently authenticated user including
     detailed activity logs, URL usage patterns, login/logout history, API usage statistics,
     and complete user profile information. This endpoint gives a complete 360-degree view
     of the current user's system interaction and behavior patterns.
-    
+
     Features:
     - ✅ Complete user profile and account information
     - ✅ Provider permissions and access levels
@@ -2229,7 +2730,7 @@ async def get_current_active_user_info(
     - ✅ URL access patterns and frequency analysis
     - ✅ Account status and security metrics
     - ✅ System preferences and configuration
-    
+
     Returns:
         dict: Comprehensive user information including:
             - user_profile: Basic user information and account details
@@ -2239,18 +2740,18 @@ async def get_current_active_user_info(
             - points: Points balance and transaction history
             - statistics: API usage statistics and patterns
             - preferences: User preferences and settings
-    
+
     Access Control:
         - Requires active user authentication
         - Returns data only for the authenticated user
         - No role restrictions (all users can access their own data)
-    
+
     HTTP Status Codes:
         200: User information retrieved successfully
         401: Authentication required
         500: Internal server error
     """
-    
+
     try:
         # 1. USER PROFILE INFORMATION
         user_profile = {
@@ -2259,58 +2760,88 @@ async def get_current_active_user_info(
             "email": current_user.email,
             "role": current_user.role if current_user.role else None,
             "is_active": current_user.is_active,
-            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
-            "updated_at": current_user.updated_at.isoformat() if current_user.updated_at else None,
-            "last_login": current_user.last_login.isoformat() if hasattr(current_user, 'last_login') and current_user.last_login else None,
-            "points_balance": getattr(current_user, 'points', 0)
+            "created_at": (
+                current_user.created_at.isoformat() if current_user.created_at else None
+            ),
+            "updated_at": (
+                current_user.updated_at.isoformat() if current_user.updated_at else None
+            ),
+            "last_login": (
+                current_user.last_login.isoformat()
+                if hasattr(current_user, "last_login") and current_user.last_login
+                else None
+            ),
+            "points_balance": getattr(current_user, "points", 0),
         }
-        
+
         # 2. PROVIDER PERMISSIONS
-        user_permissions = db.query(models.UserProviderPermission).filter(
-            models.UserProviderPermission.user_id == current_user.id
-        ).all()
-        
+        user_permissions = (
+            db.query(models.UserProviderPermission)
+            .filter(models.UserProviderPermission.user_id == current_user.id)
+            .all()
+        )
+
         # Separate active and temporarily deactivated permissions
         active_permissions = []
         temp_deactivated_permissions = []
-        
+
         for perm in user_permissions:
             if perm.provider_name.startswith("TEMP_DEACTIVATED_"):
                 original_name = perm.provider_name.replace("TEMP_DEACTIVATED_", "")
-                temp_deactivated_permissions.append({
-                    "id": perm.id,
-                    "provider_name": original_name,
-                    "status": "temporarily_deactivated",
-                    "created_at": perm.created_at.isoformat() if hasattr(perm, 'created_at') and perm.created_at else None
-                })
+                temp_deactivated_permissions.append(
+                    {
+                        "id": perm.id,
+                        "provider_name": original_name,
+                        "status": "temporarily_deactivated",
+                        "created_at": (
+                            perm.created_at.isoformat()
+                            if hasattr(perm, "created_at") and perm.created_at
+                            else None
+                        ),
+                    }
+                )
             else:
                 # Check if this provider is not temporarily deactivated
                 is_temp_deactivated = any(
-                    p.provider_name == f"TEMP_DEACTIVATED_{perm.provider_name}" 
+                    p.provider_name == f"TEMP_DEACTIVATED_{perm.provider_name}"
                     for p in user_permissions
                 )
-                
-                active_permissions.append({
-                    "id": perm.id,
-                    "provider_name": perm.provider_name,
-                    "status": "deactivated" if is_temp_deactivated else "active",
-                    "created_at": perm.created_at.isoformat() if hasattr(perm, 'created_at') and perm.created_at else None
-                })
-        
+
+                active_permissions.append(
+                    {
+                        "id": perm.id,
+                        "provider_name": perm.provider_name,
+                        "status": "deactivated" if is_temp_deactivated else "active",
+                        "created_at": (
+                            perm.created_at.isoformat()
+                            if hasattr(perm, "created_at") and perm.created_at
+                            else None
+                        ),
+                    }
+                )
+
         permissions_info = {
             "total_permissions": len(user_permissions),
-            "active_permissions": len([p for p in active_permissions if p["status"] == "active"]),
-            "deactivated_permissions": len([p for p in active_permissions if p["status"] == "deactivated"]),
+            "active_permissions": len(
+                [p for p in active_permissions if p["status"] == "active"]
+            ),
+            "deactivated_permissions": len(
+                [p for p in active_permissions if p["status"] == "deactivated"]
+            ),
             "temp_deactivated_permissions": len(temp_deactivated_permissions),
-            "permissions_list": active_permissions + temp_deactivated_permissions
+            "permissions_list": active_permissions + temp_deactivated_permissions,
         }
-        
+
         # 3. IP WHITELIST AND SECURITY
-        ip_whitelist_entries = db.query(models.UserIPWhitelist).filter(
-            models.UserIPWhitelist.user_id == current_user.id,
-            models.UserIPWhitelist.is_active == True
-        ).all()
-        
+        ip_whitelist_entries = (
+            db.query(models.UserIPWhitelist)
+            .filter(
+                models.UserIPWhitelist.user_id == current_user.id,
+                models.UserIPWhitelist.is_active == True,
+            )
+            .all()
+        )
+
         security_info = {
             "ip_whitelist": {
                 "total_entries": len(ip_whitelist_entries),
@@ -2318,28 +2849,40 @@ async def get_current_active_user_info(
                     {
                         "id": entry.id,
                         "ip_address": entry.ip_address,
-                        "created_at": entry.created_at.isoformat() if hasattr(entry, 'created_at') and entry.created_at else None,
-                        "updated_at": entry.updated_at.isoformat() if hasattr(entry, 'updated_at') and entry.updated_at else None
+                        "created_at": (
+                            entry.created_at.isoformat()
+                            if hasattr(entry, "created_at") and entry.created_at
+                            else None
+                        ),
+                        "updated_at": (
+                            entry.updated_at.isoformat()
+                            if hasattr(entry, "updated_at") and entry.updated_at
+                            else None
+                        ),
                     }
                     for entry in ip_whitelist_entries
-                ]
+                ],
             },
             "account_security": {
                 "has_ip_whitelist": len(ip_whitelist_entries) > 0,
                 "is_active": current_user.is_active,
-                "role_level": current_user.role if current_user.role else "unknown"
-            }
+                "role_level": current_user.role if current_user.role else "unknown",
+            },
         }
-        
+
         # 4. RECENT ACTIVITY LOGS (if audit log model exists)
         recent_activity = []
         try:
             # Try to get recent audit logs
-            if hasattr(models, 'AuditLog'):
-                recent_logs = db.query(models.AuditLog).filter(
-                    models.AuditLog.user_id == current_user.id
-                ).order_by(models.AuditLog.timestamp.desc()).limit(20).all()
-                
+            if hasattr(models, "AuditLog"):
+                recent_logs = (
+                    db.query(models.AuditLog)
+                    .filter(models.AuditLog.user_id == current_user.id)
+                    .order_by(models.AuditLog.timestamp.desc())
+                    .limit(20)
+                    .all()
+                )
+
                 recent_activity = [
                     {
                         "id": log.id,
@@ -2348,61 +2891,75 @@ async def get_current_active_user_info(
                         "method": log.method,
                         "status_code": log.status_code,
                         "client_ip": log.client_ip,
-                        "timestamp": log.timestamp.isoformat() if log.timestamp else None
+                        "timestamp": (
+                            log.timestamp.isoformat() if log.timestamp else None
+                        ),
                     }
                     for log in recent_logs
                 ]
         except Exception as e:
             # If audit log model doesn't exist or there's an error, continue without it
             pass
-        
+
         activity_info = {
             "recent_activity_count": len(recent_activity),
-            "recent_activities": recent_activity
+            "recent_activities": recent_activity,
         }
-        
+
         # 5. POINTS AND TRANSACTIONS (if points system exists)
         points_info = {
-            "current_balance": getattr(current_user, 'points', 0),
-            "points_system_active": hasattr(current_user, 'points')
+            "current_balance": getattr(current_user, "points", 0),
+            "points_system_active": hasattr(current_user, "points"),
         }
-        
+
         # Try to get points transaction history if model exists
         try:
-            if hasattr(models, 'PointsTransaction'):
-                recent_transactions = db.query(models.PointsTransaction).filter(
-                    models.PointsTransaction.user_id == current_user.id
-                ).order_by(models.PointsTransaction.created_at.desc()).limit(10).all()
-                
+            if hasattr(models, "PointsTransaction"):
+                recent_transactions = (
+                    db.query(models.PointsTransaction)
+                    .filter(models.PointsTransaction.user_id == current_user.id)
+                    .order_by(models.PointsTransaction.created_at.desc())
+                    .limit(10)
+                    .all()
+                )
+
                 points_info["recent_transactions"] = [
                     {
                         "id": trans.id,
                         "amount": trans.amount,
                         "transaction_type": trans.transaction_type,
                         "description": trans.description,
-                        "created_at": trans.created_at.isoformat() if trans.created_at else None
+                        "created_at": (
+                            trans.created_at.isoformat() if trans.created_at else None
+                        ),
                     }
                     for trans in recent_transactions
                 ]
         except Exception:
             pass
-        
+
         # 6. USAGE STATISTICS
         statistics_info = {
             "total_provider_permissions": len(user_permissions),
-            "active_providers": len([p for p in active_permissions if p["status"] == "active"]),
+            "active_providers": len(
+                [p for p in active_permissions if p["status"] == "active"]
+            ),
             "ip_whitelist_entries": len(ip_whitelist_entries),
             "recent_activity_entries": len(recent_activity),
-            "account_age_days": (datetime.utcnow() - current_user.created_at).days if current_user.created_at else 0
+            "account_age_days": (
+                (datetime.utcnow() - current_user.created_at).days
+                if current_user.created_at
+                else 0
+            ),
         }
-        
+
         # 7. SYSTEM PREFERENCES (placeholder for future implementation)
         preferences_info = {
             "timezone": "UTC",  # Default, can be expanded
-            "language": "en",   # Default, can be expanded
-            "notifications_enabled": True  # Default, can be expanded
+            "language": "en",  # Default, can be expanded
+            "notifications_enabled": True,  # Default, can be expanded
         }
-        
+
         # 8. COMPILE COMPLETE RESPONSE
         response = {
             "success": True,
@@ -2417,12 +2974,12 @@ async def get_current_active_user_info(
             "system_info": {
                 "api_version": "v1.0",
                 "endpoint": "/current-active-user-check",
-                "response_generated_at": datetime.utcnow().isoformat()
-            }
+                "response_generated_at": datetime.utcnow().isoformat(),
+            },
         }
-        
+
         return response
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2431,6 +2988,1628 @@ async def get_current_active_user_info(
                 "message": "Failed to retrieve user information",
                 "error_code": "USER_INFO_RETRIEVAL_ERROR",
                 "details": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        )
+
+
+# ============================================================================
+# HELPER FUNCTIONS FOR NEW USER DASHBOARD
+# ============================================================================
+
+
+@cache(expire=60)  # 1-minute cache
+async def get_user_account_info(db: Session, user: models.User) -> Dict[str, Any]:
+    """
+    Retrieve user account details and calculate account status.
+
+    Args:
+        db: Database session
+        user: User object
+
+    Returns:
+        Dictionary with account information including:
+        - user_id, username, email
+        - account_status (pending_activation, active, suspended)
+        - created_at, days_since_registration
+    """
+    # Calculate days since registration
+    days_since_registration = 0
+    if user.created_at:
+        days_since_registration = (datetime.utcnow() - user.created_at).days
+
+    # Determine account status based on suppliers and points
+    supplier_count = (
+        db.query(func.count(models.UserProviderPermission.id))
+        .filter(models.UserProviderPermission.user_id == user.id)
+        .scalar()
+        or 0
+    )
+
+    point_balance = 0
+    try:
+        user_point = (
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == user.id)
+            .first()
+        )
+        if user_point:
+            point_balance = user_point.current_points or 0
+    except Exception:
+        pass
+
+    # Determine account status
+    if not user.is_active:
+        account_status = "suspended"
+    elif supplier_count == 0 or point_balance == 0:
+        account_status = "pending_activation"
+    else:
+        account_status = "active"
+
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "account_status": account_status,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "days_since_registration": days_since_registration,
+    }
+
+
+def calculate_onboarding_progress(user: models.User, db: Session) -> Dict[str, Any]:
+    """
+    Calculate onboarding progress and generate pending actions.
+
+    Args:
+        user: User object
+        db: Database session
+
+    Returns:
+        Dictionary with:
+        - completion_percentage (0-100)
+        - completed_steps (list of strings)
+        - pending_steps (list of dicts with action, description, estimated_time)
+    """
+    completed_steps = []
+    pending_steps = []
+
+    # Step 1: Account created (always completed if user exists)
+    completed_steps.append("Account created")
+
+    # Step 2: Supplier permissions assigned
+    supplier_count = (
+        db.query(func.count(models.UserProviderPermission.id))
+        .filter(models.UserProviderPermission.user_id == user.id)
+        .scalar()
+        or 0
+    )
+
+    if supplier_count > 0:
+        completed_steps.append("Supplier permissions assigned")
+    else:
+        pending_steps.append(
+            {
+                "action": "Get supplier access",
+                "description": "Contact administrator to assign supplier permissions",
+                "estimated_time": "1-2 business days",
             }
+        )
+
+    # Step 3: Points allocated
+    point_balance = 0
+    try:
+        user_point = (
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == user.id)
+            .first()
+        )
+        if user_point and user_point.total_points > 0:
+            point_balance = user_point.total_points
+            completed_steps.append("Points allocated")
+        else:
+            pending_steps.append(
+                {
+                    "action": "Request point allocation",
+                    "description": "Contact administrator to receive point package",
+                    "estimated_time": "1-2 business days",
+                }
+            )
+    except Exception:
+        pending_steps.append(
+            {
+                "action": "Request point allocation",
+                "description": "Contact administrator to receive point package",
+                "estimated_time": "1-2 business days",
+            }
+        )
+
+    # Calculate completion percentage
+    total_steps = 3  # Account created, suppliers assigned, points allocated
+    completion_percentage = int((len(completed_steps) / total_steps) * 100)
+
+    return {
+        "completion_percentage": completion_percentage,
+        "completed_steps": completed_steps,
+        "pending_steps": pending_steps,
+    }
+
+
+@cache(expire=300)  # 5-minute cache
+async def get_available_suppliers(db: Session) -> list:
+    """
+    Query SupplierSummary table for all available suppliers.
+
+    Args:
+        db: Database session
+
+    Returns:
+        List of supplier dictionaries with name, hotel_count, last_updated
+    """
+    try:
+        suppliers = db.query(models.SupplierSummary).all()
+
+        return [
+            {
+                "name": supplier.provider_name,
+                "hotel_count": supplier.total_hotels or 0,
+                "mapping_count": supplier.total_mappings or 0,
+                "last_updated": (
+                    supplier.last_updated.isoformat() if supplier.last_updated else None
+                ),
+            }
+            for supplier in suppliers
+        ]
+    except Exception as e:
+        dashboard_logger.warning(f"Error fetching suppliers: {e}")
+        return []
+
+
+def get_available_packages() -> list:
+    """
+    Define static information for all point package types.
+
+    Returns:
+        List of package dictionaries with type, description, example_points
+    """
+    return [
+        {
+            "type": "admin_user_package",
+            "name": "Admin User Package",
+            "description": "Unlimited access package for administrative users",
+            "example_points": "1000000",
+            "features": [
+                "Unlimited API calls",
+                "All suppliers access",
+                "Priority support",
+            ],
+        },
+        {
+            "type": "one_year_package",
+            "name": "One Year Package",
+            "description": "Annual subscription with generous point allocation",
+            "example_points": "100000",
+            "features": ["Valid for 1 year", "High volume usage", "Standard support"],
+        },
+        {
+            "type": "one_month_package",
+            "name": "One Month Package",
+            "description": "Monthly subscription for regular usage",
+            "example_points": "10000",
+            "features": [
+                "Valid for 1 month",
+                "Medium volume usage",
+                "Standard support",
+            ],
+        },
+        {
+            "type": "per_request_point",
+            "name": "Per Request Package",
+            "description": "Pay-as-you-go point allocation",
+            "example_points": "1000",
+            "features": ["Flexible usage", "No expiration", "Basic support"],
+        },
+        {
+            "type": "guest_point",
+            "name": "Guest Package",
+            "description": "Trial package for new users",
+            "example_points": "100",
+            "features": ["Limited trial access", "Basic features", "Community support"],
+        },
+    ]
+
+
+def fill_time_series_gaps(data: list, days: int = 30) -> list:
+    """
+    Fill missing dates in time-series data with zero values.
+
+    Args:
+        data: List of dicts with 'date' and 'value' keys
+        days: Number of days to include in the series
+
+    Returns:
+        Complete time-series list with all dates filled
+    """
+    # Generate complete date range
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=days - 1)
+
+    # Create a dictionary from existing data for quick lookup
+    data_dict = {item["date"]: item["value"] for item in data}
+
+    # Generate complete series
+    complete_series = []
+    current_date = start_date
+
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        complete_series.append({"date": date_str, "value": data_dict.get(date_str, 0)})
+        current_date += timedelta(days=1)
+
+    return complete_series
+
+
+@cache(expire=60)  # 1-minute cache
+async def get_user_login_time_series(
+    db: Session, user_id: str, days: int = 30
+) -> Dict[str, Any]:
+    """
+    Query UserActivityLog for login events and generate time-series data.
+
+    Args:
+        db: Database session
+        user_id: User ID to filter by
+        days: Number of days to include (default 30)
+
+    Returns:
+        Dictionary with time_series data and data_available flag
+    """
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+        # Query login events - wrapped in try-except for graceful degradation
+        login_data = (
+            db.query(
+                func.date(models.UserActivityLog.created_at).label("date"),
+                func.count(models.UserActivityLog.id).label("value"),
+            )
+            .filter(
+                models.UserActivityLog.user_id == user_id,
+                models.UserActivityLog.action == "login",
+                models.UserActivityLog.created_at >= start_date,
+            )
+            .group_by(func.date(models.UserActivityLog.created_at))
+            .all()
+        )
+
+        # Convert to list of dicts
+        data = [{"date": str(row.date), "value": row.value} for row in login_data]
+
+        # Fill gaps and return with data_available flag
+        return {
+            "time_series": fill_time_series_gaps(data, days),
+            "data_available": True,
+        }
+
+    except Exception as e:
+        # Log warning for missing table or query errors
+        dashboard_logger.warning(
+            f"UserActivityLog table may not exist or be accessible for user {user_id}: {e}"
+        )
+        # Return empty series with zeros and data_available flag set to false
+        return {"time_series": fill_time_series_gaps([], days), "data_available": False}
+
+
+@cache(expire=300)  # 5-minute cache
+async def get_platform_registration_trends(
+    db: Session, days: int = 30
+) -> Dict[str, Any]:
+    """
+    Query User table for registration dates and generate time-series data.
+
+    Args:
+        db: Database session
+        days: Number of days to include (default 30)
+
+    Returns:
+        Dictionary with time_series data and data_available flag
+    """
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+        # Query registration data
+        registration_data = (
+            db.query(
+                func.date(models.User.created_at).label("date"),
+                func.count(models.User.id).label("value"),
+            )
+            .filter(models.User.created_at >= start_date)
+            .group_by(func.date(models.User.created_at))
+            .all()
+        )
+
+        # Convert to list of dicts
+        data = [
+            {"date": str(row.date), "value": row.value} for row in registration_data
+        ]
+
+        # Fill gaps and return with data_available flag
+        return {
+            "time_series": fill_time_series_gaps(data, days),
+            "data_available": True,
+        }
+
+    except Exception as e:
+        dashboard_logger.warning(
+            f"User table may not be accessible for registration trends: {e}"
+        )
+        # Return empty series with zeros and data_available flag set to false
+        return {"time_series": fill_time_series_gaps([], days), "data_available": False}
+
+
+@cache(expire=300)  # 5-minute cache
+async def get_hotel_update_trends(db: Session, days: int = 30) -> Dict[str, Any]:
+    """
+    Query Hotel table for update timestamps and generate time-series data.
+
+    Args:
+        db: Database session
+        days: Number of days to include (default 30)
+
+    Returns:
+        Dictionary with time_series data and data_available flag
+    """
+    try:
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+        # Query hotel update data
+        hotel_update_data = (
+            db.query(
+                func.date(models.Hotel.updated_at).label("date"),
+                func.count(models.Hotel.id).label("value"),
+            )
+            .filter(models.Hotel.updated_at >= start_date)
+            .group_by(func.date(models.Hotel.updated_at))
+            .all()
+        )
+
+        # Convert to list of dicts
+        data = [
+            {"date": str(row.date), "value": row.value} for row in hotel_update_data
+        ]
+
+        # Fill gaps and return with data_available flag
+        return {
+            "time_series": fill_time_series_gaps(data, days),
+            "data_available": True,
+        }
+
+    except Exception as e:
+        dashboard_logger.warning(
+            f"Hotel table may not be accessible for update trends: {e}"
+        )
+        # Return empty series with zeros and data_available flag set to false
+        return {"time_series": fill_time_series_gaps([], days), "data_available": False}
+
+
+def generate_recommendations(user: models.User, db: Session) -> Dict[str, Any]:
+    """
+    Analyze user's current state and generate prioritized recommendations.
+
+    Args:
+        user: User object
+        db: Database session
+
+    Returns:
+        Dictionary with next_steps and estimated_activation_time
+    """
+    next_steps = []
+    priority = 1
+
+    # Check supplier permissions
+    supplier_count = (
+        db.query(func.count(models.UserProviderPermission.id))
+        .filter(models.UserProviderPermission.user_id == user.id)
+        .scalar()
+        or 0
+    )
+
+    if supplier_count == 0:
+        next_steps.append(
+            {
+                "priority": priority,
+                "action": "Request Supplier Access",
+                "description": "Contact your administrator to assign supplier permissions. This will allow you to access hotel data from various providers.",
+                "contact_info": "Email: admin@hita-system.com or contact your system administrator",
+                "estimated_time": "1-2 business days",
+            }
+        )
+        priority += 1
+
+    # Check point allocation
+    point_balance = 0
+    try:
+        user_point = (
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == user.id)
+            .first()
+        )
+        if user_point:
+            point_balance = user_point.current_points or 0
+    except Exception:
+        pass
+
+    if point_balance == 0:
+        next_steps.append(
+            {
+                "priority": priority,
+                "action": "Request Point Allocation",
+                "description": "Contact your administrator to receive a point package. Points are required to make API requests.",
+                "contact_info": "Email: admin@hita-system.com or contact your system administrator",
+                "estimated_time": "1-2 business days",
+            }
+        )
+        priority += 1
+
+    # If both are missing, provide combined guidance
+    if supplier_count == 0 and point_balance == 0:
+        next_steps.append(
+            {
+                "priority": priority,
+                "action": "Review Documentation",
+                "description": "While waiting for activation, review the API documentation and integration guides.",
+                "contact_info": "Documentation: /docs",
+                "estimated_time": "30 minutes",
+            }
+        )
+        estimated_activation = "2-3 business days"
+    elif supplier_count == 0 or point_balance == 0:
+        estimated_activation = "1-2 business days"
+    else:
+        next_steps.append(
+            {
+                "priority": 1,
+                "action": "Start Using the API",
+                "description": "Your account is fully activated! You can now start making API requests.",
+                "contact_info": "API Documentation: /docs",
+                "estimated_time": "Ready now",
+            }
+        )
+        estimated_activation = "Account is active"
+
+    return {"next_steps": next_steps, "estimated_activation_time": estimated_activation}
+
+
+# ============================================================================
+# NEW USER DASHBOARD ENDPOINT
+# ============================================================================
+
+
+async def _get_new_user_dashboard_data(
+    request: Request, current_user: models.User, db: Session
+) -> Dict[str, Any]:
+    """
+    Internal function to gather dashboard data with timeout protection.
+
+    This function contains the main logic for gathering dashboard data and is wrapped
+    by the endpoint handler with timeout protection.
+    """
+    # ====================================================================
+    # SUBTASK 2.2: User Authentication and Validation
+    # ====================================================================
+
+    # Validate current_user object is not None
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User authentication required",
+        )
+
+    # ====================================================================
+    # SUBTASK 4.2: Add Audit Logging for Dashboard Access
+    # ====================================================================
+
+    # Extract IP address from request
+    client_ip = "unknown"
+    if hasattr(request.state, "real_ip") and request.state.real_ip:
+        client_ip = request.state.real_ip
+    elif request.client:
+        client_ip = request.client.host
+
+    # Log all dashboard access attempts with comprehensive user details
+    dashboard_logger.info(
+        f"📊 New User Dashboard Access - "
+        f"Timestamp: {datetime.utcnow().isoformat()} | "
+        f"User ID: {current_user.id} | "
+        f"Username: {current_user.username} | "
+        f"Email: {current_user.email} | "
+        f"Role: {current_user.role} | "
+        f"IP Address: {client_ip}"
+    )
+
+    # ====================================================================
+    # SUBTASK 2.3: Gather User Account Information
+    # ====================================================================
+
+    try:
+        # Initialize cache status tracking
+        cache_failures = []
+
+        # Call get_user_account_info() with db session and current user with cache fallback
+        account_info_base = {}
+        try:
+            account_info_base = await get_user_account_info(db, current_user)
+        except Exception as e:
+            dashboard_logger.warning(
+                f"Cache unavailable for user account info, falling back to direct query: {e}"
+            )
+            cache_failures.append("user_account_info")
+            # Fallback to direct calculation
+            days_since_registration = 0
+            if current_user.created_at:
+                days_since_registration = (
+                    datetime.utcnow() - current_user.created_at
+                ).days
+
+            supplier_count = (
+                db.query(func.count(models.UserProviderPermission.id))
+                .filter(models.UserProviderPermission.user_id == current_user.id)
+                .scalar()
+                or 0
+            )
+
+            point_balance = 0
+            try:
+                user_point = (
+                    db.query(models.UserPoint)
+                    .filter(models.UserPoint.user_id == current_user.id)
+                    .first()
+                )
+                if user_point:
+                    point_balance = user_point.current_points or 0
+            except Exception:
+                pass
+
+            if not current_user.is_active:
+                account_status = "suspended"
+            elif supplier_count == 0 or point_balance == 0:
+                account_status = "pending_activation"
+            else:
+                account_status = "active"
+
+            account_info_base = {
+                "user_id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "account_status": account_status,
+                "created_at": (
+                    current_user.created_at.isoformat()
+                    if current_user.created_at
+                    else None
+                ),
+                "days_since_registration": days_since_registration,
+            }
+
+        # Call calculate_onboarding_progress() for progress metrics
+        onboarding_progress = calculate_onboarding_progress(current_user, db)
+
+        # Combine results into account_info response section
+        account_info = {**account_info_base, "onboarding_progress": onboarding_progress}
+
+        # ====================================================================
+        # SUBTASK 2.4: Gather User Resource Information
+        # ====================================================================
+
+        # Query UserProviderPermission table to count active suppliers for user
+        supplier_count = (
+            db.query(func.count(models.UserProviderPermission.id))
+            .filter(models.UserProviderPermission.user_id == current_user.id)
+            .scalar()
+            or 0
+        )
+
+        # Get assigned supplier names
+        assigned_suppliers = []
+        try:
+            supplier_permissions = (
+                db.query(models.UserProviderPermission)
+                .filter(models.UserProviderPermission.user_id == current_user.id)
+                .all()
+            )
+            assigned_suppliers = [perm.provider_name for perm in supplier_permissions]
+        except Exception as e:
+            dashboard_logger.warning(f"Error fetching assigned suppliers: {e}")
+
+        # Query UserPoint table to get current point balance
+        point_balance = 0
+        total_allocated = 0
+        package_type = None
+        try:
+            user_point = (
+                db.query(models.UserPoint)
+                .filter(models.UserPoint.user_id == current_user.id)
+                .first()
+            )
+            if user_point:
+                point_balance = user_point.current_points or 0
+                total_allocated = user_point.total_points or 0
+                # Infer package type from total points (simplified logic)
+                if total_allocated >= 1000000:
+                    package_type = "admin_user_package"
+                elif total_allocated >= 100000:
+                    package_type = "one_year_package"
+                elif total_allocated >= 10000:
+                    package_type = "one_month_package"
+                elif total_allocated >= 1000:
+                    package_type = "per_request_point"
+                elif total_allocated > 0:
+                    package_type = "guest_point"
+        except Exception as e:
+            dashboard_logger.warning(f"Error fetching user points: {e}")
+
+        # Determine if supplier assignment is pending (count == 0)
+        supplier_pending = supplier_count == 0
+
+        # Determine if point allocation is pending (balance == 0)
+        points_pending = point_balance == 0
+
+        # Get total available suppliers
+        total_available_suppliers = (
+            db.query(func.count(models.SupplierSummary.id)).scalar() or 0
+        )
+
+        # Format into user_resources response section
+        user_resources = {
+            "suppliers": {
+                "active_count": supplier_count,
+                "total_available": total_available_suppliers,
+                "assigned_suppliers": assigned_suppliers,
+                "pending_assignment": supplier_pending,
+            },
+            "points": {
+                "current_balance": point_balance,
+                "total_allocated": total_allocated,
+                "package_type": package_type,
+                "pending_allocation": points_pending,
+            },
+        }
+
+        # ====================================================================
+        # SUBTASK 2.5: Gather Platform Overview Statistics
+        # ====================================================================
+
+        # Query User table for total user count
+        total_users = db.query(func.count(models.User.id)).scalar() or 0
+
+        # Query Hotel table for total hotel count
+        total_hotels = db.query(func.count(models.Hotel.id)).scalar() or 0
+
+        # Query ProviderMapping table for total mapping count
+        total_mappings = db.query(func.count(models.ProviderMapping.id)).scalar() or 0
+
+        # Call get_available_suppliers() for supplier list with cache fallback
+        available_suppliers = []
+        try:
+            available_suppliers = await get_available_suppliers(db)
+        except Exception as e:
+            dashboard_logger.warning(
+                f"Cache unavailable for suppliers, falling back to direct query: {e}"
+            )
+            cache_failures.append("available_suppliers")
+            # Fallback to direct database query
+            try:
+                suppliers = db.query(models.SupplierSummary).all()
+                available_suppliers = [
+                    {
+                        "name": supplier.provider_name,
+                        "hotel_count": supplier.total_hotels or 0,
+                        "mapping_count": supplier.total_mappings or 0,
+                        "last_updated": (
+                            supplier.last_updated.isoformat()
+                            if supplier.last_updated
+                            else None
+                        ),
+                    }
+                    for supplier in suppliers
+                ]
+            except Exception as fallback_error:
+                dashboard_logger.error(
+                    f"Fallback query for suppliers failed: {fallback_error}"
+                )
+                available_suppliers = []
+
+        # Call get_available_packages() for package information
+        available_packages = get_available_packages()
+
+        # Format into platform_overview response section
+        platform_overview = {
+            "total_users": total_users,
+            "total_hotels": total_hotels,
+            "total_mappings": total_mappings,
+            "available_suppliers": available_suppliers,
+            "available_packages": available_packages,
+        }
+
+        # ====================================================================
+        # SUBTASK 2.6: Gather User Activity Metrics
+        # ====================================================================
+
+        # Call get_user_login_time_series() for login history with cache fallback
+        login_time_series_result = {"time_series": [], "data_available": False}
+        try:
+            login_time_series_result = await get_user_login_time_series(
+                db, current_user.id, days=30
+            )
+        except Exception as e:
+            dashboard_logger.warning(
+                f"Cache unavailable for user login time series, falling back to direct query: {e}"
+            )
+            cache_failures.append("user_login_time_series")
+            # Fallback to direct database query with graceful degradation
+            try:
+                end_date = datetime.utcnow()
+                start_date = end_date - timedelta(days=30)
+                login_data = (
+                    db.query(
+                        func.date(models.UserActivityLog.created_at).label("date"),
+                        func.count(models.UserActivityLog.id).label("value"),
+                    )
+                    .filter(
+                        models.UserActivityLog.user_id == current_user.id,
+                        models.UserActivityLog.action == "login",
+                        models.UserActivityLog.created_at >= start_date,
+                    )
+                    .group_by(func.date(models.UserActivityLog.created_at))
+                    .all()
+                )
+                data = [
+                    {"date": str(row.date), "value": row.value} for row in login_data
+                ]
+                login_time_series_result = {
+                    "time_series": fill_time_series_gaps(data, 30),
+                    "data_available": True,
+                }
+            except Exception as fallback_error:
+                dashboard_logger.warning(
+                    f"UserActivityLog table not accessible: {fallback_error}"
+                )
+                login_time_series_result = {
+                    "time_series": fill_time_series_gaps([], 30),
+                    "data_available": False,
+                }
+
+        # Query UserActivityLog for total login count with graceful degradation
+        total_login_count = 0
+        last_login = None
+        activity_log_available = True
+        try:
+            total_login_count = (
+                db.query(func.count(models.UserActivityLog.id))
+                .filter(
+                    models.UserActivityLog.user_id == current_user.id,
+                    models.UserActivityLog.action == "login",
+                )
+                .scalar()
+                or 0
+            )
+
+            # Get last login timestamp from UserSession table
+            last_session = (
+                db.query(models.UserSession)
+                .filter(models.UserSession.user_id == current_user.id)
+                .order_by(models.UserSession.created_at.desc())
+                .first()
+            )
+
+            if last_session:
+                last_login = last_session.created_at.isoformat()
+        except Exception as e:
+            dashboard_logger.warning(
+                f"UserActivityLog or UserSession table not accessible: {e}"
+            )
+            activity_log_available = False
+
+        # Create API request time-series with zero values (new users have no API usage)
+        api_request_time_series = fill_time_series_gaps([], days=30)
+
+        # Format into activity_metrics response section with data_available flags
+        activity_metrics = {
+            "user_logins": {
+                "total_count": total_login_count,
+                "last_login": last_login,
+                "time_series": login_time_series_result["time_series"],
+                "data_available": login_time_series_result["data_available"]
+                and activity_log_available,
+            },
+            "api_requests": {
+                "total_count": 0,  # New users have no API usage
+                "time_series": api_request_time_series,
+                "data_available": True,  # Always available as it's generated with zeros
+            },
+        }
+
+        # ====================================================================
+        # SUBTASK 2.7: Gather Platform Trend Data
+        # ====================================================================
+
+        # Call get_platform_registration_trends() for user registration time-series with cache fallback
+        registration_result = {"time_series": [], "data_available": False}
+        try:
+            registration_result = await get_platform_registration_trends(db, days=30)
+        except Exception as e:
+            dashboard_logger.warning(
+                f"Cache unavailable for registration trends, falling back to direct query: {e}"
+            )
+            cache_failures.append("platform_registration_trends")
+            # Fallback to direct database query with graceful degradation
+            try:
+                end_date = datetime.utcnow()
+                start_date = end_date - timedelta(days=30)
+                registration_data = (
+                    db.query(
+                        func.date(models.User.created_at).label("date"),
+                        func.count(models.User.id).label("value"),
+                    )
+                    .filter(models.User.created_at >= start_date)
+                    .group_by(func.date(models.User.created_at))
+                    .all()
+                )
+                data = [
+                    {"date": str(row.date), "value": row.value}
+                    for row in registration_data
+                ]
+                registration_result = {
+                    "time_series": fill_time_series_gaps(data, 30),
+                    "data_available": True,
+                }
+            except Exception as fallback_error:
+                dashboard_logger.warning(
+                    f"User table not accessible for registration trends: {fallback_error}"
+                )
+                registration_result = {
+                    "time_series": fill_time_series_gaps([], 30),
+                    "data_available": False,
+                }
+
+        # Call get_hotel_update_trends() for hotel update time-series with cache fallback
+        hotel_update_result = {"time_series": [], "data_available": False}
+        try:
+            hotel_update_result = await get_hotel_update_trends(db, days=30)
+        except Exception as e:
+            dashboard_logger.warning(
+                f"Cache unavailable for hotel update trends, falling back to direct query: {e}"
+            )
+            cache_failures.append("hotel_update_trends")
+            # Fallback to direct database query with graceful degradation
+            try:
+                end_date = datetime.utcnow()
+                start_date = end_date - timedelta(days=30)
+                hotel_update_data = (
+                    db.query(
+                        func.date(models.Hotel.updated_at).label("date"),
+                        func.count(models.Hotel.id).label("value"),
+                    )
+                    .filter(models.Hotel.updated_at >= start_date)
+                    .group_by(func.date(models.Hotel.updated_at))
+                    .all()
+                )
+                data = [
+                    {"date": str(row.date), "value": row.value}
+                    for row in hotel_update_data
+                ]
+                hotel_update_result = {
+                    "time_series": fill_time_series_gaps(data, 30),
+                    "data_available": True,
+                }
+            except Exception as fallback_error:
+                dashboard_logger.warning(
+                    f"Hotel table not accessible for update trends: {fallback_error}"
+                )
+                hotel_update_result = {
+                    "time_series": fill_time_series_gaps([], 30),
+                    "data_available": False,
+                }
+
+        # Add metadata (title, unit, data_type) to each time-series with data_available flags
+        # Format into platform_trends response section
+        platform_trends = {
+            "user_registrations": {
+                "title": "New User Registrations",
+                "unit": "users",
+                "data_type": "count",
+                "time_series": registration_result["time_series"],
+                "data_available": registration_result["data_available"],
+            },
+            "hotel_updates": {
+                "title": "Hotel Data Updates",
+                "unit": "hotels",
+                "data_type": "count",
+                "time_series": hotel_update_result["time_series"],
+                "data_available": hotel_update_result["data_available"],
+            },
+        }
+
+        # ====================================================================
+        # SUBTASK 2.8: Generate Recommendations
+        # ====================================================================
+
+        # Call generate_recommendations() with user and db session
+        recommendations_data = generate_recommendations(current_user, db)
+
+        # Format recommendations into response section
+        recommendations = recommendations_data
+
+        # ====================================================================
+        # SUBTASK 2.9: Add Response Metadata
+        # ====================================================================
+
+        # Add current timestamp in ISO 8601 format
+        current_timestamp = datetime.utcnow().isoformat()
+
+        # Set cache status based on whether there were any cache failures
+        if len(cache_failures) > 0:
+            cache_status = "partial"  # Some cached data unavailable, used fallback
+            dashboard_logger.info(
+                f"Cache failures for components: {', '.join(cache_failures)}"
+            )
+        else:
+            cache_status = "cached"  # All cached data successfully retrieved
+
+        # Add data freshness timestamps for each component
+        data_freshness = {
+            "account_info": current_timestamp,
+            "user_resources": current_timestamp,
+            "platform_overview": current_timestamp,
+            "activity_metrics": current_timestamp,
+            "platform_trends": current_timestamp,
+            "recommendations": current_timestamp,
+        }
+
+        metadata = {
+            "timestamp": current_timestamp,
+            "cache_status": cache_status,
+            "cache_failures": cache_failures if cache_failures else None,
+            "data_freshness": data_freshness,
+        }
+
+        # ====================================================================
+        # COMPILE AND RETURN COMPLETE RESPONSE
+        # ====================================================================
+
+        return {
+            "account_info": account_info,
+            "user_resources": user_resources,
+            "platform_overview": platform_overview,
+            "activity_metrics": activity_metrics,
+            "platform_trends": platform_trends,
+            "recommendations": recommendations,
+            "metadata": metadata,
+        }
+
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
+    except Exception as e:
+        # ====================================================================
+        # SUBTASK 2.10: Implement Error Handling
+        # ====================================================================
+
+        # Handle database errors with 500 status code
+        if isinstance(e, OperationalError):
+            dashboard_logger.error(f"Database error in new user dashboard: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection error",
+            )
+
+        # Handle unexpected errors with logging and 500 status code
+        import traceback
+
+        dashboard_logger.error(f"Unexpected error in new user dashboard: {e}")
+        dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
+        )
+
+
+@router.get(
+    "/new-user",
+    response_model=NewUserDashboardResponse,
+    summary="Get New User Dashboard",
+    description="""
+    Provides a comprehensive dashboard specifically designed for newly registered users
+    who have not yet been assigned supplier permissions or point allocations.
+    
+    This endpoint displays meaningful metrics, onboarding guidance, and system information
+    to help new users understand the platform and take next steps toward activation.
+    
+    **Key Features:**
+    - User account status and onboarding progress tracking
+    - Available suppliers and point packages information
+    - Platform activity metrics and trends visualization
+    - User activity timeline and engagement metrics
+    - Personalized recommendations for account activation
+    - Time-series data formatted for graph rendering (30-day periods)
+    
+    **Dashboard Sections:**
+    - **Account Info**: User details, account status, onboarding progress percentage
+    - **User Resources**: Supplier permissions count, point balance, pending assignments
+    - **Platform Overview**: Total users/hotels/mappings, available suppliers and packages
+    - **Activity Metrics**: User login history, API usage patterns (time-series data)
+    - **Platform Trends**: Registration trends, hotel update patterns (time-series data)
+    - **Recommendations**: Personalized next steps, activation guidance, support contacts
+    
+    **Time-Series Data Format:**
+    All time-series data follows a consistent structure with daily granularity:
+    - Date format: YYYY-MM-DD
+    - Missing dates filled with zero values for continuous series
+    - Data sorted chronologically from oldest to newest
+    - 30-day period coverage
+    
+    **Performance:**
+    - Target response time: < 500ms for 95% of requests
+    - Query timeout: 30 seconds maximum
+    - System metrics cached for 5 minutes
+    - User-specific data cached for 1 minute
+    
+    **Access Control:**
+    - Requires valid JWT authentication (any authenticated user)
+    - No admin restriction - available to all users
+    - Dashboard access logged for audit purposes
+    """,
+    response_description="Comprehensive dashboard data with account info, resources, metrics, trends, and recommendations",
+    responses={
+        200: {
+            "description": "Successful response with complete dashboard data",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "account_info": {
+                            "user_id": "abc1234567",
+                            "username": "john_doe",
+                            "email": "john@example.com",
+                            "account_status": "pending_activation",
+                            "created_at": "2024-11-01T10:30:00",
+                            "days_since_registration": 14,
+                            "onboarding_progress": {
+                                "completion_percentage": 33,
+                                "completed_steps": ["account_created"],
+                                "pending_steps": [
+                                    {
+                                        "action": "supplier_assignment",
+                                        "description": "Contact administrator to request supplier access",
+                                        "estimated_time": "1-2 business days",
+                                    },
+                                    {
+                                        "action": "point_allocation",
+                                        "description": "Request point package assignment from administrator",
+                                        "estimated_time": "1-2 business days",
+                                    },
+                                ],
+                            },
+                        },
+                        "user_resources": {
+                            "suppliers": {
+                                "active_count": 0,
+                                "total_available": 5,
+                                "assigned_suppliers": [],
+                                "pending_assignment": True,
+                            },
+                            "points": {
+                                "current_balance": 0,
+                                "total_allocated": 0,
+                                "package_type": None,
+                                "pending_allocation": True,
+                            },
+                        },
+                        "platform_overview": {
+                            "total_users": 150,
+                            "total_hotels": 50000,
+                            "total_mappings": 45000,
+                            "available_suppliers": [
+                                {
+                                    "name": "Agoda",
+                                    "hotel_count": 12000,
+                                    "last_updated": "2024-11-15T08:00:00",
+                                },
+                                {
+                                    "name": "Booking",
+                                    "hotel_count": 15000,
+                                    "last_updated": "2024-11-15T08:00:00",
+                                },
+                            ],
+                            "available_packages": [
+                                {
+                                    "type": "admin_user_package",
+                                    "description": "Unlimited access for administrators",
+                                    "example_points": "Unlimited",
+                                },
+                                {
+                                    "type": "one_year_package",
+                                    "description": "Annual subscription with high point allocation",
+                                    "example_points": "100000",
+                                },
+                                {
+                                    "type": "one_month_package",
+                                    "description": "Monthly subscription with moderate point allocation",
+                                    "example_points": "10000",
+                                },
+                            ],
+                        },
+                        "activity_metrics": {
+                            "user_logins": {
+                                "total_count": 5,
+                                "last_login": "2024-11-15T09:30:00",
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 0},
+                                    {"date": "2024-10-17", "value": 1},
+                                    {"date": "2024-10-18", "value": 0},
+                                    {"date": "2024-11-14", "value": 2},
+                                    {"date": "2024-11-15", "value": 2},
+                                ],
+                            },
+                            "api_requests": {
+                                "total_count": 0,
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 0},
+                                    {"date": "2024-10-17", "value": 0},
+                                ],
+                            },
+                        },
+                        "platform_trends": {
+                            "user_registrations": {
+                                "title": "New User Registrations",
+                                "unit": "users",
+                                "data_type": "count",
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 2},
+                                    {"date": "2024-10-17", "value": 3},
+                                    {"date": "2024-11-14", "value": 1},
+                                    {"date": "2024-11-15", "value": 0},
+                                ],
+                            },
+                            "hotel_updates": {
+                                "title": "Hotel Data Updates",
+                                "unit": "hotels",
+                                "data_type": "count",
+                                "time_series": [
+                                    {"date": "2024-10-16", "value": 150},
+                                    {"date": "2024-10-17", "value": 200},
+                                    {"date": "2024-11-14", "value": 180},
+                                    {"date": "2024-11-15", "value": 220},
+                                ],
+                            },
+                        },
+                        "recommendations": {
+                            "next_steps": [
+                                {
+                                    "priority": 1,
+                                    "action": "Request Supplier Access",
+                                    "description": "Contact your administrator to request access to hotel suppliers",
+                                    "contact_info": "admin@hita-system.com",
+                                    "estimated_time": "1-2 business days",
+                                },
+                                {
+                                    "priority": 2,
+                                    "action": "Request Point Allocation",
+                                    "description": "Request a point package to enable API usage",
+                                    "contact_info": "admin@hita-system.com",
+                                    "estimated_time": "1-2 business days",
+                                },
+                            ],
+                            "estimated_activation_time": "2-3 business days",
+                        },
+                        "metadata": {
+                            "timestamp": "2024-11-15T10:00:00",
+                            "cache_status": "cached",
+                            "data_freshness": {
+                                "account_info": "2024-11-15T10:00:00",
+                                "platform_overview": "2024-11-15T09:55:00",
+                                "activity_metrics": "2024-11-15T09:59:00",
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        401: {
+            "description": "User not authenticated - valid JWT token required",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "User authentication required"}
+                }
+            },
+        },
+        500: {
+            "description": "Internal server error - database connection failure or unexpected error",
+            "content": {
+                "application/json": {"example": {"detail": "Database error occurred"}}
+            },
+        },
+        504: {
+            "description": "Gateway timeout - request took longer than 30 seconds",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Request timeout - Dashboard data retrieval took too long. Please try again."
+                    }
+                }
+            },
+        },
+    },
+    tags=["Dashboard"],
+)
+async def get_new_user_dashboard(
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Get Comprehensive Dashboard for New Users (All Authenticated Users)
+
+    Provides a comprehensive dashboard specifically designed for newly registered users
+    who have not yet been assigned supplier permissions or point allocations. This endpoint
+    displays meaningful metrics, onboarding guidance, and system information to help new
+    users understand the platform and take next steps toward activation.
+
+    Features:
+    - User account status and onboarding progress tracking
+    - Available suppliers and point packages information
+    - Platform activity metrics and trends visualization
+    - User activity timeline and engagement metrics
+    - Personalized recommendations for account activation
+    - Time-series data formatted for graph rendering
+    - Graceful handling of missing data tables
+    - Query timeout protection (30 seconds)
+
+    Dashboard Sections:
+        - Account Info: User details, status, onboarding progress
+        - User Resources: Supplier permissions, point balance, pending assignments
+        - Platform Overview: System statistics, available resources
+        - Activity Metrics: User login history, API usage patterns
+        - Platform Trends: Registration trends, hotel update patterns
+        - Recommendations: Next steps, activation guidance, support contacts
+
+    Args:
+        request: FastAPI request object for IP extraction
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+
+    Returns:
+        dict: Comprehensive dashboard data including:
+            - account_info: User account details and onboarding progress
+            - user_resources: Supplier and point allocation status
+            - platform_overview: System-wide statistics and available resources
+            - activity_metrics: User activity timeline and engagement data
+            - platform_trends: Platform growth and update trends
+            - recommendations: Personalized next steps and guidance
+            - metadata: Response metadata, cache status, data freshness
+
+    Access Control:
+        - Requires valid JWT authentication (any authenticated user)
+        - No admin restriction - available to all users
+        - Dashboard access logged for audit purposes
+
+    Error Handling:
+        - 401: User not authenticated
+        - 500: Database errors or system failures
+        - 504: Query timeout (request took longer than 30 seconds)
+        - Graceful degradation when optional tables are missing
+        - Comprehensive error logging for troubleshooting
+
+    Performance:
+        - Target response time: < 500ms for 95% of requests
+        - Query timeout: 30 seconds maximum
+        - System metrics cached for 5 minutes
+        - User-specific data cached for 1 minute
+        - Optimized database queries with proper indexing
+
+    Use Cases:
+        - New user onboarding and orientation
+        - Account activation status monitoring
+        - Platform exploration and discovery
+        - Progress tracking and engagement
+        - Support and guidance for new users
+    """
+    # ====================================================================
+    # SUBTASK 4.3: Implement Query Timeout Handling
+    # ====================================================================
+
+    try:
+        # Set query timeout to 30 seconds
+        result = await asyncio.wait_for(
+            _get_new_user_dashboard_data(request, current_user, db), timeout=30.0
+        )
+        return result
+
+    except asyncio.TimeoutError:
+        # Handle timeout exceptions with 504 status code
+        dashboard_logger.error(
+            f"⏱️ Dashboard query timeout for user {current_user.username} "
+            f"(ID: {current_user.id}) - Request exceeded 30 seconds"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Request timeout - Dashboard data retrieval took too long. Please try again.",
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
+    except Exception as e:
+        # Log unexpected errors
+        import traceback
+
+        dashboard_logger.error(f"Unexpected error in dashboard endpoint wrapper: {e}")
+        dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing your request",
+        )
+
+
+@router.get("/supplier-freshness")
+async def get_supplier_freshness(
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Get Supplier Data Freshness Statistics (Admin and Super User Only)
+
+    Retrieves comprehensive supplier data freshness analytics including last update times,
+    data staleness indicators, and supplier health metrics. This endpoint provides essential
+    insights for monitoring data quality and supplier integration health.
+
+    Features:
+    - Real-time supplier freshness analysis
+    - Configurable freshness thresholds (fresh: 6 hours, stale: 24 hours)
+    - Supplier status categorization (fresh, stale, outdated)
+    - Record count and sync error tracking
+    - Global system health summary
+    - Role-based supplier access control
+
+    Freshness Categories:
+        - Fresh: Updated within 6 hours (green status)
+        - Stale: Updated 6-24 hours ago (yellow status)
+        - Outdated: Updated more than 24 hours ago (red status)
+
+    Args:
+        current_user: Currently authenticated user (injected by dependency)
+        db (Session): Database session (injected by dependency)
+
+    Returns:
+        dict: Comprehensive supplier freshness data including:
+            - suppliers: Array of supplier objects with freshness metrics
+            - summary: Aggregated statistics and counts
+            - thresholds: Freshness threshold configuration
+            - timestamp: When analysis was performed
+
+    Supplier Object Structure:
+        - supplier: Supplier name (e.g., "Expedia", "Booking.com")
+        - lastUpdated: ISO 8601 timestamp of last update
+        - hoursAgo: Hours since last update (calculated field)
+        - status: Freshness status ("fresh" | "stale" | "outdated")
+        - recordCount: Number of records from this supplier
+        - lastSyncTime: Last sync timestamp (same as lastUpdated)
+        - errorCount: Number of sync errors (default: 0)
+
+    Access Control:
+        - Requires ADMIN_USER or SUPER_USER role
+        - General users see only permitted suppliers
+        - Supplier access logged for audit purposes
+
+    Error Handling:
+        - 401: User not authenticated
+        - 403: Insufficient privileges or no supplier permissions
+        - 500: Database errors or supplier summary access failures
+        - Graceful degradation when supplier_summary table is missing
+
+    Use Cases:
+        - Data quality monitoring and alerting
+        - Supplier integration health assessment
+        - System maintenance and optimization planning
+        - Business intelligence and reporting
+        - Operational dashboards and monitoring
+    """
+    try:
+        # Validate user authentication
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User authentication required",
+            )
+
+        # Validate user permissions BEFORE processing
+        require_admin_or_superuser(current_user)
+
+        # Define freshness thresholds (configurable)
+        FRESH_HOURS = 6
+        STALE_HOURS = 24
+
+        # Calculate threshold timestamps
+        now = datetime.utcnow()
+        fresh_threshold = now - timedelta(hours=FRESH_HOURS)
+        stale_threshold = now - timedelta(hours=STALE_HOURS)
+
+        # Initialize response structure
+        suppliers = []
+        summary = {
+            "totalSuppliers": 0,
+            "freshCount": 0,
+            "staleCount": 0,
+            "outdatedCount": 0,
+            "lastGlobalUpdate": None,
+        }
+
+        # Determine allowed suppliers based on user role
+        allowed_suppliers = None
+        if current_user.role not in [
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            # For general users, get their permitted suppliers
+            user_permissions = (
+                db.query(models.UserProviderPermission.provider_name)
+                .filter(models.UserProviderPermission.user_id == current_user.id)
+                .all()
+            )
+
+            if not user_permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to access any suppliers. Please contact your administrator.",
+                )
+
+            # Extract permission names and handle temporary deactivations
+            permission_names = [perm.provider_name for perm in user_permissions]
+            temp_deactivated_suppliers = []
+            active_suppliers = []
+
+            for perm_name in permission_names:
+                if perm_name.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm_name.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    active_suppliers.append(perm_name)
+
+            # Remove temporarily deactivated suppliers from active list
+            allowed_suppliers = [
+                supplier
+                for supplier in active_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
+
+            if not allowed_suppliers:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="All your permitted suppliers are temporarily deactivated. Please contact your administrator.",
+                )
+
+        # Attempt to collect supplier freshness data
+        try:
+            # Base query for supplier summary data
+            query = db.query(models.SupplierSummary)
+
+            # Apply supplier filtering for general users
+            if allowed_suppliers is not None:
+                query = query.filter(
+                    models.SupplierSummary.provider_name.in_(allowed_suppliers)
+                )
+
+            # Execute query and get results
+            supplier_data = query.order_by(models.SupplierSummary.provider_name).all()
+
+            # Process each supplier's data
+            for supplier in supplier_data:
+                # Calculate hours since last update
+                if supplier.last_updated:
+                    time_diff = now - supplier.last_updated
+                    hours_ago = round(time_diff.total_seconds() / 3600, 1)
+
+                    # Determine freshness status
+                    if supplier.last_updated >= fresh_threshold:
+                        status = "fresh"
+                        summary["freshCount"] += 1
+                    elif supplier.last_updated >= stale_threshold:
+                        status = "stale"
+                        summary["staleCount"] += 1
+                    else:
+                        status = "outdated"
+                        summary["outdatedCount"] += 1
+
+                    last_updated_iso = supplier.last_updated.isoformat() + "Z"
+                else:
+                    # Handle suppliers with no update timestamp
+                    hours_ago = 999999  # Very large number to indicate never updated
+                    status = "outdated"
+                    summary["outdatedCount"] += 1
+                    last_updated_iso = None
+
+                # Build supplier object
+                supplier_obj = {
+                    "supplier": supplier.provider_name,
+                    "lastUpdated": last_updated_iso,
+                    "hoursAgo": hours_ago,
+                    "status": status,
+                    "recordCount": supplier.total_hotels or 0,
+                    "lastSyncTime": last_updated_iso,  # Same as lastUpdated for this implementation
+                    "errorCount": 0,  # Default to 0 as requested, can be enhanced later
+                }
+
+                suppliers.append(supplier_obj)
+
+            # Calculate summary statistics
+            summary["totalSuppliers"] = len(suppliers)
+
+            # Find the most recent global update
+            if suppliers:
+                valid_updates = [s for s in suppliers if s["lastUpdated"] is not None]
+                if valid_updates:
+                    most_recent = max(valid_updates, key=lambda x: x["lastUpdated"])
+                    summary["lastGlobalUpdate"] = most_recent["lastUpdated"]
+
+        except Exception as e:
+            dashboard_logger.warning(
+                f"SupplierSummary table may not exist or be accessible: {e}"
+            )
+            # Return empty data structure if supplier summary is not available
+            suppliers = []
+            summary = {
+                "totalSuppliers": 0,
+                "freshCount": 0,
+                "staleCount": 0,
+                "outdatedCount": 0,
+                "lastGlobalUpdate": None,
+            }
+
+        # Log supplier freshness access
+        dashboard_logger.info(
+            f"Supplier freshness analysis requested by {current_user.username}"
+        )
+
+        # Build final response
+        response = {
+            "suppliers": suppliers,
+            "summary": summary,
+            "thresholds": {"freshHours": FRESH_HOURS, "staleHours": STALE_HOURS},
+            "metadata": {
+                "timestamp": now.isoformat() + "Z",
+                "requested_by": {
+                    "user_id": current_user.id,
+                    "username": current_user.username,
+                    "role": (
+                        current_user.role.value
+                        if hasattr(current_user.role, "value")
+                        else str(current_user.role)
+                    ),
+                },
+                "data_source": "supplier_summary",
+                "supplier_filter_applied": allowed_suppliers is not None,
+                "filtered_suppliers_count": (
+                    len(allowed_suppliers) if allowed_suppliers else None
+                ),
+            },
+        }
+
+        return response
+
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
+    except Exception as e:
+        # Log detailed error information
+        import traceback
+
+        dashboard_logger.error(f"Supplier freshness analysis error: {e}")
+        dashboard_logger.error(f"Traceback: {traceback.format_exc()}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch supplier freshness data: {str(e)}",
         )

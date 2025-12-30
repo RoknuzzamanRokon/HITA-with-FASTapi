@@ -63,8 +63,8 @@ async def self_info(
     - Account creation & update timestamps
 
     Supplier Info Structure:
-    - total_active: Total number of suppliers user has access to
-    - active_list: List of all suppliers user has access to (including temp deactivated)
+    - total_active: Total number of currently active suppliers (excluding temp deactivated)
+    - active_list: List of active suppliers (excluding temp deactivated ones)
     - temporary_off: Number of temporarily deactivated suppliers
     - temporary_off_supplier: List of temporarily deactivated supplier names
 
@@ -122,13 +122,11 @@ async def self_info(
                 row.provider_name
                 for row in db.query(models.ProviderMapping.provider_name).distinct().all()
             ]
-            # Filter out temporarily deactivated suppliers
+            # Filter out temporarily deactivated suppliers from active list
             final_active_suppliers = [supplier for supplier in all_system_suppliers if supplier not in temp_deactivated_suppliers]
-            # For super/admin users, show all suppliers they have access to (including temp deactivated)
-            all_accessible_suppliers = list(set(all_system_suppliers + temp_deactivated_suppliers))
         else:
-            # For general users, show all suppliers they have access to (including temp deactivated)
-            all_accessible_suppliers = list(set(active_suppliers + temp_deactivated_suppliers))
+            # For general users, filter out temporarily deactivated suppliers from active list
+            final_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
 
         # Return the user's details with new supplier_info structure
         return {
@@ -139,8 +137,8 @@ async def self_info(
             "available_points": available_points,
             "total_points": total_points,
             "supplier_info": {
-                "total_active": len(all_accessible_suppliers),
-                "active_list": all_accessible_suppliers,
+                "total_active": len(final_active_suppliers),
+                "active_list": final_active_suppliers,
                 "temporary_off": len(temp_deactivated_suppliers),
                 "temporary_off_supplier": temp_deactivated_suppliers
             },
@@ -712,17 +710,11 @@ def give_points(
         receiver = (
             db.query(models.User)
             .filter(
-                models.User.email == request.receiver_email,
                 models.User.id == request.receiver_id,
             )
             .first()
         )
-        if not receiver or not receiver.email:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Receiver not found or receiver does not have a valid email.",
-            )
-
+        
         # Ensure admin_user can only give points to general_user
         if (
             current_user.role == models.UserRole.ADMIN_USER
@@ -820,7 +812,7 @@ def give_points(
         )
 
 
-@router.post("/reset_point/{user_id}/")
+@router.post("/reset-point/{user_id}/")
 def reset_user_point(
     user_id: str,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -1171,7 +1163,7 @@ def build_user_info_legacy(user: models.User, db: Session):
         "email": user.email,
         "points": points_info,
         "active_supplier": active_supplier,
-        "created_at": user.created_at,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
         "user_status": user.role,
         "is_active": user.is_active,
         "using_rq_status": using_rq_status,
@@ -1194,7 +1186,7 @@ def convert_to_legacy_format(user_response: UserListResponse):
         "email": user_response.email,
         "points": points_info,
         "active_supplier": user_response.active_suppliers,
-        "created_at": user_response.created_at,
+        "created_at": user_response.created_at.isoformat() if user_response.created_at else None,
         "user_status": user_response.role,
         "is_active": user_response.is_active,
         "using_rq_status": user_response.activity_status,
@@ -1398,17 +1390,39 @@ def check_user_info(
         ]
         active_suppliers = list(set(suppliers))
 
+        # Calculate API key info
+        if user.api_key:
+            api_key_info = {
+                "api_key": user.api_key,
+                "created": user.created_at.isoformat() if user.created_at else None,
+                "expires": user.api_key_expires_at.isoformat() if user.api_key_expires_at else None,
+                "active_for_days": None
+            }
+            
+            # Calculate active_for_days if API key has expiration
+            if user.api_key_expires_at:
+                days_remaining = (user.api_key_expires_at - datetime.utcnow()).days
+                api_key_info["active_for_days"] = max(0, days_remaining)  # Don't show negative days
+        else:
+            # If no API key, set all fields to null
+            api_key_info = {
+                "api_key": None,
+                "created": None,
+                "expires": None,
+                "active_for_days": None
+            }
+        
         return {
             "id": user.id,
             "username": user.username,
             "email": user.email,
             "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
-            "api_key": user.api_key,
+            "api_key_info": api_key_info,
             "points": points_info,
             "active_suppliers": active_suppliers,
             "total_suppliers": len(active_suppliers),
-            "created_at": user.created_at,
-            "updated_at": user.updated_at,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
             "user_status": user.role.value if hasattr(user.role, 'value') else str(user.role),
             "is_active": user.is_active,
             "using_rq_status": using_rq_status,

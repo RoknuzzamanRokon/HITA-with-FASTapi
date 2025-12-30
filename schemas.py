@@ -179,7 +179,6 @@ UserResponse.model_rebuild()
 from models import PointAllocationType
 
 class GivePointsRequest(BaseModel):
-    receiver_email: EmailStr
     receiver_id: str
     allocation_type: PointAllocationType
 
@@ -268,3 +267,240 @@ class BasicMappingResponse(BaseModel):
 
     class Config:
         extra = "allow"
+
+
+# --- New User Dashboard Schemas ---
+
+class TimeSeriesDataPoint(BaseModel):
+    """Single data point in a time-series"""
+    date: str = Field(..., description="Date in YYYY-MM-DD format", example="2024-11-15")
+    value: int = Field(..., description="Value for this date", example=5)
+
+class PendingStep(BaseModel):
+    """Pending onboarding step"""
+    action: str = Field(..., description="Action identifier", example="supplier_assignment")
+    description: str = Field(..., description="Human-readable description", example="Contact administrator to request supplier access")
+    estimated_time: str = Field(..., description="Estimated time to complete", example="1-2 business days")
+
+class OnboardingProgress(BaseModel):
+    """User onboarding progress tracking"""
+    completion_percentage: int = Field(..., ge=0, le=100, description="Onboarding completion percentage (0-100)", example=33)
+    completed_steps: List[str] = Field(..., description="List of completed onboarding steps", example=["account_created"])
+    pending_steps: List[PendingStep] = Field(..., description="List of pending onboarding steps")
+
+class AccountInfo(BaseModel):
+    """User account information and status"""
+    user_id: str = Field(..., description="User unique identifier", example="abc1234567")
+    username: str = Field(..., description="Username", example="john_doe")
+    email: str = Field(..., description="User email address", example="john@example.com")
+    account_status: str = Field(..., description="Current account status", example="pending_activation")
+    created_at: str = Field(..., description="Account creation timestamp (ISO 8601)", example="2024-11-01T10:30:00")
+    days_since_registration: int = Field(..., description="Days since account was created", example=14)
+    onboarding_progress: OnboardingProgress = Field(..., description="Onboarding progress details")
+
+class SupplierResources(BaseModel):
+    """User supplier permissions status"""
+    active_count: int = Field(..., description="Number of active supplier permissions", example=0)
+    total_available: int = Field(..., description="Total suppliers available in the system", example=5)
+    assigned_suppliers: List[str] = Field(..., description="List of assigned supplier names", example=[])
+    pending_assignment: bool = Field(..., description="Whether supplier assignment is pending", example=True)
+
+class PointResources(BaseModel):
+    """User point allocation status"""
+    current_balance: int = Field(..., description="Current point balance", example=0)
+    total_allocated: int = Field(..., description="Total points ever allocated", example=0)
+    package_type: Optional[str] = Field(None, description="Point package type", example=None)
+    pending_allocation: bool = Field(..., description="Whether point allocation is pending", example=True)
+
+class UserResources(BaseModel):
+    """User resources (suppliers and points)"""
+    suppliers: SupplierResources = Field(..., description="Supplier permission details")
+    points: PointResources = Field(..., description="Point allocation details")
+
+class AvailableSupplier(BaseModel):
+    """Available supplier information"""
+    name: str = Field(..., description="Supplier name", example="Agoda")
+    hotel_count: int = Field(..., description="Number of hotels from this supplier", example=12000)
+    last_updated: str = Field(..., description="Last update timestamp (ISO 8601)", example="2024-11-15T08:00:00")
+
+class AvailablePackage(BaseModel):
+    """Available point package information"""
+    type: str = Field(..., description="Package type identifier", example="one_year_package")
+    description: str = Field(..., description="Package description", example="Annual subscription with high point allocation")
+    example_points: str = Field(..., description="Example point allocation", example="100000")
+
+class PlatformOverview(BaseModel):
+    """Platform-wide statistics and available resources"""
+    total_users: int = Field(..., description="Total registered users", example=150)
+    total_hotels: int = Field(..., description="Total hotels in the system", example=50000)
+    total_mappings: int = Field(..., description="Total provider mappings", example=45000)
+    available_suppliers: List[AvailableSupplier] = Field(..., description="List of available suppliers")
+    available_packages: List[AvailablePackage] = Field(..., description="List of available point packages")
+
+class UserLoginMetrics(BaseModel):
+    """User login activity metrics"""
+    total_count: int = Field(..., description="Total login count", example=5)
+    last_login: Optional[str] = Field(None, description="Last login timestamp (ISO 8601)", example="2024-11-15T09:30:00")
+    time_series: List[TimeSeriesDataPoint] = Field(..., description="30-day login time-series data")
+
+class APIRequestMetrics(BaseModel):
+    """User API request metrics"""
+    total_count: int = Field(..., description="Total API request count", example=0)
+    time_series: List[TimeSeriesDataPoint] = Field(..., description="30-day API request time-series data")
+
+class ActivityMetrics(BaseModel):
+    """User activity metrics and timeline"""
+    user_logins: UserLoginMetrics = Field(..., description="User login activity")
+    api_requests: APIRequestMetrics = Field(..., description="User API request activity")
+
+class TrendData(BaseModel):
+    """Platform trend data with metadata"""
+    title: str = Field(..., description="Trend title", example="New User Registrations")
+    unit: str = Field(..., description="Data unit", example="users")
+    data_type: str = Field(..., description="Data type", example="count")
+    time_series: List[TimeSeriesDataPoint] = Field(..., description="30-day trend time-series data")
+
+class PlatformTrends(BaseModel):
+    """Platform-wide trend data"""
+    user_registrations: TrendData = Field(..., description="User registration trends")
+    hotel_updates: TrendData = Field(..., description="Hotel update trends")
+
+class RecommendationStep(BaseModel):
+    """Recommended next step for user"""
+    priority: int = Field(..., description="Priority order (1 = highest)", example=1)
+    action: str = Field(..., description="Action title", example="Request Supplier Access")
+    description: str = Field(..., description="Detailed description", example="Contact your administrator to request access to hotel suppliers")
+    contact_info: str = Field(..., description="Contact information", example="admin@hita-system.com")
+    estimated_time: str = Field(..., description="Estimated completion time", example="1-2 business days")
+
+class Recommendations(BaseModel):
+    """Personalized recommendations for user"""
+    next_steps: List[RecommendationStep] = Field(..., description="List of recommended next steps")
+    estimated_activation_time: str = Field(..., description="Estimated time to full activation", example="2-3 business days")
+
+class DashboardMetadata(BaseModel):
+    """Dashboard response metadata"""
+    timestamp: str = Field(..., description="Response generation timestamp (ISO 8601)", example="2024-11-15T10:00:00")
+    cache_status: str = Field(..., description="Cache status (cached/fresh)", example="cached")
+    data_freshness: Dict[str, str] = Field(..., description="Data freshness timestamps for each component")
+
+class NewUserDashboardResponse(BaseModel):
+    """Complete new user dashboard response"""
+    account_info: AccountInfo = Field(..., description="User account information and onboarding progress")
+    user_resources: UserResources = Field(..., description="User supplier and point resources")
+    platform_overview: PlatformOverview = Field(..., description="Platform-wide statistics and available resources")
+    activity_metrics: ActivityMetrics = Field(..., description="User activity metrics and timeline")
+    platform_trends: PlatformTrends = Field(..., description="Platform-wide trend data")
+    recommendations: Recommendations = Field(..., description="Personalized recommendations for account activation")
+    metadata: DashboardMetadata = Field(..., description="Response metadata and cache information")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "account_info": {
+                    "user_id": "abc1234567",
+                    "username": "john_doe",
+                    "email": "john@example.com",
+                    "account_status": "pending_activation",
+                    "created_at": "2024-11-01T10:30:00",
+                    "days_since_registration": 14,
+                    "onboarding_progress": {
+                        "completion_percentage": 33,
+                        "completed_steps": ["account_created"],
+                        "pending_steps": [
+                            {
+                                "action": "supplier_assignment",
+                                "description": "Contact administrator to request supplier access",
+                                "estimated_time": "1-2 business days"
+                            }
+                        ]
+                    }
+                },
+                "user_resources": {
+                    "suppliers": {
+                        "active_count": 0,
+                        "total_available": 5,
+                        "assigned_suppliers": [],
+                        "pending_assignment": True
+                    },
+                    "points": {
+                        "current_balance": 0,
+                        "total_allocated": 0,
+                        "package_type": None,
+                        "pending_allocation": True
+                    }
+                },
+                "platform_overview": {
+                    "total_users": 150,
+                    "total_hotels": 50000,
+                    "total_mappings": 45000,
+                    "available_suppliers": [
+                        {
+                            "name": "Agoda",
+                            "hotel_count": 12000,
+                            "last_updated": "2024-11-15T08:00:00"
+                        }
+                    ],
+                    "available_packages": [
+                        {
+                            "type": "one_year_package",
+                            "description": "Annual subscription",
+                            "example_points": "100000"
+                        }
+                    ]
+                },
+                "activity_metrics": {
+                    "user_logins": {
+                        "total_count": 5,
+                        "last_login": "2024-11-15T09:30:00",
+                        "time_series": [
+                            {"date": "2024-10-16", "value": 0},
+                            {"date": "2024-11-15", "value": 2}
+                        ]
+                    },
+                    "api_requests": {
+                        "total_count": 0,
+                        "time_series": [
+                            {"date": "2024-10-16", "value": 0}
+                        ]
+                    }
+                },
+                "platform_trends": {
+                    "user_registrations": {
+                        "title": "New User Registrations",
+                        "unit": "users",
+                        "data_type": "count",
+                        "time_series": [
+                            {"date": "2024-10-16", "value": 2}
+                        ]
+                    },
+                    "hotel_updates": {
+                        "title": "Hotel Data Updates",
+                        "unit": "hotels",
+                        "data_type": "count",
+                        "time_series": [
+                            {"date": "2024-10-16", "value": 150}
+                        ]
+                    }
+                },
+                "recommendations": {
+                    "next_steps": [
+                        {
+                            "priority": 1,
+                            "action": "Request Supplier Access",
+                            "description": "Contact your administrator",
+                            "contact_info": "admin@hita-system.com",
+                            "estimated_time": "1-2 business days"
+                        }
+                    ],
+                    "estimated_activation_time": "2-3 business days"
+                },
+                "metadata": {
+                    "timestamp": "2024-11-15T10:00:00",
+                    "cache_status": "cached",
+                    "data_freshness": {
+                        "account_info": "2024-11-15T10:00:00"
+                    }
+                }
+            }
+        }

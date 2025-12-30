@@ -177,7 +177,7 @@ async def user_not_found_handler(request: Request, exc: UserNotFoundError) -> JS
     
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -195,7 +195,7 @@ async def user_already_exists_handler(request: Request, exc: UserAlreadyExistsEr
     
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -213,7 +213,7 @@ async def insufficient_permissions_handler(request: Request, exc: InsufficientPe
     
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -230,7 +230,7 @@ async def insufficient_points_handler(request: Request, exc: InsufficientPointsE
     
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -247,7 +247,7 @@ async def invalid_operation_handler(request: Request, exc: InvalidOperationError
     
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -267,7 +267,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceededEr
     
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        content=error_response.model_dump(),
+        content=error_response.model_dump(mode='json'),
         headers=headers
     )
 
@@ -285,7 +285,7 @@ async def data_validation_handler(request: Request, exc: DataValidationError) ->
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -302,7 +302,7 @@ async def business_rule_violation_handler(request: Request, exc: BusinessRuleVio
     
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -329,7 +329,7 @@ async def pydantic_validation_handler(request: Request, exc: RequestValidationEr
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -377,7 +377,7 @@ async def sqlalchemy_integrity_handler(request: Request, exc: IntegrityError) ->
     
     return JSONResponse(
         status_code=status_code,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -393,7 +393,7 @@ async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError) -> JS
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
@@ -506,7 +506,7 @@ def create_error_response(
     
     return JSONResponse(
         status_code=status_code,
-        content=error_response.model_dump()
+        content=error_response.model_dump(mode='json')
     )
 
 
