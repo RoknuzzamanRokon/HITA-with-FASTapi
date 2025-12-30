@@ -51,3 +51,8 @@ utils/mapping_progress.json
 
 
 utils/usage/
+tests/
+exports/
+docs/
+.kiro/
+*.md
