@@ -57,32 +57,50 @@ def grant_provider_permissions(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
 
-    # Super users can grant permissions to anyone
+    # Super users can grant permissions to anyone (including admin users)
     # Admin users can only grant permissions to general users
     if current_user.role == UserRole.ADMIN_USER and user.role != UserRole.GENERAL_USER:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Admin users can only grant permissions to general users.",
         )
-    # Super users have no restrictions - they can grant to anyone
+    # Super users have no restrictions - they can grant to anyone (general users and admin users)
 
     for provider_name in provider_names:
-        existing_permission = (
-            db.query(UserProviderPermission)
-            .filter_by(user_id=user_id, provider_name=provider_name)
-            .first()
-        )
-
-        if not existing_permission:
-            # Create new permission
-            new_permission = UserProviderPermission(
-                user_id=user_id, provider_name=provider_name
+        # For admin/super users, we need to handle activation differently
+        # since they get all suppliers by default, not through explicit permissions
+        if user.role in [UserRole.ADMIN_USER, UserRole.SUPER_USER]:
+            # Check if supplier is temporarily deactivated and remove the deactivation
+            temp_deactivated_name = f"TEMP_DEACTIVATED_{provider_name}"
+            existing_temp_deactivation = (
+                db.query(UserProviderPermission)
+                .filter_by(user_id=user_id, provider_name=temp_deactivated_name)
+                .first()
             )
-            db.add(new_permission)
+
+            if existing_temp_deactivation:
+                # Remove temporary deactivation to reactivate the supplier
+                db.delete(existing_temp_deactivation)
+            # For admin/super users, we don't need to add explicit permissions
+            # since they get all suppliers by default
         else:
-            # Optionally update fields here if needed
-            # For now we do nothing, just skip to avoid duplicate
-            pass
+            # For general users, add explicit permissions as before
+            existing_permission = (
+                db.query(UserProviderPermission)
+                .filter_by(user_id=user_id, provider_name=provider_name)
+                .first()
+            )
+
+            if not existing_permission:
+                # Create new permission
+                new_permission = UserProviderPermission(
+                    user_id=user_id, provider_name=provider_name
+                )
+                db.add(new_permission)
+            else:
+                # Optionally update fields here if needed
+                # For now we do nothing, just skip to avoid duplicate
+                pass
 
     db.commit()
 
@@ -123,25 +141,48 @@ def remove_provider_permissions(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
 
-    # Super users can remove permissions from anyone
+    # Super users can remove permissions from anyone (including admin users)
     # Admin users can only remove permissions from general users
     if current_user.role == UserRole.ADMIN_USER and user.role != UserRole.GENERAL_USER:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Admin users can only remove permissions from general users.",
         )
-    # Super users have no restrictions - they can remove from anyone
+    # Super users have no restrictions - they can remove from anyone (general users and admin users)
 
     removed = []
     for provider_name in provider_names:
-        permission = (
-            db.query(UserProviderPermission)
-            .filter_by(user_id=user_id, provider_name=provider_name)
-            .first()
-        )
-        if permission:
-            db.delete(permission)
-            removed.append(provider_name)
+        # For admin/super users, we need to handle deactivation differently
+        # since they get all suppliers by default, not through explicit permissions
+        if user.role in [UserRole.ADMIN_USER, UserRole.SUPER_USER]:
+            # Check if supplier is already temporarily deactivated
+            temp_deactivated_name = f"TEMP_DEACTIVATED_{provider_name}"
+            existing_temp_deactivation = (
+                db.query(UserProviderPermission)
+                .filter_by(user_id=user_id, provider_name=temp_deactivated_name)
+                .first()
+            )
+
+            if not existing_temp_deactivation:
+                # Add temporary deactivation permission
+                temp_deactivation = UserProviderPermission(
+                    user_id=user_id, provider_name=temp_deactivated_name
+                )
+                db.add(temp_deactivation)
+                removed.append(provider_name)
+            else:
+                # Already deactivated, still count as "removed" for response
+                removed.append(provider_name)
+        else:
+            # For general users, remove explicit permissions as before
+            permission = (
+                db.query(UserProviderPermission)
+                .filter_by(user_id=user_id, provider_name=provider_name)
+                .first()
+            )
+            if permission:
+                db.delete(permission)
+                removed.append(provider_name)
 
     db.commit()
 
