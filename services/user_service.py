@@ -118,6 +118,278 @@ class UserService:
             users=user_responses, pagination=pagination, statistics=statistics
         )
 
+    def get_users_paginated_optimized(
+        self, params: UserSearchParams, current_user: models.User
+    ) -> PaginatedUserResponse:
+        """Optimized version of get_users_paginated for faster performance"""
+
+        # Build base query with optimized joins and eager loading
+        query = self.db.query(models.User).options(
+            selectinload(models.User.user_points),
+            selectinload(models.User.provider_permissions),
+            selectinload(models.User.sessions),
+        )
+
+        # Apply role-based filtering - users can only see users they created
+        if current_user.role in [
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            created_by_str = f"{current_user.role.lower()}: {current_user.email}"
+            query = query.filter(models.User.created_by == created_by_str)
+        else:
+            # General users can only see themselves
+            query = query.filter(models.User.id == current_user.id)
+
+        # Apply search filter
+        if params.search:
+            search_term = f"%{params.search}%"
+            query = query.filter(
+                or_(
+                    models.User.username.ilike(search_term),
+                    models.User.email.ilike(search_term),
+                )
+            )
+
+        # Apply role filter
+        if params.role:
+            query = query.filter(models.User.role == params.role)
+
+        # Apply active status filter
+        if params.is_active is not None:
+            query = query.filter(models.User.is_active == params.is_active)
+
+        # Apply sorting
+        sort_column = getattr(models.User, params.sort_by, models.User.created_at)
+        if params.sort_order == "desc":
+            query = query.order_by(desc(sort_column))
+        else:
+            query = query.order_by(asc(sort_column))
+
+        # Get total count for pagination in a single optimized query
+        total = query.count()
+
+        # Apply pagination
+        offset = (params.page - 1) * params.limit
+        users = query.offset(offset).limit(params.limit).all()
+
+        # Convert to response format with optimized data access
+        user_responses = []
+        for user in users:
+            # Use eager-loaded data instead of separate queries
+            user_response = self._build_user_list_response_optimized(user)
+            user_responses.append(user_response)
+
+        # Build pagination metadata
+        total_pages = (total + params.limit - 1) // params.limit
+        pagination = PaginationMetadata(
+            page=params.page,
+            limit=params.limit,
+            total=total,
+            total_pages=total_pages,
+            has_next=params.page < total_pages,
+            has_prev=params.page > 1,
+        )
+
+        # Get statistics using optimized query
+        statistics = self.get_user_statistics_optimized(current_user)
+
+        return PaginatedUserResponse(
+            users=user_responses, pagination=pagination, statistics=statistics
+        )
+
+    def get_user_statistics_optimized(
+        self, current_user: models.User
+    ) -> UserStatistics:
+        """Optimized version of get_user_statistics with fewer queries"""
+
+        created_by_str = None
+
+        # Build base query for users in current user's scope
+        if current_user.role in [
+            models.UserRole.SUPER_USER,
+            models.UserRole.ADMIN_USER,
+        ]:
+            created_by_str = f"{current_user.role.lower()}: {current_user.email}"
+            base_query = self.db.query(models.User).filter(
+                models.User.created_by == created_by_str
+            )
+        else:
+            # General users can only see themselves
+            base_query = self.db.query(models.User).filter(
+                models.User.id == current_user.id
+            )
+
+        # Get all statistics in a single optimized query
+        role_stats = base_query.with_entities(
+            func.count(models.User.id).label("total_users"),
+            func.sum(
+                case((models.User.role == models.UserRole.SUPER_USER, 1), else_=0)
+            ).label("super_users"),
+            func.sum(
+                case((models.User.role == models.UserRole.ADMIN_USER, 1), else_=0)
+            ).label("admin_users"),
+            func.sum(
+                case((models.User.role == models.UserRole.GENERAL_USER, 1), else_=0)
+            ).label("general_users"),
+            func.sum(case((models.User.is_active == True, 1), else_=0)).label(
+                "active_users"
+            ),
+        ).first()
+
+        # Get total points distributed in a single optimized query
+        total_points = (
+            self.db.query(func.sum(models.UserPoint.total_points))
+            .join(models.User, models.UserPoint.user_id == models.User.id)
+            .filter(models.User.created_by == created_by_str)
+            .scalar()
+            or 0
+        )
+
+        # Get recent signups (last 7 days) in a single optimized query
+        recent_date = datetime.utcnow() - timedelta(days=7)
+        recent_signups = base_query.filter(
+            models.User.created_at >= recent_date
+        ).count()
+
+        return UserStatistics(
+            total_users=role_stats.total_users or 0,
+            super_users=role_stats.super_users or 0,
+            admin_users=role_stats.admin_users or 0,
+            general_users=role_stats.general_users or 0,
+            active_users=role_stats.active_users or 0,
+            inactive_users=(role_stats.total_users or 0)
+            - (role_stats.active_users or 0),
+            total_points_distributed=total_points,
+            recent_signups=recent_signups,
+        )
+
+    def _build_user_list_response_optimized(
+        self, user: models.User
+    ) -> UserListResponse:
+        """Optimized version of _build_user_list_response using eager-loaded data"""
+
+        # Use eager-loaded user_points instead of separate query
+        user_points = user.user_points[0] if user.user_points else None
+        point_balance = user_points.current_points if user_points else 0
+        total_points = user_points.total_points if user_points else 0
+
+        # Determine paid status
+        if user.role == models.UserRole.SUPER_USER:
+            paid_status = "Unlimited"
+        elif point_balance > 0:
+            paid_status = "Paid"
+        elif total_points > 0:
+            paid_status = "Used"
+        else:
+            paid_status = "Unpaid"
+
+        # Get activity status - check for actual API usage in last 7 days
+        last_7_days = datetime.utcnow() - timedelta(days=7)
+        recent_activity = (
+            self.db.query(models.UserActivityLog)
+            .filter(
+                models.UserActivityLog.user_id == user.id,
+                models.UserActivityLog.created_at >= last_7_days,
+                models.UserActivityLog.action
+                == "api_access",  # Check for API access activities
+            )
+            .first()
+        )
+        activity_status = "Active" if recent_activity else "Inactive"
+
+        # Get total requests in a single optimized query
+        total_requests = (
+            self.db.query(models.PointTransaction)
+            .filter(
+                or_(
+                    models.PointTransaction.giver_id == user.id,
+                    models.PointTransaction.receiver_id == user.id,
+                )
+            )
+            .count()
+        )
+
+        # Get active suppliers based on user role
+        if user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            # For super users and admin users, get all system suppliers
+            all_system_suppliers = [
+                row.provider_name
+                for row in self.db.query(models.ProviderMapping.provider_name)
+                .distinct()
+                .all()
+            ]
+
+            # Get temporarily deactivated suppliers for this user
+            temp_deactivated_permissions = [
+                perm.provider_name
+                for perm in user.provider_permissions
+                if perm.provider_name.startswith("TEMP_DEACTIVATED_")
+            ]
+
+            # Extract original supplier names from temp deactivated permissions
+            temp_deactivated_suppliers = [
+                perm.replace("TEMP_DEACTIVATED_", "")
+                for perm in temp_deactivated_permissions
+            ]
+
+            # Filter out temporarily deactivated suppliers from active list
+            active_suppliers = [
+                supplier
+                for supplier in all_system_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
+        else:
+            # For general users, get only their explicit permissions
+            all_permissions = [perm.provider_name for perm in user.provider_permissions]
+
+            # Separate active suppliers and temporary deactivated suppliers
+            active_suppliers = []
+            temp_deactivated_suppliers = []
+
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    # Extract original supplier name
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    active_suppliers.append(perm)
+
+            # Remove duplicates and filter out deactivated suppliers from active list
+            active_suppliers = list(set(active_suppliers))
+            temp_deactivated_suppliers = list(set(temp_deactivated_suppliers))
+
+            # Remove temporarily deactivated suppliers from active list
+            active_suppliers = [
+                supplier
+                for supplier in active_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
+
+        # Get last login from eager-loaded sessions
+        last_login = None
+        if user.sessions:
+            latest_session = max(user.sessions, key=lambda s: s.last_activity)
+            last_login = latest_session.last_activity
+
+        return UserListResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            role=user.role,
+            is_active=user.is_active,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            created_by=user.created_by,
+            point_balance=point_balance,
+            total_points=total_points,
+            paid_status=paid_status,
+            total_requests=total_requests,
+            activity_status=activity_status,
+            active_suppliers=active_suppliers,
+            last_login=last_login,
+        )
+
     def get_user_statistics(self, current_user: models.User) -> UserStatistics:
         """Get user statistics for the current user's scope"""
 
@@ -739,16 +1011,15 @@ class UserService:
         else:
             paid_status = "Unpaid"
 
-        # Get activity status
+        # Get activity status - check for actual API usage in last 7 days
         last_7_days = datetime.utcnow() - timedelta(days=7)
         recent_activity = (
-            self.db.query(models.PointTransaction)
+            self.db.query(models.UserActivityLog)
             .filter(
-                or_(
-                    models.PointTransaction.giver_id == user.id,
-                    models.PointTransaction.receiver_id == user.id,
-                ),
-                models.PointTransaction.created_at >= last_7_days,
+                models.UserActivityLog.user_id == user.id,
+                models.UserActivityLog.created_at >= last_7_days,
+                models.UserActivityLog.action
+                == "api_access",  # Check for API access activities
             )
             .first()
         )
@@ -814,16 +1085,15 @@ class UserService:
         else:
             paid_status = "Unpaid"
 
-        # Get activity status
+        # Get activity status - check for actual API usage in last 7 days
         last_7_days = datetime.utcnow() - timedelta(days=7)
         recent_activity = (
-            self.db.query(models.PointTransaction)
+            self.db.query(models.UserActivityLog)
             .filter(
-                or_(
-                    models.PointTransaction.giver_id == user.id,
-                    models.PointTransaction.receiver_id == user.id,
-                ),
-                models.PointTransaction.created_at >= last_7_days,
+                models.UserActivityLog.user_id == user.id,
+                models.UserActivityLog.created_at >= last_7_days,
+                models.UserActivityLog.action
+                == "api_access",  # Check for API access activities
             )
             .first()
         )

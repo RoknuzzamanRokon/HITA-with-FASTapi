@@ -366,6 +366,23 @@ async def ultra_fast_token(
 
     access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
 
+    # 📝 AUDIT LOG: Record successful login
+    audit_logger = AuditLogger(db)
+    audit_logger.log_activity(
+        activity_type=ActivityType.API_ACCESS,
+        user_id=user.id,
+        details={
+            "endpoint": "/v1.0/auth/token",
+            "method": "POST",
+            "action": "login",
+            "success": True,
+            "user_email": user.email,
+            "timestamp": datetime.utcnow().isoformat(),
+        },
+        security_level=SecurityLevel.MEDIUM,
+        success=True,
+    )
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -664,6 +681,7 @@ async def reset_password(
 async def logout(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
     token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
 ):
     """
     **Single Device Logout**
@@ -701,6 +719,23 @@ async def logout(
 
     # Remove refresh token
     redis_client.delete(f"refresh_token:{current_user.id}")
+
+    # 📝 AUDIT LOG: Record successful logout
+    audit_logger = AuditLogger(db)
+    audit_logger.log_activity(
+        activity_type=ActivityType.API_ACCESS,
+        user_id=current_user.id,
+        details={
+            "endpoint": "/v1.0/auth/logout",
+            "method": "POST",
+            "action": "logout",
+            "success": True,
+            "user_email": current_user.email,
+            "timestamp": datetime.utcnow().isoformat(),
+        },
+        security_level=SecurityLevel.MEDIUM,
+        success=True,
+    )
 
     return {"message": "Successfully logged out"}
 

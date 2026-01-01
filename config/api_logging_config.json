@@ -1,6 +1,5 @@
 {
     "count_log_endpoints": [
-        "/v1.0/auth/token",
         "/v1.0/user/all-general-user",
         "/v1.0/content/get-hotel-with-ittid",
         "/v1.0/content/get-hotel-with-ittid/{ittid}",
@@ -17,12 +16,14 @@
         "/v1.0/hotel/search-hotel-with-location",
         "/v1.0/mapping/get-all-supplier-mapping-data",
         "/v1.0/mapping/get-mapping-hotel-with-ittid",
-        "/v1.0/export/export-all-hotels"
+        "/v1.0/export/export-all-hotels",
+                "/v1.0/auth/token",
+                "/v1.0/auth/logout"
     ],
     "cannot_count_log_endpoints": [
         "/v1.0/auth/check-me",
         "/v1.0/auth/refresh-token",
-        "/v1.0/auth/logout",
+
         "/v1.0/auth/health",
         "/v1.0/user/check-me",
         "/v1.0/user/{user_id}/activity",
@@ -38,6 +39,6 @@
     ],
     "description": {
         "count_log_endpoints": "API endpoints that should be counted in usage logs and analytics",
-        "cannot_count_log_endpoints": "API endpoints that should NOT be counted (health checks, auth, docs, etc.)"
+        "cannot_count_log_endpoints": "API endpoints that should NOT be counted (health checks, auth, docs, etc.) - auth endpoints use manual logging"
     }
 }

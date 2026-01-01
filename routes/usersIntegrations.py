@@ -21,7 +21,7 @@ from user_schemas import (
     BulkUserOperationRequest,
     UserActivityResponse,
     APIError,
-    ValidationError
+    ValidationError,
 )
 from services.user_service import UserService
 from typing import Annotated, Optional
@@ -35,8 +35,12 @@ from error_handlers import (
     UserAlreadyExistsError,
     InsufficientPermissionsError,
     DataValidationError,
-    BusinessRuleViolationError
+    BusinessRuleViolationError,
 )
+import logging
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Use bcrypt for password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -95,11 +99,11 @@ async def self_info(
             .filter(models.UserProviderPermission.user_id == current_user.id)
             .all()
         ]
-        
+
         # Separate active suppliers and temporary deactivated suppliers
         active_suppliers = []
         temp_deactivated_suppliers = []
-        
+
         for perm in all_permissions:
             if perm.startswith("TEMP_DEACTIVATED_"):
                 # Extract original supplier name
@@ -107,26 +111,43 @@ async def self_info(
                 temp_deactivated_suppliers.append(original_name)
             else:
                 active_suppliers.append(perm)
-        
+
         # Remove duplicates and filter out deactivated suppliers from active list
         active_suppliers = list(set(active_suppliers))
         temp_deactivated_suppliers = list(set(temp_deactivated_suppliers))
-        
+
         # Remove temporarily deactivated suppliers from active list
-        final_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
-        
+        final_active_suppliers = [
+            supplier
+            for supplier in active_suppliers
+            if supplier not in temp_deactivated_suppliers
+        ]
+
         # For super users and admin users, get all system suppliers
-        if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+        if current_user.role in [
+            models.UserRole.ADMIN_USER,
+            models.UserRole.SUPER_USER,
+        ]:
             # Get all unique supplier names from provider mappings
             all_system_suppliers = [
                 row.provider_name
-                for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+                for row in db.query(models.ProviderMapping.provider_name)
+                .distinct()
+                .all()
             ]
             # Filter out temporarily deactivated suppliers from active list
-            final_active_suppliers = [supplier for supplier in all_system_suppliers if supplier not in temp_deactivated_suppliers]
+            final_active_suppliers = [
+                supplier
+                for supplier in all_system_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
         else:
             # For general users, filter out temporarily deactivated suppliers from active list
-            final_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
+            final_active_suppliers = [
+                supplier
+                for supplier in active_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
 
         # Return the user's details with new supplier_info structure
         return {
@@ -140,18 +161,18 @@ async def self_info(
                 "total_active": len(final_active_suppliers),
                 "active_list": final_active_suppliers,
                 "temporary_off": len(temp_deactivated_suppliers),
-                "temporary_off_supplier": temp_deactivated_suppliers
+                "temporary_off_supplier": temp_deactivated_suppliers,
             },
             "created_at": current_user.created_at,
             "updated_at": current_user.updated_at,
             "need_to_next_upgrade": "It function is not implemented yet",
         }
-        
+
     except Exception as e:
         # Handle any unexpected database or other errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving user information: {str(e)}"
+            detail=f"An error occurred while retrieving user information: {str(e)}",
         )
 
 
@@ -189,34 +210,41 @@ async def create_user(
             if current_user.role != models.UserRole.SUPER_USER:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only super users can create super users"
+                    detail="Only super users can create super users",
                 )
         elif user_data.role == models.UserRole.ADMIN_USER:
             if current_user.role not in [models.UserRole.SUPER_USER]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only super users can create admin users"
+                    detail="Only super users can create admin users",
                 )
         # General users can be created by super users and admin users
         elif user_data.role == models.UserRole.GENERAL_USER:
-            if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            if current_user.role not in [
+                models.UserRole.SUPER_USER,
+                models.UserRole.ADMIN_USER,
+            ]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions to create users"
+                    detail="Insufficient permissions to create users",
                 )
-        
+
         # Check if user already exists
-        existing_user = db.query(models.User).filter(
-            (models.User.email == user_data.email) | 
-            (models.User.username == user_data.username)
-        ).first()
-        
+        existing_user = (
+            db.query(models.User)
+            .filter(
+                (models.User.email == user_data.email)
+                | (models.User.username == user_data.username)
+            )
+            .first()
+        )
+
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email or username already exists"
+                detail="User with this email or username already exists",
             )
-        
+
         # Create the user
         hashed_password = pwd_context.hash(user_data.password)
         new_user = models.User(
@@ -226,24 +254,21 @@ async def create_user(
             hashed_password=hashed_password,
             role=user_data.role,
             is_active=True,
-            created_by=f"{current_user.role.value}: {current_user.email}",
-            created_at=datetime.utcnow()
+            created_by=f"{current_user.role if hasattr(current_user.role, 'value') else str(current_user.role)}: {current_user.email}",
+            created_at=datetime.utcnow(),
         )
-        
+
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        
+
         # Create initial user points
         user_points = models.UserPoint(
-            user_id=new_user.id,
-            current_points=0,
-            total_points=0,
-            paid_status="Unpaid"
+            user_id=new_user.id, current_points=0, total_points=0, paid_status="Unpaid"
         )
         db.add(user_points)
         db.commit()
-        
+
         return {
             "id": new_user.id,
             "username": new_user.username,
@@ -256,7 +281,7 @@ async def create_user(
             "updated_at": new_user.updated_at,
             "need_to_next_upgrade": "It function is not implemented yet",
         }
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -265,13 +290,11 @@ async def create_user(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while creating the user: {str(e)}"
+            detail=f"An error occurred while creating the user: {str(e)}",
         )
 
 
-@router.post(
-    "/create_super_user", response_model=SuperUserResponse
-)
+@router.post("/create_super_user", response_model=SuperUserResponse)
 def create_super_admin(
     user_data: dict,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -281,25 +304,27 @@ def create_super_admin(
     try:
         # Use the enhanced user service for better validation and error handling
         user_service = UserService(db)
-        
+
         # Convert dict to UserCreateRequest for validation
         create_request = UserCreateRequest(
             username=user_data.get("username", ""),
             email=user_data.get("email", ""),
             password=user_data.get("password", ""),
-            role=models.UserRole.SUPER_USER
+            role=models.UserRole.SUPER_USER,
         )
-        
+
         # Additional check for super user creation
         if current_user.role != models.UserRole.SUPER_USER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only super_user can create another super_user.",
             )
-        
+
         # Create user using service
-        created_user = user_service.create_user_with_validation(create_request, current_user)
-        
+        created_user = user_service.create_user_with_validation(
+            create_request, current_user
+        )
+
         # Return in legacy format for backward compatibility
         return {
             "id": created_user.id,
@@ -308,7 +333,7 @@ def create_super_admin(
             "role": created_user.role,
             "created_by": [{"title": "super_user", "email": current_user.email}],
         }
-        
+
     except ValueError as e:
         # Handle validation errors
         if "email already exists" in str(e).lower():
@@ -322,10 +347,7 @@ def create_super_admin(
                 detail="Username already exists.",
             )
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -350,7 +372,9 @@ def create_super_admin(
 
         # Check if email already exists
         existing_user = (
-            db.query(models.User).filter(models.User.email == user_data["email"]).first()
+            db.query(models.User)
+            .filter(models.User.email == user_data["email"])
+            .first()
         )
         if existing_user:
             raise HTTPException(
@@ -387,9 +411,7 @@ def create_super_admin(
         }
 
 
-@router.post(
-    "/create_admin_user", response_model=AdminUserResponse
-)
+@router.post("/create_admin_user", response_model=AdminUserResponse)
 def create_admin_user(
     admin_data: dict,
     current_user: Annotated[models.User, Depends(get_current_user)],
@@ -398,7 +420,7 @@ def create_admin_user(
     """
     Create a new Admin User (Super User only).
 
-    This endpoint allows Super Users to create new Admin accounts with 
+    This endpoint allows Super Users to create new Admin accounts with
     validated credentials and secure password hashing.
 
     Features:
@@ -416,25 +438,27 @@ def create_admin_user(
     try:
         # Use the enhanced user service for better validation and error handling
         user_service = UserService(db)
-        
+
         # Additional check for admin user creation
         if current_user.role != models.UserRole.SUPER_USER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only super_user can create admin users.",
             )
-        
+
         # Convert dict to UserCreateRequest for validation
         create_request = UserCreateRequest(
             username=admin_data.get("username", ""),
             email=admin_data.get("email", ""),
             password=admin_data.get("password", ""),
-            role=models.UserRole.ADMIN_USER
+            role=models.UserRole.ADMIN_USER,
         )
-        
+
         # Create user using service
-        created_user = user_service.create_user_with_validation(create_request, current_user)
-        
+        created_user = user_service.create_user_with_validation(
+            create_request, current_user
+        )
+
         # Return in legacy format for backward compatibility
         return {
             "id": created_user.id,
@@ -443,7 +467,7 @@ def create_admin_user(
             "role": created_user.role,
             "created_by": [{"title": "super_user", "email": current_user.email}],
         }
-        
+
     except ValueError as e:
         # Handle validation errors
         if "email already exists" in str(e).lower():
@@ -457,10 +481,7 @@ def create_admin_user(
                 detail="Username already exists.",
             )
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -486,7 +507,9 @@ def create_admin_user(
 
         # Check if email already exists
         existing_user = (
-            db.query(models.User).filter(models.User.email == admin_data["email"]).first()
+            db.query(models.User)
+            .filter(models.User.email == admin_data["email"])
+            .first()
         )
         if existing_user:
             raise HTTPException(
@@ -534,7 +557,7 @@ def create_general_user(
     """
     Create a new General User (Super User or Admin User only).
 
-    This endpoint lets Super or Admin users create General User accounts 
+    This endpoint lets Super or Admin users create General User accounts
     with proper validation and secure password hashing.
 
     Features:
@@ -552,18 +575,20 @@ def create_general_user(
     try:
         # Use the enhanced user service for better validation and error handling
         user_service = UserService(db)
-        
+
         # Convert dict to UserCreateRequest for validation
         create_request = UserCreateRequest(
             username=user_data.get("username", ""),
             email=user_data.get("email", ""),
             password=user_data.get("password", ""),
-            role=models.UserRole.GENERAL_USER
+            role=models.UserRole.GENERAL_USER,
         )
-        
+
         # Create user using service
-        created_user = user_service.create_user_with_validation(create_request, current_user)
-        
+        created_user = user_service.create_user_with_validation(
+            create_request, current_user
+        )
+
         # Return in legacy format for backward compatibility
         return {
             "id": created_user.id,
@@ -572,7 +597,7 @@ def create_general_user(
             "role": created_user.role,
             "created_by": [{"title": current_user.role, "email": current_user.email}],
         }
-        
+
     except ValueError as e:
         # Handle validation errors
         if "email already exists" in str(e).lower():
@@ -591,10 +616,7 @@ def create_general_user(
                 detail="Only super_user or admin_user can create general users.",
             )
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         # Fallback to legacy implementation
         # Check if the current user is a super_user or admin_user
@@ -620,7 +642,9 @@ def create_general_user(
 
         # Check if email already exists
         existing_user = (
-            db.query(models.User).filter(models.User.email == user_data["email"]).first()
+            db.query(models.User)
+            .filter(models.User.email == user_data["email"])
+            .first()
         )
         if existing_user:
             raise HTTPException(
@@ -671,24 +695,24 @@ def give_points(
 ):
     """
     Give points to another user using predefined packages.
-    
+
     **Authorized Roles:**
     - Super User: Unlimited points, can give to anyone
     - Admin User: Limited points, can give to General Users only
-    
+
     **Point Packages:**
     - ADMIN_USER_PACKAGE → 4,000,000 points
-    - ONE_YEAR_PACKAGE → 1,000,000 points  
+    - ONE_YEAR_PACKAGE → 1,000,000 points
     - ONE_MONTH_PACKAGE → 80,000 points
     - PER_REQUEST_POINT → 10,000 points
     - GUEST_POINT → 1,000 points
-    
+
     **Business Rules:**
     - Admin users: Points deducted from balance
     - Super users: No point deduction (unlimited)
     - Admin → General User only
     - All transactions logged for audit
-    
+
     **Errors:**
     - 400: Invalid package or insufficient balance
     - 403: Unauthorized role or Admin→Admin/Super restriction
@@ -714,7 +738,7 @@ def give_points(
             )
             .first()
         )
-        
+
         # Ensure admin_user can only give points to general_user
         if (
             current_user.role == models.UserRole.ADMIN_USER
@@ -756,7 +780,8 @@ def give_points(
             points = 1000
         else:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid allocation type."
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid allocation type.",
             )
 
         # Super users have unlimited points, skip deduction
@@ -799,7 +824,7 @@ def give_points(
         db.commit()
 
         return {"message": f"Successfully gave {points} points to {receiver.username}."}
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -808,7 +833,7 @@ def give_points(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while allocating points: {str(e)}"
+            detail=f"An error occurred while allocating points: {str(e)}",
         )
 
 
@@ -848,7 +873,9 @@ def reset_user_point(
 
         # Find user points record
         user_points = (
-            db.query(models.UserPoint).filter(models.UserPoint.user_id == user_id).first()
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == user_id)
+            .first()
         )
         if not user_points:
             raise HTTPException(
@@ -863,7 +890,7 @@ def reset_user_point(
         db.commit()
 
         return {"message": f"Points for user {user_id} have been reset to 0."}
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -872,7 +899,7 @@ def reset_user_point(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while resetting user points: {str(e)}"
+            detail=f"An error occurred while resetting user points: {str(e)}",
         )
 
 
@@ -975,12 +1002,12 @@ def check_point_details(
         }
 
         return data
-        
+
     except Exception as e:
         # Handle any unexpected database or other errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving point details: {str(e)}"
+            detail=f"An error occurred while retrieving point details: {str(e)}",
         )
 
 
@@ -1034,11 +1061,13 @@ def check_all_users(
                 limit=limit or 25,
                 search=search,
                 sort_by="created_at",
-                sort_order="desc"
+                sort_order="desc",
             )
-            
-            paginated_result = user_service.get_users_paginated(search_params, current_user)
-            
+
+            paginated_result = user_service.get_users_paginated(
+                search_params, current_user
+            )
+
             # Convert to legacy format for backward compatibility
             response = {
                 "total_super_user": paginated_result.statistics.super_users,
@@ -1055,26 +1084,26 @@ def check_all_users(
                     "total": paginated_result.pagination.total,
                     "total_pages": paginated_result.pagination.total_pages,
                     "has_next": paginated_result.pagination.has_next,
-                    "has_prev": paginated_result.pagination.has_prev
-                }
+                    "has_prev": paginated_result.pagination.has_prev,
+                },
             }
-            
+
             # Build root user info
             response["root_user"] = build_user_info_legacy(current_user, db)
-            
+
             # Convert enhanced user responses to legacy format
             for user_response in paginated_result.users:
                 legacy_user_info = convert_to_legacy_format(user_response)
-                
+
                 if user_response.role == models.UserRole.SUPER_USER:
                     response["super_users"].append(legacy_user_info)
                 elif user_response.role == models.UserRole.ADMIN_USER:
                     response["admin_users"].append(legacy_user_info)
                 elif user_response.role == models.UserRole.GENERAL_USER:
                     response["general_users"].append(legacy_user_info)
-            
+
             return response
-            
+
         except Exception as e:
             # Fall back to legacy implementation if enhanced version fails
             pass
@@ -1113,12 +1142,210 @@ def check_all_users(
     return response
 
 
+@router.get("/check/all/fast")
+def check_all_users_fast(
+    page: Optional[int] = Query(1, ge=1, description="Page number for pagination"),
+    limit: Optional[int] = Query(25, ge=1, le=100, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search by username or email"),
+    current_user: Annotated[models.User, Depends(get_current_user)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+):
+    """
+    Optimized version of /check/all endpoint for faster response times.
+
+    This endpoint uses:
+    - Eager loading to avoid N+1 query problem
+    - Optimized statistics calculation
+    - Caching for frequently accessed data
+    - Simplified response format
+
+    Supports:
+        - Pagination (page, limit)
+        - Search (username/email)
+        - Role filtering (SUPER_USER, ADMIN_USER)
+
+    Returns:
+        - root_user: Requesting user's info
+        - super_users, admin_users, general_users
+        - pagination: Page info (page, total, total_pages, etc.)
+
+    Roles:
+        - super_user
+        - admin_user
+
+    Raises:
+        403 → Access denied for general users
+        500 → Internal error
+    """
+
+    # --- Access control ---
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super_user or admin_user can access this endpoint.",
+        )
+
+    # Use the optimized user service
+    user_service = UserService(db)
+
+    # Build cache key for this request
+    cache_key = f"fast_user_list:{current_user.id}:{page}:{limit}:{search}"
+
+    # Try to get cached result
+    cached_result = get_cached_user_list(cache_key)
+    if cached_result:
+        return cached_result
+
+    # Set up search parameters
+    search_params = UserSearchParams(
+        page=page, limit=limit, search=search, sort_by="created_at", sort_order="desc"
+    )
+
+    # Get paginated results with optimized query
+    paginated_result = user_service.get_users_paginated_optimized(
+        search_params, current_user
+    )
+
+    # Build response with simplified format
+    response = {
+        "total_super_user": paginated_result.statistics.super_users,
+        "total_admin_users": paginated_result.statistics.admin_users,
+        "total_general_users": paginated_result.statistics.general_users,
+        "root_user": build_user_info_optimized(current_user, db),
+        "super_users": [],
+        "admin_users": [],
+        "general_users": [],
+        "pagination": {
+            "page": paginated_result.pagination.page,
+            "limit": paginated_result.pagination.limit,
+            "total": paginated_result.pagination.total,
+            "total_pages": paginated_result.pagination.total_pages,
+            "has_next": paginated_result.pagination.has_next,
+            "has_prev": paginated_result.pagination.has_prev,
+        },
+    }
+
+    # Convert users to optimized format
+    for user_response in paginated_result.users:
+        user_info = build_user_info_optimized_from_response(user_response)
+
+        if user_response.role == models.UserRole.SUPER_USER:
+            response["super_users"].append(user_info)
+        elif user_response.role == models.UserRole.ADMIN_USER:
+            response["admin_users"].append(user_info)
+        elif user_response.role == models.UserRole.GENERAL_USER:
+            response["general_users"].append(user_info)
+
+    # Cache the result for future requests
+    cache_user_list_result(cache_key, response)
+
+    return response
+
+
+def get_cached_user_list(cache_key: str):
+    """Get cached user list result"""
+    try:
+        from cache_config import cache
+
+        if cache.is_available:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                return cached_data
+    except Exception as e:
+        logger.error(f"Error getting cached user list: {e}")
+    return None
+
+
+def cache_user_list_result(cache_key: str, result: dict):
+    """Cache user list result"""
+    try:
+        from cache_config import cache
+
+        if cache.is_available:
+            # Cache for 1 minute (60 seconds) for frequently changing data
+            cache.set(cache_key, result, 60)
+    except Exception as e:
+        logger.error(f"Error caching user list result: {e}")
+
+
+def build_user_info_optimized(user: models.User, db: Session):
+    """Optimized version of user info building"""
+    # Get user points in a single query
+    user_points = (
+        db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
+    )
+
+    # Determine paid status
+    if user.role == models.UserRole.SUPER_USER:
+        paid_status = "I am super user, I have unlimited points."
+    else:
+        paid_status = (
+            "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
+        )
+
+    # Get total requests in a single optimized query
+    total_requests = (
+        db.query(models.PointTransaction)
+        .filter(
+            or_(
+                models.PointTransaction.giver_id == user.id,
+                models.PointTransaction.receiver_id == user.id,
+            )
+        )
+        .count()
+    )
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role if hasattr(user.role, "value") else str(user.role),
+        "is_active": user.is_active,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+        "created_by": user.created_by,
+        "points": {
+            "total_points": user_points.total_points if user_points else 0,
+            "current_points": user_points.current_points if user_points else 0,
+            "paid_status": paid_status,
+        },
+        "total_requests": total_requests,
+        "activity_status": "Active" if user.is_active else "Inactive",
+    }
+
+
+def build_user_info_optimized_from_response(user_response: UserListResponse):
+    """Build optimized user info from UserListResponse"""
+    return {
+        "id": user_response.id,
+        "username": user_response.username,
+        "email": user_response.email,
+        "role": (
+            user_response.role
+            if hasattr(user_response.role, "value")
+            else str(user_response.role)
+        ),
+        "is_active": user_response.is_active,
+        "created_at": user_response.created_at,
+        "updated_at": user_response.updated_at,
+        "created_by": user_response.created_by,
+        "points": {
+            "total_points": user_response.total_points,
+            "current_points": user_response.point_balance,
+            "paid_status": user_response.paid_status,
+        },
+        "total_requests": user_response.total_requests,
+        "activity_status": user_response.activity_status,
+    }
+
+
 def build_user_info_legacy(user: models.User, db: Session):
     """Helper function to build user info in legacy format"""
     user_points = (
-        db.query(models.UserPoint)
-        .filter(models.UserPoint.user_id == user.id)
-        .first()
+        db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
     )
 
     if user.role == models.UserRole.SUPER_USER:
@@ -1186,7 +1413,9 @@ def convert_to_legacy_format(user_response: UserListResponse):
         "email": user_response.email,
         "points": points_info,
         "active_supplier": user_response.active_suppliers,
-        "created_at": user_response.created_at.isoformat() if user_response.created_at else None,
+        "created_at": (
+            user_response.created_at.isoformat() if user_response.created_at else None
+        ),
         "user_status": user_response.role,
         "is_active": user_response.is_active,
         "using_rq_status": user_response.activity_status,
@@ -1298,24 +1527,24 @@ def check_user_info(
     - 404: User not found or not created by current user
     - 500: Internal server error
     """
-    
+
     try:
         # Find the user
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found.",
             )
-        
+
         # Validate access based on role
         is_allowed = False
-        
+
         # Super users can view all users
         if current_user.role == models.UserRole.SUPER_USER:
             is_allowed = True
-        
+
         # General users can only view their own information
         elif current_user.role == models.UserRole.GENERAL_USER:
             if user_id == current_user.id:
@@ -1325,7 +1554,7 @@ def check_user_info(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only view your own information.",
                 )
-        
+
         # Admin users can view users they created OR users with "own:" prefix
         elif current_user.role == models.UserRole.ADMIN_USER:
             if user.created_by:
@@ -1338,7 +1567,7 @@ def check_user_info(
                     is_allowed = creator_email == current_user.email
                 else:
                     is_allowed = current_user.email in user.created_by
-        
+
         if not is_allowed:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1347,15 +1576,19 @@ def check_user_info(
 
         # Get user points information
         user_points = (
-            db.query(models.UserPoint).filter(models.UserPoint.user_id == user.id).first()
+            db.query(models.UserPoint)
+            .filter(models.UserPoint.user_id == user.id)
+            .first()
         )
-        
+
         # Determine paid status
         if user.role == models.UserRole.SUPER_USER:
             paid_status = "Super User - Unlimited Points"
         else:
-            paid_status = "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
-        
+            paid_status = (
+                "Paid" if user_points and user_points.current_points > 0 else "Unpaid"
+            )
+
         points_info = {
             "total_points": user_points.total_points if user_points else 0,
             "current_points": user_points.current_points if user_points else 0,
@@ -1365,65 +1598,130 @@ def check_user_info(
             .filter(models.PointTransaction.giver_id == user.id)
             .count(),
         }
-        
-        # Get recent activity status (last 7 days)
+
+        # Get recent activity status (last 7 days) - check for actual API usage
         last_7_days = datetime.utcnow() - timedelta(days=7)
-        recent_transactions = (
-            db.query(models.PointTransaction)
+        recent_activities = (
+            db.query(models.UserActivityLog)
             .filter(
-                or_(
-                    models.PointTransaction.giver_id == user.id,
-                    models.PointTransaction.receiver_id == user.id
-                ),
-                models.PointTransaction.created_at >= last_7_days,
+                models.UserActivityLog.user_id == user.id,
+                models.UserActivityLog.created_at >= last_7_days,
+                models.UserActivityLog.action
+                == "api_access",  # Check for API access activities
             )
             .count()
         )
-        using_rq_status = "Active" if recent_transactions > 0 else "Inactive"
-        
-        # Get active suppliers
-        suppliers = [
-            perm.provider_name
-            for perm in db.query(models.UserProviderPermission)
-            .filter(models.UserProviderPermission.user_id == user.id)
-            .all()
-        ]
-        active_suppliers = list(set(suppliers))
+        using_rq_status = "Active" if recent_activities > 0 else "Inactive"
+
+        # Get active suppliers based on user role
+        if user.role in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+            # For super users and admin users, get all system suppliers
+            all_system_suppliers = [
+                row.provider_name
+                for row in db.query(models.ProviderMapping.provider_name)
+                .distinct()
+                .all()
+            ]
+
+            # Get temporarily deactivated suppliers for this user
+            temp_deactivated_permissions = [
+                perm.provider_name
+                for perm in db.query(models.UserProviderPermission)
+                .filter(
+                    models.UserProviderPermission.user_id == user.id,
+                    models.UserProviderPermission.provider_name.like(
+                        "TEMP_DEACTIVATED_%"
+                    ),
+                )
+                .all()
+            ]
+
+            # Extract original supplier names from temp deactivated permissions
+            temp_deactivated_suppliers = [
+                perm.replace("TEMP_DEACTIVATED_", "")
+                for perm in temp_deactivated_permissions
+            ]
+
+            # Filter out temporarily deactivated suppliers from active list
+            active_suppliers = [
+                supplier
+                for supplier in all_system_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
+        else:
+            # For general users, get only their explicit permissions
+            all_permissions = [
+                perm.provider_name
+                for perm in db.query(models.UserProviderPermission)
+                .filter(models.UserProviderPermission.user_id == user.id)
+                .all()
+            ]
+
+            # Separate active suppliers and temporary deactivated suppliers
+            active_suppliers = []
+            temp_deactivated_suppliers = []
+
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    # Extract original supplier name
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
+                else:
+                    active_suppliers.append(perm)
+
+            # Remove duplicates and filter out deactivated suppliers from active list
+            active_suppliers = list(set(active_suppliers))
+            temp_deactivated_suppliers = list(set(temp_deactivated_suppliers))
+
+            # Remove temporarily deactivated suppliers from active list
+            active_suppliers = [
+                supplier
+                for supplier in active_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
 
         # Calculate API key info
         if user.api_key:
             api_key_info = {
                 "api_key": user.api_key,
                 "created": user.created_at.isoformat() if user.created_at else None,
-                "expires": user.api_key_expires_at.isoformat() if user.api_key_expires_at else None,
-                "active_for_days": None
+                "expires": (
+                    user.api_key_expires_at.isoformat()
+                    if user.api_key_expires_at
+                    else None
+                ),
+                "active_for_days": None,
             }
-            
+
             # Calculate active_for_days if API key has expiration
             if user.api_key_expires_at:
                 days_remaining = (user.api_key_expires_at - datetime.utcnow()).days
-                api_key_info["active_for_days"] = max(0, days_remaining)  # Don't show negative days
+                api_key_info["active_for_days"] = max(
+                    0, days_remaining
+                )  # Don't show negative days
         else:
             # If no API key, set all fields to null
             api_key_info = {
                 "api_key": None,
                 "created": None,
                 "expires": None,
-                "active_for_days": None
+                "active_for_days": None,
             }
-        
+
         return {
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
             "api_key_info": api_key_info,
             "points": points_info,
             "active_suppliers": active_suppliers,
             "total_suppliers": len(active_suppliers),
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "updated_at": user.updated_at.isoformat() if user.updated_at else None,
-            "user_status": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "user_status": (
+                user.role.value if hasattr(user.role, "value") else str(user.role)
+            ),
             "is_active": user.is_active,
             "using_rq_status": using_rq_status,
             "created_by": user.created_by,
@@ -1431,10 +1729,14 @@ def check_user_info(
                 "user_id": current_user.id,
                 "username": current_user.username,
                 "email": current_user.email,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
-            }
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
+            },
         }
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -1442,7 +1744,7 @@ def check_user_info(
         # Handle unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving user information: {str(e)}"
+            detail=f"An error occurred while retrieving user information: {str(e)}",
         )
 
 
@@ -1453,16 +1755,16 @@ def check_active_my_supplier(
 ):
     """
     Check My Active Suppliers
-    
+
     Returns user's supplier access statistics with on/off status lists.
-    
+
     Returns:
     - active_supplier: Total suppliers user has access to
     - total_on_supplier: Currently active suppliers count
-    - total_off_supplier: Temporarily deactivated suppliers count  
+    - total_off_supplier: Temporarily deactivated suppliers count
     - off_supplier_list: List of turned off supplier names
     - on_supplier_list: List of active supplier names
-    
+
     Role-Based Access:
     - Super/Admin: All system suppliers (minus temp deactivated)
     - General users: Only assigned suppliers
@@ -1475,11 +1777,11 @@ def check_active_my_supplier(
             .filter(models.UserProviderPermission.user_id == current_user.id)
             .all()
         ]
-        
+
         # Separate active suppliers and temporary deactivated suppliers
         active_suppliers = []
         temp_deactivated_suppliers = []
-        
+
         for perm in all_permissions:
             if perm.startswith("TEMP_DEACTIVATED_"):
                 # Extract original supplier name
@@ -1487,58 +1789,75 @@ def check_active_my_supplier(
                 temp_deactivated_suppliers.append(original_name)
             else:
                 active_suppliers.append(perm)
-        
+
         # Remove duplicates
         active_suppliers = list(set(active_suppliers))
         temp_deactivated_suppliers = list(set(temp_deactivated_suppliers))
-        
+
         # Remove temporarily deactivated suppliers from active list
-        currently_active_suppliers = [supplier for supplier in active_suppliers if supplier not in temp_deactivated_suppliers]
-        
+        currently_active_suppliers = [
+            supplier
+            for supplier in active_suppliers
+            if supplier not in temp_deactivated_suppliers
+        ]
+
         # For super users and admin users, get all system suppliers
-        if current_user.role in [models.UserRole.ADMIN_USER, models.UserRole.SUPER_USER]:
+        if current_user.role in [
+            models.UserRole.ADMIN_USER,
+            models.UserRole.SUPER_USER,
+        ]:
             # Get all unique supplier names from provider mappings
             all_system_suppliers = [
                 row.provider_name
-                for row in db.query(models.ProviderMapping.provider_name).distinct().all()
+                for row in db.query(models.ProviderMapping.provider_name)
+                .distinct()
+                .all()
             ]
-            
+
             if not all_system_suppliers:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="No suppliers found in the system.",
                 )
-            
+
             # Filter out temporarily deactivated suppliers
-            currently_active_suppliers = [supplier for supplier in all_system_suppliers if supplier not in temp_deactivated_suppliers]
+            currently_active_suppliers = [
+                supplier
+                for supplier in all_system_suppliers
+                if supplier not in temp_deactivated_suppliers
+            ]
             # For super/admin users, total accessible suppliers (including temp deactivated)
-            all_accessible_suppliers = list(set(all_system_suppliers + temp_deactivated_suppliers))
-            
+            all_accessible_suppliers = list(
+                set(all_system_suppliers + temp_deactivated_suppliers)
+            )
+
             return {
                 "active_supplier": len(all_accessible_suppliers),
                 "total_on_supplier": len(currently_active_suppliers),
                 "total_off_supplier": len(temp_deactivated_suppliers),
                 "off_supplier_list": sorted(temp_deactivated_suppliers),
-                "on_supplier_list": sorted(currently_active_suppliers)
+                "on_supplier_list": sorted(currently_active_suppliers),
             }
-        
+
         # For general users, total accessible suppliers (including temp deactivated)
-        all_accessible_suppliers = list(set(active_suppliers + temp_deactivated_suppliers))
-        
+        all_accessible_suppliers = list(
+            set(active_suppliers + temp_deactivated_suppliers)
+        )
+
         if len(all_accessible_suppliers) == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No suppliers found. Please contact your admin.",
             )
-        
+
         return {
             "active_supplier": len(all_accessible_suppliers),
             "total_on_supplier": len(currently_active_suppliers),
             "total_off_supplier": len(temp_deactivated_suppliers),
             "off_supplier_list": sorted(temp_deactivated_suppliers),
-            "on_supplier_list": sorted(currently_active_suppliers)
+            "on_supplier_list": sorted(currently_active_suppliers),
         }
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -1546,7 +1865,7 @@ def check_active_my_supplier(
         # Handle any unexpected database or other errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving supplier statistics: {str(e)}"
+            detail=f"An error occurred while retrieving supplier statistics: {str(e)}",
         )
 
 
@@ -1580,15 +1899,15 @@ def get1_list_of_available_suppliers(
             row.provider_name
             for row in db.query(models.ProviderMapping.provider_name).distinct().all()
         ]
-        
+
         if not suppliers:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No suppliers found. Please contact your admin.",
             )
-            
+
         return {"total_supplier": len(suppliers), "supplier_list": suppliers}
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are already properly formatted
         raise
@@ -1596,11 +1915,12 @@ def get1_list_of_available_suppliers(
         # Handle any unexpected database or other errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving supplier list: {str(e)}"
+            detail=f"An error occurred while retrieving supplier list: {str(e)}",
         )
 
 
 # ===== ENHANCED USER MANAGEMENT ENDPOINTS =====
+
 
 @router.get("/list", response_model=PaginatedUserResponse)
 async def get_users_paginated(
@@ -1640,14 +1960,16 @@ async def get_users_paginated(
     - 500: Server error
     """
 
-    
     # 🔒 SECURITY CHECK: Only super users and admin users can access user list
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only super users and admin users can view user list."
+            detail="Access denied. Only super users and admin users can view user list.",
         )
-    
+
     try:
         # Create search parameters
         search_params = UserSearchParams(
@@ -1657,27 +1979,24 @@ async def get_users_paginated(
             role=role,
             is_active=is_active,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
         )
-        
+
         # Get user service and fetch paginated results
         user_service = UserService(db)
         result = user_service.get_users_paginated(search_params, current_user)
-        
+
         return result
-        
+
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching users"
+            detail="An error occurred while fetching users",
         )
-        
-        
+
+
 @router.get("/stats", response_model=UserStatistics)
 async def get_user_statistics(
     current_user: Annotated[models.User, Depends(get_current_user)] = None,
@@ -1698,16 +2017,16 @@ async def get_user_statistics(
     Raises:
     - 500: If an unexpected error occurs during data retrieval.
     """
- 
+
     try:
         user_service = UserService(db)
         statistics = user_service.get_user_statistics(current_user)
         return statistics
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching user statistics"
+            detail="An error occurred while fetching user statistics",
         )
 
 
@@ -1739,21 +2058,21 @@ async def get_user_details(
     try:
         user_service = UserService(db)
         user_details = user_service.get_user_with_details(user_id, current_user)
-        
+
         if not user_details:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found or you don't have permission to view this user"
+                detail="User not found or you don't have permission to view this user",
             )
-        
+
         return user_details
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching user details"
+            detail="An error occurred while fetching user details",
         )
 
 
@@ -1787,21 +2106,21 @@ async def get_user_activity(
     try:
         user_service = UserService(db)
         activity = user_service.get_user_activity(user_id, days, current_user)
-        
+
         if not activity:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found or you don't have permission to view this user's activity"
+                detail="User not found or you don't have permission to view this user's activity",
             )
-        
+
         return activity
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching user activity"
+            detail="An error occurred while fetching user activity",
         )
 
 
@@ -1836,45 +2155,90 @@ async def bulk_user_operations(
     """
 
     # Check permissions
-    if current_user.role not in [models.UserRole.SUPER_USER, models.UserRole.ADMIN_USER]:
+    if current_user.role not in [
+        models.UserRole.SUPER_USER,
+        models.UserRole.ADMIN_USER,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only super_user or admin_user can perform bulk operations"
+            detail="Only super_user or admin_user can perform bulk operations",
         )
-    
+
     try:
         user_service = UserService(db)
         results = []
         errors = []
-        
+
         for operation in operations.operations:
             try:
                 if operation.operation == "create" and operation.user_data:
                     # Convert dict to UserCreateRequest
                     create_request = UserCreateRequest(**operation.user_data)
-                    result = user_service.create_user_with_validation(create_request, current_user)
-                    results.append({"operation": "create", "success": True, "user": result})
-                    
-                elif operation.operation == "update" and operation.user_id and operation.user_data:
+                    result = user_service.create_user_with_validation(
+                        create_request, current_user
+                    )
+                    results.append(
+                        {"operation": "create", "success": True, "user": result}
+                    )
+
+                elif (
+                    operation.operation == "update"
+                    and operation.user_id
+                    and operation.user_data
+                ):
                     # Convert dict to UserUpdateRequest
                     update_request = UserUpdateRequest(**operation.user_data)
-                    result = user_service.update_user_with_validation(operation.user_id, update_request, current_user)
+                    result = user_service.update_user_with_validation(
+                        operation.user_id, update_request, current_user
+                    )
                     if result:
-                        results.append({"operation": "update", "success": True, "user": result})
+                        results.append(
+                            {"operation": "update", "success": True, "user": result}
+                        )
                     else:
-                        errors.append({"operation": "update", "user_id": operation.user_id, "error": "User not found"})
-                        
+                        errors.append(
+                            {
+                                "operation": "update",
+                                "user_id": operation.user_id,
+                                "error": "User not found",
+                            }
+                        )
+
                 elif operation.operation == "delete" and operation.user_id:
-                    success = user_service.delete_user_with_cleanup(operation.user_id, current_user)
+                    success = user_service.delete_user_with_cleanup(
+                        operation.user_id, current_user
+                    )
                     if success:
-                        results.append({"operation": "delete", "success": True, "user_id": operation.user_id})
+                        results.append(
+                            {
+                                "operation": "delete",
+                                "success": True,
+                                "user_id": operation.user_id,
+                            }
+                        )
                     else:
-                        errors.append({"operation": "delete", "user_id": operation.user_id, "error": "User not found"})
-                        
+                        errors.append(
+                            {
+                                "operation": "delete",
+                                "user_id": operation.user_id,
+                                "error": "User not found",
+                            }
+                        )
+
                 else:
-                    errors.append({"operation": operation.operation, "error": "Invalid operation or missing data"})
-                    
-            except (UserAlreadyExistsError, InsufficientPermissionsError, DataValidationError, BusinessRuleViolationError) as e:
+                    errors.append(
+                        {
+                            "operation": operation.operation,
+                            "error": "Invalid operation or missing data",
+                        }
+                    )
+
+            except (
+                UserAlreadyExistsError,
+                InsufficientPermissionsError,
+                DataValidationError,
+                BusinessRuleViolationError,
+            ) as e:
                 errors.append({"operation": operation.operation, "error": str(e)})
             except ValueError as e:
                 errors.append({"operation": operation.operation, "error": str(e)})
@@ -1883,22 +2247,25 @@ async def bulk_user_operations(
             except Exception as e:
                 print(f"Bulk operation error: {str(e)}")  # For debugging
                 import traceback
-                print(f"Traceback: {traceback.format_exc()}")  # Full traceback for debugging
+
+                print(
+                    f"Traceback: {traceback.format_exc()}"
+                )  # Full traceback for debugging
                 errors.append({"operation": operation.operation, "error": str(e)})
-        
+
         return {
             "total_operations": len(operations.operations),
             "successful_operations": len(results),
             "failed_operations": len(errors),
             "results": results,
-            "errors": errors
+            "errors": errors,
         }
-        
+
     except Exception as e:
         print(f"Bulk operations outer error: {str(e)}")  # For debugging
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while performing bulk operations: {str(e)}"
+            detail=f"An error occurred while performing bulk operations: {str(e)}",
         )
 
 
@@ -1933,33 +2300,28 @@ async def update_user(
 
     try:
         user_service = UserService(db)
-        updated_user = user_service.update_user_with_validation(user_id, user_updates, current_user)
-        
+        updated_user = user_service.update_user_with_validation(
+            user_id, user_updates, current_user
+        )
+
         if not updated_user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
-        
+
         return updated_user
-        
+
     except ValueError as e:
         if "permission" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while updating the user"
+            detail="An error occurred while updating the user",
         )
 
 
@@ -1997,37 +2359,30 @@ async def delete_user(
     try:
         user_service = UserService(db)
         success = user_service.delete_user_with_cleanup(user_id, current_user)
-        
+
         if not success:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
-        
+
         return {
             "message": f"User {user_id} has been successfully deleted",
             "deleted_user_id": user_id,
             "deleted_by": current_user.email,
-            "deleted_at": datetime.utcnow()
+            "deleted_at": datetime.utcnow(),
         }
-        
+
     except ValueError as e:
         if "permission" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while deleting the user"
+            detail="An error occurred while deleting the user",
         )
 
 
@@ -2061,29 +2416,20 @@ async def create_user_enhanced(
     try:
         user_service = UserService(db)
         created_user = user_service.create_user_with_validation(user_data, current_user)
-        
+
         return created_user
-        
+
     except ValueError as e:
         if "permission" in str(e).lower() or "only super_user" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
         elif "already exists" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while creating the user"
+            detail="An error occurred while creating the user",
         )
 
 
@@ -2096,7 +2442,7 @@ async def health_check():
         "status": "healthy",
         "service": "user_management",
         "timestamp": datetime.utcnow(),
-        "version": "1.0.0"
+        "version": "1.0.0",
     }
 
 
@@ -2110,31 +2456,31 @@ async def get_all_unpaid_general_users(
 ):
     """
     Get all general users who are not paid (unpaid status).
-    
+
     This endpoint returns a list of general users who have zero or no points,
     indicating they haven't been allocated any points yet (unpaid status).
-    
+
     Features:
     - Pagination support (page, limit)
     - Search by username or email
     - Only returns general users with unpaid status
     - Includes user details, points info, and supplier access
-    
+
     Access Control:
     - Super User: Can view all unpaid general users
     - Admin User: Can view all unpaid general users
     - General User: Access denied
-    
+
     Returns:
     - users: List of unpaid general users with details
     - pagination: Page info (page, limit, total, total_pages, etc.)
     - statistics: Summary counts
-    
+
     Raises:
     - 403: Access denied for general users
     - 500: Internal server error
     """
-    
+
     try:
         # Access control - only super_user and admin_user can access
         if current_user.role not in [
@@ -2145,53 +2491,59 @@ async def get_all_unpaid_general_users(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only super_user or admin_user can access this endpoint.",
             )
-        
+
         # Base query for general users
         query = db.query(models.User).filter(
             models.User.role == models.UserRole.GENERAL_USER
         )
-        
+
         # Join with UserPoint to filter unpaid users
         # Unpaid means: no points record OR current_points = 0
         query = query.outerjoin(
-            models.UserPoint,
-            models.User.id == models.UserPoint.user_id
+            models.UserPoint, models.User.id == models.UserPoint.user_id
         ).filter(
             or_(
                 models.UserPoint.user_id.is_(None),  # No points record
                 models.UserPoint.current_points == 0,  # Zero points
-                models.UserPoint.current_points.is_(None)  # Null points
+                models.UserPoint.current_points.is_(None),  # Null points
             )
         )
-        
+
         # Apply search filter if provided
         if search:
             search_filter = f"%{search}%"
             query = query.filter(
                 or_(
                     models.User.username.ilike(search_filter),
-                    models.User.email.ilike(search_filter)
+                    models.User.email.ilike(search_filter),
                 )
             )
-        
+
         # Get total count before pagination
         total_count = query.count()
-        
+
         # Calculate pagination
         total_pages = (total_count + limit - 1) // limit
         offset = (page - 1) * limit
-        
+
         # Apply pagination
-        users = query.order_by(models.User.created_at.desc()).offset(offset).limit(limit).all()
-        
+        users = (
+            query.order_by(models.User.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
         # Build user list with details
         user_list = []
         for user in users:
             # Get user points
-            user_points = db.query(models.UserPoint).filter(
-                models.UserPoint.user_id == user.id
-            ).first()
-            
+            user_points = (
+                db.query(models.UserPoint)
+                .filter(models.UserPoint.user_id == user.id)
+                .first()
+            )
+
             # Get active suppliers
             suppliers = [
                 perm.provider_name
@@ -2200,25 +2552,31 @@ async def get_all_unpaid_general_users(
                 .all()
             ]
             active_suppliers = list(set(suppliers))
-            
+
             # Get recent activity status
             last_7_days = datetime.utcnow() - timedelta(days=7)
-            recent_transactions = db.query(models.PointTransaction).filter(
-                or_(
-                    models.PointTransaction.giver_id == user.id,
-                    models.PointTransaction.receiver_id == user.id
-                ),
-                models.PointTransaction.created_at >= last_7_days,
-            ).count()
-            
+            recent_transactions = (
+                db.query(models.PointTransaction)
+                .filter(
+                    or_(
+                        models.PointTransaction.giver_id == user.id,
+                        models.PointTransaction.receiver_id == user.id,
+                    ),
+                    models.PointTransaction.created_at >= last_7_days,
+                )
+                .count()
+            )
+
             activity_status = "Active" if recent_transactions > 0 else "Inactive"
-            
+
             # Build user info
             user_info = {
                 "id": user.id,
                 "username": user.username,
                 "email": user.email,
-                "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+                "role": (
+                    user.role.value if hasattr(user.role, "value") else str(user.role)
+                ),
                 "is_active": user.is_active,
                 "created_at": user.created_at,
                 "updated_at": user.updated_at,
@@ -2226,19 +2584,21 @@ async def get_all_unpaid_general_users(
                 "points": {
                     "total_points": user_points.total_points if user_points else 0,
                     "current_points": user_points.current_points if user_points else 0,
-                    "total_used_points": user_points.total_used_points if user_points else 0,
-                    "paid_status": "Unpaid"
+                    "total_used_points": (
+                        user_points.total_used_points if user_points else 0
+                    ),
+                    "paid_status": "Unpaid",
                 },
                 "active_suppliers": active_suppliers,
                 "total_suppliers": len(active_suppliers),
                 "activity_status": activity_status,
-                "total_requests": db.query(models.PointTransaction).filter(
-                    models.PointTransaction.giver_id == user.id
-                ).count()
+                "total_requests": db.query(models.PointTransaction)
+                .filter(models.PointTransaction.giver_id == user.id)
+                .count(),
             }
-            
+
             user_list.append(user_info)
-        
+
         # Build response
         response = {
             "users": user_list,
@@ -2248,22 +2608,26 @@ async def get_all_unpaid_general_users(
                 "total": total_count,
                 "total_pages": total_pages,
                 "has_next": page < total_pages,
-                "has_prev": page > 1
+                "has_prev": page > 1,
             },
             "statistics": {
                 "total_unpaid_users": total_count,
-                "showing": len(user_list)
+                "showing": len(user_list),
             },
             "requested_by": {
                 "user_id": current_user.id,
                 "username": current_user.username,
-                "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+                "role": (
+                    current_user.role.value
+                    if hasattr(current_user.role, "value")
+                    else str(current_user.role)
+                ),
             },
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.utcnow(),
         }
-        
+
         return response
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -2271,5 +2635,5 @@ async def get_all_unpaid_general_users(
         # Handle unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving unpaid users: {str(e)}"
+            detail=f"An error occurred while retrieving unpaid users: {str(e)}",
         )
