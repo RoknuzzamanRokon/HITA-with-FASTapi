@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, validator, RootModel
 from typing import Optional, List, Dict, Any, Optional
 from datetime import datetime
+from models import NotificationType, NotificationPriority, NotificationStatus
 
 
 # --- User Schemas ---
@@ -14,6 +15,7 @@ class UserCreate(BaseModel):
         if not value.isalnum():
             raise ValueError("Username must be alphanumeric.")
         return value
+
 
 class CreatedByInfo(BaseModel):
     title: str
@@ -30,6 +32,7 @@ class User(BaseModel):
     class Config:
         from_attributes = True
 
+
 class SuperUserResponse(BaseModel):
     id: str
     username: str
@@ -45,15 +48,18 @@ class AdminUserResponse(BaseModel):
     role: str
     created_by: List[CreatedByInfo]
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class SupplierInfo(BaseModel):
     total_active: int
     active_list: List[str]
     temporary_off: int
     temporary_off_supplier: List[str]
+
 
 class UserResponse(BaseModel):
     id: str
@@ -70,6 +76,7 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 # --- Hotel Schemas ---
 class LocationCreate(BaseModel):
     city_name: Optional[str] = Field(None, max_length=100)
@@ -81,6 +88,7 @@ class LocationCreate(BaseModel):
     city_code: Optional[str] = Field(None, max_length=50)
     city_location_id: Optional[str] = Field(None, max_length=50)
 
+
 class ProviderMappingCreate(BaseModel):
     provider_name: str = Field(..., max_length=50)
     provider_id: str = Field(..., max_length=50)
@@ -88,9 +96,11 @@ class ProviderMappingCreate(BaseModel):
     vervotech_id: Optional[str] = Field(None, max_length=50)
     giata_code: Optional[str] = Field(None, max_length=50)
 
+
 class ContactCreate(BaseModel):
     contact_type: str = Field(..., max_length=20)
     value: str = Field(..., max_length=255)
+
 
 class ChainCreate(BaseModel):
     chain_name: Optional[str] = Field(None, max_length=100)
@@ -143,12 +153,14 @@ class HotelCreate(BaseModel):
     contacts: List[ContactCreate] = []
     chains: List[ChainCreate] = []
 
+
 class HotelRead(HotelCreate):
     id: int
-    primary_photo: Optional[str] 
+    primary_photo: Optional[str]
 
     class Config:
         from_attributes = True
+
 
 class HotelUpdate(BaseModel):
     ittid: Optional[str] = Field(None, max_length=50)
@@ -160,13 +172,14 @@ class HotelUpdate(BaseModel):
     postal_code: Optional[str]
     rating: Optional[str]
     property_type: Optional[str]
-    primary_photo: Optional[str] 
+    primary_photo: Optional[str]
     map_status: Optional[str]
     content_update_status: Optional[str]
     locations: Optional[List[LocationCreate]] = []
     provider_mappings: Optional[List[ProviderMappingCreate]] = []
     contacts: Optional[List[ContactCreate]] = []
     chains: Optional[List[ChainCreate]] = []
+
 
 # Rebuild forward references
 UserCreate.model_rebuild()
@@ -178,6 +191,7 @@ UserResponse.model_rebuild()
 
 from models import PointAllocationType
 
+
 class GivePointsRequest(BaseModel):
     receiver_id: str
     allocation_type: PointAllocationType
@@ -185,13 +199,18 @@ class GivePointsRequest(BaseModel):
 
 # --- New schemas for `get-all-basic-info-using-a-supplier` ---
 
+
 class ProviderProperty(BaseModel):
-    provider_name: str = Field(..., description="The supplier/provider name to filter hotels by")
+    provider_name: str = Field(
+        ..., description="The supplier/provider name to filter hotels by"
+    )
+
 
 class ProviderItem(BaseModel):
     name: str = Field(..., description="Provider name")
     provider_id: str = Field(..., description="Provider-specific hotel ID")
     status: str = Field(..., description="Status of the mapping (e.g., 'update')")
+
 
 class LocationItem(BaseModel):
     id: int = Field(..., description="Location record ID")
@@ -209,12 +228,16 @@ class LocationItem(BaseModel):
     country_name: Optional[str] = Field(None, description="Country name")
     country_code: Optional[str] = Field(None, description="Country code")
 
+
 class ContactItem(BaseModel):
     id: int = Field(..., description="Hotel ID for contact grouping")
     phone: List[str] = Field(default_factory=list, description="List of phone numbers")
-    email: List[str] = Field(default_factory=list, description="List of email addresses")
+    email: List[str] = Field(
+        default_factory=list, description="List of email addresses"
+    )
     website: List[str] = Field(default_factory=list, description="List of websites")
     fax: List[str] = Field(default_factory=list, description="List of fax numbers")
+
 
 class HotelItem(BaseModel):
     ittid: str = Field(..., description="Internal travel technology ID")
@@ -224,11 +247,16 @@ class HotelItem(BaseModel):
     type: str = Field(..., description="Record type (should be 'hotel')")
     provider: List[ProviderItem] = Field(..., description="List of provider mappings")
     location: List[LocationItem] = Field(..., description="List of location entries")
-    contract: List[ContactItem] = Field(..., description="List containing contact info objects")
+    contract: List[ContactItem] = Field(
+        ..., description="List containing contact info objects"
+    )
+
 
 class GetAllHotelResponse(BaseModel):
     resume_key: Optional[str] = Field(None, description="Resume key for next page")
-    total_hotel: int = Field(..., description="Total number of hotels for this supplier")
+    total_hotel: int = Field(
+        ..., description="Total number of hotels for this supplier"
+    )
     show_hotels_this_page: int
     hotel: List[HotelItem] = Field(..., description="Page of hotel records")
 
@@ -242,11 +270,12 @@ class AddRateTypeRequest(BaseModel):
     rate_name: str
     sell_per_night: float
 
+
 class UpdateRateTypeRequest(BaseModel):
     ittid: str
     provider_mapping_id: int
-    provider_name: str 
-    provider_id: str   
+    provider_name: str
+    provider_id: str
     room_title: str
     rate_name: str
     sell_per_night: float
@@ -271,129 +300,287 @@ class BasicMappingResponse(BaseModel):
 
 # --- New User Dashboard Schemas ---
 
+
 class TimeSeriesDataPoint(BaseModel):
     """Single data point in a time-series"""
-    date: str = Field(..., description="Date in YYYY-MM-DD format", example="2024-11-15")
+
+    date: str = Field(
+        ..., description="Date in YYYY-MM-DD format", example="2024-11-15"
+    )
     value: int = Field(..., description="Value for this date", example=5)
+
 
 class PendingStep(BaseModel):
     """Pending onboarding step"""
-    action: str = Field(..., description="Action identifier", example="supplier_assignment")
-    description: str = Field(..., description="Human-readable description", example="Contact administrator to request supplier access")
-    estimated_time: str = Field(..., description="Estimated time to complete", example="1-2 business days")
+
+    action: str = Field(
+        ..., description="Action identifier", example="supplier_assignment"
+    )
+    description: str = Field(
+        ...,
+        description="Human-readable description",
+        example="Contact administrator to request supplier access",
+    )
+    estimated_time: str = Field(
+        ..., description="Estimated time to complete", example="1-2 business days"
+    )
+
 
 class OnboardingProgress(BaseModel):
     """User onboarding progress tracking"""
-    completion_percentage: int = Field(..., ge=0, le=100, description="Onboarding completion percentage (0-100)", example=33)
-    completed_steps: List[str] = Field(..., description="List of completed onboarding steps", example=["account_created"])
-    pending_steps: List[PendingStep] = Field(..., description="List of pending onboarding steps")
+
+    completion_percentage: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Onboarding completion percentage (0-100)",
+        example=33,
+    )
+    completed_steps: List[str] = Field(
+        ...,
+        description="List of completed onboarding steps",
+        example=["account_created"],
+    )
+    pending_steps: List[PendingStep] = Field(
+        ..., description="List of pending onboarding steps"
+    )
+
 
 class AccountInfo(BaseModel):
     """User account information and status"""
-    user_id: str = Field(..., description="User unique identifier", example="abc1234567")
+
+    user_id: str = Field(
+        ..., description="User unique identifier", example="abc1234567"
+    )
     username: str = Field(..., description="Username", example="john_doe")
-    email: str = Field(..., description="User email address", example="john@example.com")
-    account_status: str = Field(..., description="Current account status", example="pending_activation")
-    created_at: str = Field(..., description="Account creation timestamp (ISO 8601)", example="2024-11-01T10:30:00")
-    days_since_registration: int = Field(..., description="Days since account was created", example=14)
-    onboarding_progress: OnboardingProgress = Field(..., description="Onboarding progress details")
+    email: str = Field(
+        ..., description="User email address", example="john@example.com"
+    )
+    account_status: str = Field(
+        ..., description="Current account status", example="pending_activation"
+    )
+    created_at: str = Field(
+        ...,
+        description="Account creation timestamp (ISO 8601)",
+        example="2024-11-01T10:30:00",
+    )
+    days_since_registration: int = Field(
+        ..., description="Days since account was created", example=14
+    )
+    onboarding_progress: OnboardingProgress = Field(
+        ..., description="Onboarding progress details"
+    )
+
 
 class SupplierResources(BaseModel):
     """User supplier permissions status"""
-    active_count: int = Field(..., description="Number of active supplier permissions", example=0)
-    total_available: int = Field(..., description="Total suppliers available in the system", example=5)
-    assigned_suppliers: List[str] = Field(..., description="List of assigned supplier names", example=[])
-    pending_assignment: bool = Field(..., description="Whether supplier assignment is pending", example=True)
+
+    active_count: int = Field(
+        ..., description="Number of active supplier permissions", example=0
+    )
+    total_available: int = Field(
+        ..., description="Total suppliers available in the system", example=5
+    )
+    assigned_suppliers: List[str] = Field(
+        ..., description="List of assigned supplier names", example=[]
+    )
+    pending_assignment: bool = Field(
+        ..., description="Whether supplier assignment is pending", example=True
+    )
+
 
 class PointResources(BaseModel):
     """User point allocation status"""
+
     current_balance: int = Field(..., description="Current point balance", example=0)
-    total_allocated: int = Field(..., description="Total points ever allocated", example=0)
-    package_type: Optional[str] = Field(None, description="Point package type", example=None)
-    pending_allocation: bool = Field(..., description="Whether point allocation is pending", example=True)
+    total_allocated: int = Field(
+        ..., description="Total points ever allocated", example=0
+    )
+    package_type: Optional[str] = Field(
+        None, description="Point package type", example=None
+    )
+    pending_allocation: bool = Field(
+        ..., description="Whether point allocation is pending", example=True
+    )
+
 
 class UserResources(BaseModel):
     """User resources (suppliers and points)"""
+
     suppliers: SupplierResources = Field(..., description="Supplier permission details")
     points: PointResources = Field(..., description="Point allocation details")
 
+
 class AvailableSupplier(BaseModel):
     """Available supplier information"""
+
     name: str = Field(..., description="Supplier name", example="Agoda")
-    hotel_count: int = Field(..., description="Number of hotels from this supplier", example=12000)
-    last_updated: str = Field(..., description="Last update timestamp (ISO 8601)", example="2024-11-15T08:00:00")
+    hotel_count: int = Field(
+        ..., description="Number of hotels from this supplier", example=12000
+    )
+    last_updated: str = Field(
+        ...,
+        description="Last update timestamp (ISO 8601)",
+        example="2024-11-15T08:00:00",
+    )
+
 
 class AvailablePackage(BaseModel):
     """Available point package information"""
-    type: str = Field(..., description="Package type identifier", example="one_year_package")
-    description: str = Field(..., description="Package description", example="Annual subscription with high point allocation")
-    example_points: str = Field(..., description="Example point allocation", example="100000")
+
+    type: str = Field(
+        ..., description="Package type identifier", example="one_year_package"
+    )
+    description: str = Field(
+        ...,
+        description="Package description",
+        example="Annual subscription with high point allocation",
+    )
+    example_points: str = Field(
+        ..., description="Example point allocation", example="100000"
+    )
+
 
 class PlatformOverview(BaseModel):
     """Platform-wide statistics and available resources"""
+
     total_users: int = Field(..., description="Total registered users", example=150)
-    total_hotels: int = Field(..., description="Total hotels in the system", example=50000)
-    total_mappings: int = Field(..., description="Total provider mappings", example=45000)
-    available_suppliers: List[AvailableSupplier] = Field(..., description="List of available suppliers")
-    available_packages: List[AvailablePackage] = Field(..., description="List of available point packages")
+    total_hotels: int = Field(
+        ..., description="Total hotels in the system", example=50000
+    )
+    total_mappings: int = Field(
+        ..., description="Total provider mappings", example=45000
+    )
+    available_suppliers: List[AvailableSupplier] = Field(
+        ..., description="List of available suppliers"
+    )
+    available_packages: List[AvailablePackage] = Field(
+        ..., description="List of available point packages"
+    )
+
 
 class UserLoginMetrics(BaseModel):
     """User login activity metrics"""
+
     total_count: int = Field(..., description="Total login count", example=5)
-    last_login: Optional[str] = Field(None, description="Last login timestamp (ISO 8601)", example="2024-11-15T09:30:00")
-    time_series: List[TimeSeriesDataPoint] = Field(..., description="30-day login time-series data")
+    last_login: Optional[str] = Field(
+        None,
+        description="Last login timestamp (ISO 8601)",
+        example="2024-11-15T09:30:00",
+    )
+    time_series: List[TimeSeriesDataPoint] = Field(
+        ..., description="30-day login time-series data"
+    )
+
 
 class APIRequestMetrics(BaseModel):
     """User API request metrics"""
+
     total_count: int = Field(..., description="Total API request count", example=0)
-    time_series: List[TimeSeriesDataPoint] = Field(..., description="30-day API request time-series data")
+    time_series: List[TimeSeriesDataPoint] = Field(
+        ..., description="30-day API request time-series data"
+    )
+
 
 class ActivityMetrics(BaseModel):
     """User activity metrics and timeline"""
+
     user_logins: UserLoginMetrics = Field(..., description="User login activity")
-    api_requests: APIRequestMetrics = Field(..., description="User API request activity")
+    api_requests: APIRequestMetrics = Field(
+        ..., description="User API request activity"
+    )
+
 
 class TrendData(BaseModel):
     """Platform trend data with metadata"""
+
     title: str = Field(..., description="Trend title", example="New User Registrations")
     unit: str = Field(..., description="Data unit", example="users")
     data_type: str = Field(..., description="Data type", example="count")
-    time_series: List[TimeSeriesDataPoint] = Field(..., description="30-day trend time-series data")
+    time_series: List[TimeSeriesDataPoint] = Field(
+        ..., description="30-day trend time-series data"
+    )
+
 
 class PlatformTrends(BaseModel):
     """Platform-wide trend data"""
+
     user_registrations: TrendData = Field(..., description="User registration trends")
     hotel_updates: TrendData = Field(..., description="Hotel update trends")
 
+
 class RecommendationStep(BaseModel):
     """Recommended next step for user"""
+
     priority: int = Field(..., description="Priority order (1 = highest)", example=1)
-    action: str = Field(..., description="Action title", example="Request Supplier Access")
-    description: str = Field(..., description="Detailed description", example="Contact your administrator to request access to hotel suppliers")
-    contact_info: str = Field(..., description="Contact information", example="admin@hita-system.com")
-    estimated_time: str = Field(..., description="Estimated completion time", example="1-2 business days")
+    action: str = Field(
+        ..., description="Action title", example="Request Supplier Access"
+    )
+    description: str = Field(
+        ...,
+        description="Detailed description",
+        example="Contact your administrator to request access to hotel suppliers",
+    )
+    contact_info: str = Field(
+        ..., description="Contact information", example="admin@hita-system.com"
+    )
+    estimated_time: str = Field(
+        ..., description="Estimated completion time", example="1-2 business days"
+    )
+
 
 class Recommendations(BaseModel):
     """Personalized recommendations for user"""
-    next_steps: List[RecommendationStep] = Field(..., description="List of recommended next steps")
-    estimated_activation_time: str = Field(..., description="Estimated time to full activation", example="2-3 business days")
+
+    next_steps: List[RecommendationStep] = Field(
+        ..., description="List of recommended next steps"
+    )
+    estimated_activation_time: str = Field(
+        ...,
+        description="Estimated time to full activation",
+        example="2-3 business days",
+    )
+
 
 class DashboardMetadata(BaseModel):
     """Dashboard response metadata"""
-    timestamp: str = Field(..., description="Response generation timestamp (ISO 8601)", example="2024-11-15T10:00:00")
-    cache_status: str = Field(..., description="Cache status (cached/fresh)", example="cached")
-    data_freshness: Dict[str, str] = Field(..., description="Data freshness timestamps for each component")
+
+    timestamp: str = Field(
+        ...,
+        description="Response generation timestamp (ISO 8601)",
+        example="2024-11-15T10:00:00",
+    )
+    cache_status: str = Field(
+        ..., description="Cache status (cached/fresh)", example="cached"
+    )
+    data_freshness: Dict[str, str] = Field(
+        ..., description="Data freshness timestamps for each component"
+    )
+
 
 class NewUserDashboardResponse(BaseModel):
     """Complete new user dashboard response"""
-    account_info: AccountInfo = Field(..., description="User account information and onboarding progress")
-    user_resources: UserResources = Field(..., description="User supplier and point resources")
-    platform_overview: PlatformOverview = Field(..., description="Platform-wide statistics and available resources")
-    activity_metrics: ActivityMetrics = Field(..., description="User activity metrics and timeline")
+
+    account_info: AccountInfo = Field(
+        ..., description="User account information and onboarding progress"
+    )
+    user_resources: UserResources = Field(
+        ..., description="User supplier and point resources"
+    )
+    platform_overview: PlatformOverview = Field(
+        ..., description="Platform-wide statistics and available resources"
+    )
+    activity_metrics: ActivityMetrics = Field(
+        ..., description="User activity metrics and timeline"
+    )
     platform_trends: PlatformTrends = Field(..., description="Platform-wide trend data")
-    recommendations: Recommendations = Field(..., description="Personalized recommendations for account activation")
-    metadata: DashboardMetadata = Field(..., description="Response metadata and cache information")
-    
+    recommendations: Recommendations = Field(
+        ..., description="Personalized recommendations for account activation"
+    )
+    metadata: DashboardMetadata = Field(
+        ..., description="Response metadata and cache information"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -411,24 +598,24 @@ class NewUserDashboardResponse(BaseModel):
                             {
                                 "action": "supplier_assignment",
                                 "description": "Contact administrator to request supplier access",
-                                "estimated_time": "1-2 business days"
+                                "estimated_time": "1-2 business days",
                             }
-                        ]
-                    }
+                        ],
+                    },
                 },
                 "user_resources": {
                     "suppliers": {
                         "active_count": 0,
                         "total_available": 5,
                         "assigned_suppliers": [],
-                        "pending_assignment": True
+                        "pending_assignment": True,
                     },
                     "points": {
                         "current_balance": 0,
                         "total_allocated": 0,
                         "package_type": None,
-                        "pending_allocation": True
-                    }
+                        "pending_allocation": True,
+                    },
                 },
                 "platform_overview": {
                     "total_users": 150,
@@ -438,16 +625,16 @@ class NewUserDashboardResponse(BaseModel):
                         {
                             "name": "Agoda",
                             "hotel_count": 12000,
-                            "last_updated": "2024-11-15T08:00:00"
+                            "last_updated": "2024-11-15T08:00:00",
                         }
                     ],
                     "available_packages": [
                         {
                             "type": "one_year_package",
                             "description": "Annual subscription",
-                            "example_points": "100000"
+                            "example_points": "100000",
                         }
-                    ]
+                    ],
                 },
                 "activity_metrics": {
                     "user_logins": {
@@ -455,33 +642,27 @@ class NewUserDashboardResponse(BaseModel):
                         "last_login": "2024-11-15T09:30:00",
                         "time_series": [
                             {"date": "2024-10-16", "value": 0},
-                            {"date": "2024-11-15", "value": 2}
-                        ]
+                            {"date": "2024-11-15", "value": 2},
+                        ],
                     },
                     "api_requests": {
                         "total_count": 0,
-                        "time_series": [
-                            {"date": "2024-10-16", "value": 0}
-                        ]
-                    }
+                        "time_series": [{"date": "2024-10-16", "value": 0}],
+                    },
                 },
                 "platform_trends": {
                     "user_registrations": {
                         "title": "New User Registrations",
                         "unit": "users",
                         "data_type": "count",
-                        "time_series": [
-                            {"date": "2024-10-16", "value": 2}
-                        ]
+                        "time_series": [{"date": "2024-10-16", "value": 2}],
                     },
                     "hotel_updates": {
                         "title": "Hotel Data Updates",
                         "unit": "hotels",
                         "data_type": "count",
-                        "time_series": [
-                            {"date": "2024-10-16", "value": 150}
-                        ]
-                    }
+                        "time_series": [{"date": "2024-10-16", "value": 150}],
+                    },
                 },
                 "recommendations": {
                     "next_steps": [
@@ -490,17 +671,105 @@ class NewUserDashboardResponse(BaseModel):
                             "action": "Request Supplier Access",
                             "description": "Contact your administrator",
                             "contact_info": "admin@hita-system.com",
-                            "estimated_time": "1-2 business days"
+                            "estimated_time": "1-2 business days",
                         }
                     ],
-                    "estimated_activation_time": "2-3 business days"
+                    "estimated_activation_time": "2-3 business days",
                 },
                 "metadata": {
                     "timestamp": "2024-11-15T10:00:00",
                     "cache_status": "cached",
-                    "data_freshness": {
-                        "account_info": "2024-11-15T10:00:00"
-                    }
-                }
+                    "data_freshness": {"account_info": "2024-11-15T10:00:00"},
+                },
             }
         }
+
+
+# --- Notification Schemas ---
+
+
+class NotificationCreate(BaseModel):
+    """Schema for creating a new notification"""
+
+    user_id: str = Field(
+        ..., max_length=10, description="User ID to send notification to"
+    )
+    type: NotificationType = Field(..., description="Type of notification")
+    priority: NotificationPriority = Field(
+        default=NotificationPriority.MEDIUM,
+        description="Priority level of notification",
+    )
+    title: str = Field(..., max_length=255, description="Notification title")
+    message: str = Field(..., description="Notification message content")
+    meta_data: Optional[Dict[str, Any]] = Field(
+        None, description="Additional metadata for the notification"
+    )
+
+
+class NotificationResponse(BaseModel):
+    """Schema for notification API responses"""
+
+    id: int = Field(..., description="Notification ID")
+    user_id: str = Field(..., description="User ID")
+    type: NotificationType = Field(..., description="Notification type")
+    priority: NotificationPriority = Field(..., description="Priority level")
+    title: str = Field(..., description="Notification title")
+    message: str = Field(..., description="Notification message")
+    status: NotificationStatus = Field(..., description="Read/unread status")
+    meta_data: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    read_at: Optional[datetime] = Field(None, description="Read timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationListResponse(BaseModel):
+    """Schema for paginated notification list responses"""
+
+    notifications: List[NotificationResponse] = Field(
+        ..., description="List of notifications"
+    )
+    total: int = Field(..., description="Total number of notifications")
+    page: int = Field(..., description="Current page number")
+    limit: int = Field(..., description="Items per page")
+    total_pages: int = Field(..., description="Total number of pages")
+    unread_count: int = Field(..., description="Count of unread notifications")
+
+
+class UnreadCountResponse(BaseModel):
+    """Schema for unread notification count response"""
+
+    unread_count: int = Field(..., description="Number of unread notifications")
+    last_notification_at: Optional[datetime] = Field(
+        None, description="Timestamp of most recent notification"
+    )
+
+
+class MarkAllReadResponse(BaseModel):
+    """Schema for mark all as read response"""
+
+    updated_count: int = Field(
+        ..., description="Number of notifications marked as read"
+    )
+    message: str = Field(..., description="Success message")
+
+
+class NotificationFilters(BaseModel):
+    """Schema for notification filter parameters"""
+
+    status: Optional[NotificationStatus] = Field(
+        None, description="Filter by notification status (read/unread)"
+    )
+    type: Optional[NotificationType] = Field(
+        None, description="Filter by notification type"
+    )
+    priority: Optional[NotificationPriority] = Field(
+        None, description="Filter by priority level"
+    )
+    created_after: Optional[datetime] = Field(
+        None, description="Filter notifications created after this timestamp"
+    )
+    created_before: Optional[datetime] = Field(
+        None, description="Filter notifications created before this timestamp"
+    )

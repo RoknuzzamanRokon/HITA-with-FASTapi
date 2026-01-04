@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from models import ExportJob
 from export_schemas import ExportFormat
 from services.export_engine import ExportEngine
+from services.notification_service import NotificationService
 
 # Load environment variables
 load_dotenv()
@@ -56,7 +57,7 @@ class ExportWorker:
 
         # Create separate database engine for exports
         DATABASE_URL = os.getenv("DB_CONNECTION")
-        
+
         # Configure engine with better concurrency settings
         connect_args = {}
         if "sqlite" in DATABASE_URL.lower():
@@ -65,7 +66,7 @@ class ExportWorker:
                 "check_same_thread": False,
                 "timeout": 30,  # Increase timeout for lock waits
             }
-        
+
         self.export_engine = create_engine(
             DATABASE_URL,
             pool_size=pool_size,
@@ -77,11 +78,11 @@ class ExportWorker:
             connect_args=connect_args,
             isolation_level="READ UNCOMMITTED",  # Allow dirty reads to reduce locking
         )
-        
+
         # Enable WAL mode for SQLite to allow concurrent reads during writes
         if "sqlite" in DATABASE_URL.lower():
             from sqlalchemy import event
-            
+
             @event.listens_for(self.export_engine, "connect")
             def set_sqlite_pragma(dbapi_conn, connection_record):
                 cursor = dbapi_conn.cursor()
@@ -89,7 +90,7 @@ class ExportWorker:
                 cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
                 cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
                 cursor.close()
-            
+
             logger.info("SQLite WAL mode enabled for export worker")
 
         # Create session factory

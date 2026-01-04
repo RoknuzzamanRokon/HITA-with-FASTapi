@@ -1,0 +1,4 @@
+# file: D:\Rokon\ofc_git\HITA_full\backend\repositories\notification_repository.py
+# hypothesis_version: 6.148.2
+
+['asc', 'create_notification', 'created_at', 'delete_notification', 'desc', 'filters', 'get_unread_count', 'limit', 'mark_all_as_read', 'mark_as_read', 'page', 'priority', 'read_at', 'sort_by', 'sort_order', 'status', 'user_id']

@@ -36,6 +36,7 @@ openpyxl = "*"
 pytest = "*"
 pytest-asyncio = "*"
 pytest-cov = "*"
+hypothesis = "*"
 
 [requires]
 python_version = "3.12"

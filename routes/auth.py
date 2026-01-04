@@ -1,5 +1,6 @@
 import os
 import uuid
+import logging
 from datetime import datetime, timedelta
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -18,8 +19,12 @@ import models
 from models import UserRole
 import json
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 # Import audit logging
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from services.notification_service import NotificationService
 
 
 # Router setup
@@ -366,6 +371,7 @@ async def ultra_fast_token(
 
     access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
 
+<<<<<<< HEAD
     # 📝 AUDIT LOG: Record successful login
     audit_logger = AuditLogger(db)
     audit_logger.log_activity(
@@ -383,6 +389,8 @@ async def ultra_fast_token(
         success=True,
     )
 
+=======
+>>>>>>> notification
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -855,6 +863,21 @@ async def regenerate_api_key(
         )
 
     new_api_key = generate_api_key(db, current_user.id)
+<<<<<<< HEAD
+=======
+
+    # Create notification for API key creation
+    try:
+        notification_service = NotificationService(db)
+        notification_service.notify_api_key_event(
+            user_id=current_user.id, event_type="created", expires_at=None
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to create notification for API key regeneration: {str(e)}"
+        )
+
+>>>>>>> notification
     return {"message": "API key regenerated successfully", "api_key": new_api_key}
 
 
@@ -963,6 +986,18 @@ async def generate_api_key_for_user(
         success=True,
     )
 
+<<<<<<< HEAD
+=======
+    # Create notification for API key creation
+    try:
+        notification_service = NotificationService(db)
+        notification_service.notify_api_key_event(
+            user_id=user_id, event_type="created", expires_at=expires_at
+        )
+    except Exception as e:
+        logger.error(f"Failed to create notification for API key generation: {str(e)}")
+
+>>>>>>> notification
     return {
         "message": f"API key generated successfully for user {target_user.username}",
         "user_id": user_id,

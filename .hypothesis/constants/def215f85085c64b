@@ -1,0 +1,4 @@
+# file: D:\Rokon\ofc_git\HITA_full\backend\database.py
+# hypothesis_version: 6.148.2
+
+[3600, 'DB_CONNECTION', 'checked_in', 'checked_out', 'connect', 'invalid', 'overflow', 'pool_size']

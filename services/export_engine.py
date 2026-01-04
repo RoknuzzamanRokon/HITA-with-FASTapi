@@ -26,6 +26,7 @@ from models import ExportJob, User
 from export_schemas import ExportFormat, ExportMetadata
 from services.export_format_handler import ExportFormatHandler
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from services.notification_service import NotificationService
 import sys
 import os
 
@@ -68,10 +69,12 @@ class ExportEngine:
 
         logger.info(f"ExportEngine initialized with storage path: {self.storage_path}")
 
-    def _update_job_progress(self, db: Session, job_id: str, progress: int, processed_records: int):
+    def _update_job_progress(
+        self, db: Session, job_id: str, progress: int, processed_records: int
+    ):
         """
         Update job progress with minimal database locking.
-        
+
         Uses raw SQL UPDATE to avoid ORM overhead and reduce lock time.
         Failures are logged but don't stop the export.
         """
@@ -82,8 +85,8 @@ class ExportEngine:
                 {
                     "progress": progress,
                     "processed": processed_records,
-                    "job_id": job_id
-                }
+                    "job_id": job_id,
+                },
             )
             db.commit()
         except Exception as e:
@@ -776,23 +779,33 @@ class ExportEngine:
                 nonlocal processed_records, last_progress_update
 
                 batch_count = 0
-                for batch in self.stream_query_results(query, self.batch_size, job_id=job_id, db_session=db):
+                for batch in self.stream_query_results(
+                    query, self.batch_size, job_id=job_id, db_session=db
+                ):
                     processed_records += len(batch)
                     batch_count += 1
 
                     # Update progress less frequently to avoid blocking database
                     # Only update every 5% progress OR every 10 batches (whichever is less frequent)
                     if total_records > 0:
-                        progress = min(int((processed_records / total_records) * 100), 99)
+                        progress = min(
+                            int((processed_records / total_records) * 100), 99
+                        )
 
                         # Update if progress changed by at least 5% OR every 10 batches
-                        should_update = (progress >= last_progress_update + 5) or (batch_count >= 10)
-                        
+                        should_update = (progress >= last_progress_update + 5) or (
+                            batch_count >= 10
+                        )
+
                         if should_update:
-                            self._update_job_progress(db, job_id, progress, processed_records)
+                            self._update_job_progress(
+                                db, job_id, progress, processed_records
+                            )
                             last_progress_update = progress
                             batch_count = 0
-                            logger.info(f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)")
+                            logger.info(
+                                f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)"
+                            )
 
                     yield batch
 
@@ -844,6 +857,20 @@ class ExportEngine:
             logger.info(
                 f"Export job {job_id} completed successfully: {file_size} bytes, {processed_records} records"
             )
+
+            # Create notification for export completion
+            try:
+                notification_service = NotificationService(db)
+                notification_service.notify_export_complete(
+                    user_id=user.id,
+                    export_id=job_id,
+                    export_type="hotels",
+                    file_path=output_path,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to create notification for export completion: {str(e)}"
+                )
 
             # Log export completion
             audit_logger = AuditLogger(db)
@@ -1070,16 +1097,24 @@ class ExportEngine:
                     # Update progress less frequently to avoid blocking database
                     # Only update every 5% progress OR every 10 batches (whichever is less frequent)
                     if total_records > 0:
-                        progress = min(int((processed_records / total_records) * 100), 99)
+                        progress = min(
+                            int((processed_records / total_records) * 100), 99
+                        )
 
                         # Update if progress changed by at least 5% OR every 10 batches
-                        should_update = (progress >= last_progress_update + 5) or (batch_count >= 10)
-                        
+                        should_update = (progress >= last_progress_update + 5) or (
+                            batch_count >= 10
+                        )
+
                         if should_update:
-                            self._update_job_progress(db, job_id, progress, processed_records)
+                            self._update_job_progress(
+                                db, job_id, progress, processed_records
+                            )
                             last_progress_update = progress
                             batch_count = 0
-                            logger.info(f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)")
+                            logger.info(
+                                f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)"
+                            )
 
                     yield batch
 
@@ -1140,6 +1175,20 @@ class ExportEngine:
             logger.info(
                 f"Export job {job_id} completed successfully: {file_size} bytes, {processed_records} records"
             )
+
+            # Create notification for export completion
+            try:
+                notification_service = NotificationService(db)
+                notification_service.notify_export_complete(
+                    user_id=user.id,
+                    export_id=job_id,
+                    export_type="mappings",
+                    file_path=output_path,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to create notification for export completion: {str(e)}"
+                )
 
             # Log export completion
             audit_logger = AuditLogger(db)
@@ -1362,23 +1411,33 @@ class ExportEngine:
                 nonlocal processed_records, last_progress_update
 
                 batch_count = 0
-                for batch in self.stream_query_results(query, self.batch_size, job_id=job_id, db_session=db):
+                for batch in self.stream_query_results(
+                    query, self.batch_size, job_id=job_id, db_session=db
+                ):
                     processed_records += len(batch)
                     batch_count += 1
 
                     # Update progress less frequently to avoid blocking database
                     # Only update every 5% progress OR every 10 batches (whichever is less frequent)
                     if total_records > 0:
-                        progress = min(int((processed_records / total_records) * 100), 99)
+                        progress = min(
+                            int((processed_records / total_records) * 100), 99
+                        )
 
                         # Update if progress changed by at least 5% OR every 10 batches
-                        should_update = (progress >= last_progress_update + 5) or (batch_count >= 10)
-                        
+                        should_update = (progress >= last_progress_update + 5) or (
+                            batch_count >= 10
+                        )
+
                         if should_update:
-                            self._update_job_progress(db, job_id, progress, processed_records)
+                            self._update_job_progress(
+                                db, job_id, progress, processed_records
+                            )
                             last_progress_update = progress
                             batch_count = 0
-                            logger.info(f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)")
+                            logger.info(
+                                f"[EXPORT] Job {job_id} progress: {progress}% ({processed_records}/{total_records} records)"
+                            )
 
                     yield batch
 
@@ -1435,6 +1494,20 @@ class ExportEngine:
             logger.info(
                 f"Export job {job_id} completed successfully: {file_size} bytes, {processed_records} records"
             )
+
+            # Create notification for export completion
+            try:
+                notification_service = NotificationService(db)
+                notification_service.notify_export_complete(
+                    user_id=user.id,
+                    export_id=job_id,
+                    export_type="supplier_summary",
+                    file_path=output_path,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to create notification for export completion: {str(e)}"
+                )
 
             # Log export completion
             audit_logger = AuditLogger(db)

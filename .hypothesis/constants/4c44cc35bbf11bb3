@@ -1,0 +1,4 @@
+# file: D:\Rokon\ofc_git\HITA_full\backend\security\rate_limiting.py
+# hypothesis_version: 6.148.2
+
+[b'x-ratelimit-limit', b'x-ratelimit-remaining', b'x-ratelimit-reset', 100, 300, ',', 'RATE_LIMIT_EXCEEDED', 'Retry-After', 'Unknown operation', 'X-Forwarded-For', 'X-RateLimit-Limit', 'X-RateLimit-Reset', 'X-Real-IP', 'allowed', 'blocked', 'blocked_until', 'bulk_operations', 'email', 'error', 'error_code', 'fallback', 'headers', 'http', 'http.response.start', 'id', 'identifier', 'limit', 'login_attempt', 'message', 'operation', 'password_reset', 'rate_limit_info', 'remaining', 'reset_time', 'retry_after', 'search_query', 'type', 'unknown', 'unknown_operation', 'user_creation', 'user_deletion', 'user_update', 'window', 'window_seconds']
