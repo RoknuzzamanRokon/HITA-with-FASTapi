@@ -21,8 +21,9 @@ from schemas import (
     UnreadCountResponse,
     MarkAllReadResponse,
     NotificationFilters,
+    NotificationCreate,
 )
-from models import NotificationType, NotificationPriority, NotificationStatus
+from models import NotificationType, NotificationPriority, NotificationStatus, UserRole
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
 
 
@@ -62,37 +63,6 @@ async def get_notifications(
     Get User Notifications
 
     Retrieve paginated list of notifications for the authenticated user with optional filtering and sorting.
-
-    **Features:**
-    - Pagination support (default: 25 items per page, max: 100)
-    - Filter by status (read/unread)
-    - Filter by notification type
-    - Filter by priority level
-    - Sort by creation date or priority
-    - Returns unread count with results
-
-    **Authentication:**
-    - Requires valid JWT token
-    - Users can only access their own notifications
-
-    **Query Parameters:**
-    - page: Page number (default: 1)
-    - limit: Items per page (default: 25, max: 100)
-    - status: Filter by read/unread status
-    - type: Filter by notification type
-    - priority: Filter by priority level
-    - sort_by: Sort field (created_at or priority)
-    - sort_order: Sort order (asc or desc)
-
-    **Returns:**
-    - notifications: List of notification objects
-    - total: Total number of notifications matching filters
-    - page: Current page number
-    - limit: Items per page
-    - total_pages: Total number of pages
-    - unread_count: Count of unread notifications
-
-    **Requirements:** 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 7.1, 7.5
     """
     try:
         # Create service instance
@@ -133,27 +103,6 @@ async def get_unread_count(
     Get Unread Notification Count
 
     Retrieve the count of unread notifications for the authenticated user.
-
-    **Features:**
-    - Fast count query without retrieving full notification content
-    - Returns timestamp of most recent notification
-    - Efficient for badge/indicator displays
-
-    **Authentication:**
-    - Requires valid JWT token
-    - Users can only access their own notification count
-
-    **Returns:**
-    - unread_count: Number of unread notifications
-    - last_notification_at: Timestamp of most recent notification (null if none)
-
-    **Use Cases:**
-    - Notification badge display
-    - UI indicators
-    - Dashboard widgets
-    - Mobile app notifications
-
-    **Requirements:** 7.1, 7.5
     """
     try:
         # Create service instance
@@ -182,29 +131,6 @@ async def mark_notification_read(
     Mark Notification as Read
 
     Mark a specific notification as read for the authenticated user.
-
-    **Features:**
-    - Updates notification status to 'read'
-    - Records read timestamp
-    - Validates user ownership
-    - Audit logging for security
-
-    **Authentication:**
-    - Requires valid JWT token
-    - Users can only mark their own notifications as read
-
-    **Path Parameters:**
-    - notification_id: ID of the notification to mark as read
-
-    **Returns:**
-    - Updated notification object with read status and timestamp
-
-    **Error Responses:**
-    - 404: Notification not found
-    - 403: User not authorized to access this notification
-    - 500: Internal server error
-
-    **Requirements:** 4.1, 4.2, 4.3
     """
     try:
         # Create service instance
@@ -257,27 +183,6 @@ async def mark_all_notifications_read(
     Mark All Notifications as Read
 
     Mark all unread notifications as read for the authenticated user.
-
-    **Features:**
-    - Bulk update of all unread notifications
-    - Records read timestamp for all updated notifications
-    - Returns count of notifications updated
-    - Efficient batch operation
-
-    **Authentication:**
-    - Requires valid JWT token
-    - Only affects current user's notifications
-
-    **Returns:**
-    - updated_count: Number of notifications marked as read
-    - message: Success message with count
-
-    **Use Cases:**
-    - "Mark all as read" button
-    - Clearing notification list
-    - Bulk notification management
-
-    **Requirements:** 5.1, 5.2, 5.4
     """
     try:
         # Create service instance
@@ -306,34 +211,6 @@ async def delete_notification(
     Delete Notification
 
     Permanently delete a specific notification for the authenticated user.
-
-    **Features:**
-    - Permanent deletion from database
-    - Validates user ownership
-    - Audit logging for security
-    - Cannot be undone
-
-    **Authentication:**
-    - Requires valid JWT token
-    - Users can only delete their own notifications
-
-    **Path Parameters:**
-    - notification_id: ID of the notification to delete
-
-    **Returns:**
-    - Success message confirming deletion
-
-    **Error Responses:**
-    - 404: Notification not found
-    - 403: User not authorized to delete this notification
-    - 500: Internal server error
-
-    **Security:**
-    - Authorization checks prevent cross-user deletion
-    - Unauthorized attempts are logged for audit
-    - Deletion is permanent and cannot be reversed
-
-    **Requirements:** 6.1, 6.2, 6.5
     """
     try:
         # Create service instance
@@ -390,4 +267,152 @@ async def delete_notification(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete notification: {str(e)}",
+        )
+
+
+@router.post("/admin/create", response_model=NotificationResponse)
+async def create_notification_admin(
+    notification_data: NotificationCreate,
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Create Notification (Admin Only)
+
+    Create a new notification for any user. This endpoint is restricted to admin users only.
+    """
+    try:
+        # Check user permissions
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user or admin_user can create notifications.",
+            )
+
+        # Verify target user exists
+        target_user = (
+            db.query(models.User)
+            .filter(models.User.id == notification_data.user_id)
+            .first()
+        )
+        if not target_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {notification_data.user_id} not found",
+            )
+
+        # Create service instance
+        service = NotificationService(db)
+
+        # Create notification
+        notification = service.create_notification(
+            user_id=notification_data.user_id,
+            type=notification_data.type,
+            title=notification_data.title,
+            message=notification_data.message,
+            priority=notification_data.priority,
+            metadata=notification_data.meta_data,
+        )
+
+        # Log admin action
+        audit_logger = AuditLogger(db)
+        audit_logger.log_activity(
+            activity_type=ActivityType.USER_UPDATED,
+            user_id=current_user.id,
+            details={
+                "action": "create_notification",
+                "target_user_id": notification_data.user_id,
+                "notification_id": notification.id,
+                "notification_type": notification_data.type.value,
+                "title": notification_data.title,
+            },
+            request=request,
+            security_level=SecurityLevel.MEDIUM,
+            success=True,
+        )
+
+        # Convert to response format
+        return NotificationResponse.model_validate(notification)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create notification: {str(e)}",
+        )
+
+
+@router.post("/admin/broadcast")
+async def broadcast_notification_admin(
+    notification_data: dict,
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Broadcast Notification to All Users (Admin Only)
+
+    Create a notification for all active users in the system.
+    """
+    try:
+        # Check user permissions
+        if current_user.role not in [UserRole.SUPER_USER, UserRole.ADMIN_USER]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super_user or admin_user can broadcast notifications.",
+            )
+
+        # Validate required fields
+        required_fields = ["type", "title", "message"]
+        for field in required_fields:
+            if field not in notification_data:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Missing required field: {field}",
+                )
+
+        # Get all active users
+        active_users = db.query(models.User).filter(models.User.is_active == True).all()
+
+        if not active_users:
+            return {
+                "count": 0,
+                "message": "No active users found to notify",
+            }
+
+        # Create service instance
+        service = NotificationService(db)
+
+        # Create notifications for all users
+        created_notifications = []
+        for user in active_users:
+            try:
+                notification = service.create_notification(
+                    user_id=user.id,
+                    type=NotificationType(notification_data["type"]),
+                    title=notification_data["title"],
+                    message=notification_data["message"],
+                    priority=NotificationPriority(
+                        notification_data.get("priority", "medium")
+                    ),
+                    metadata=notification_data.get("meta_data"),
+                )
+                created_notifications.append(notification)
+            except Exception as e:
+                # Log individual failures but continue
+                print(f"Failed to create notification for user {user.id}: {str(e)}")
+
+        return {
+            "count": len(created_notifications),
+            "message": f"Successfully created {len(created_notifications)} notifications for active users",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to broadcast notification: {str(e)}",
         )

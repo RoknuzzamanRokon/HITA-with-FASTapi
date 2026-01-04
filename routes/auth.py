@@ -371,7 +371,6 @@ async def ultra_fast_token(
 
     access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
 
-<<<<<<< HEAD
     # 📝 AUDIT LOG: Record successful login
     audit_logger = AuditLogger(db)
     audit_logger.log_activity(
@@ -389,8 +388,6 @@ async def ultra_fast_token(
         success=True,
     )
 
-=======
->>>>>>> notification
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -863,8 +860,7 @@ async def regenerate_api_key(
         )
 
     new_api_key = generate_api_key(db, current_user.id)
-<<<<<<< HEAD
-=======
+
 
     # Create notification for API key creation
     try:
@@ -877,7 +873,6 @@ async def regenerate_api_key(
             f"Failed to create notification for API key regeneration: {str(e)}"
         )
 
->>>>>>> notification
     return {"message": "API key regenerated successfully", "api_key": new_api_key}
 
 
@@ -986,18 +981,6 @@ async def generate_api_key_for_user(
         success=True,
     )
 
-<<<<<<< HEAD
-=======
-    # Create notification for API key creation
-    try:
-        notification_service = NotificationService(db)
-        notification_service.notify_api_key_event(
-            user_id=user_id, event_type="created", expires_at=expires_at
-        )
-    except Exception as e:
-        logger.error(f"Failed to create notification for API key generation: {str(e)}")
-
->>>>>>> notification
     return {
         "message": f"API key generated successfully for user {target_user.username}",
         "user_id": user_id,

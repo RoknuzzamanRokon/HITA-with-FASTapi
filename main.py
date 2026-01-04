@@ -58,8 +58,7 @@ from middleware.api_logging import create_api_logging_middleware
 from middleware.auth_middleware import AuthenticationMiddleware
 
 app = FastAPI()
-<<<<<<< HEAD
-=======
+
 create_security_middleware_stack(app)
 
 # Add IP address middleware to properly extract client IPs
@@ -73,7 +72,7 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=["*"],  # Configure this based on your deployment
 )
->>>>>>> notification
+
 
 # Add CORS middleware first (runs last)
 app.add_middleware(
