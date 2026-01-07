@@ -112,7 +112,7 @@ def process_hotel(row, headers, url):
         print(f"[EXCEPTION] {row.ittid} -> {e}")
 
 
-def upload_single_hotel(hotel_id):
+def upload_single_hotel(ittid):
     engine = get_database_engine()
     headers = get_headers()
     api_url = "http://127.0.0.1:8028/v1.0/hotels/input_hotel_all_details"
@@ -122,19 +122,19 @@ def upload_single_hotel(hotel_id):
 
     with engine.connect() as conn:
         result = conn.execute(
-            select(hotel_table).where(hotel_table.c.ittid == hotel_id).limit(1)
+            select(hotel_table).where(hotel_table.c.ittid == str(ittid)).limit(1)
         )
 
         row = result.fetchone()
 
         if not row:
-            print(f"[NOT FOUND] Hotel Id {hotel_id} not found")
+            print(f"[NOT FOUND] Hotel Id {ittid} not found")
             return
 
-        print(f"[PROCESSING] Hotel Id {hotel_id}, ITTID {row.ittid}")
+        print(f"[PROCESSING] Hotel Id {ittid}, ITTID {row.ittid}")
 
         process_hotel(row, headers, api_url)
 
 
 if __name__ == "__main__":
-    upload_single_hotel(11688457)
+    upload_single_hotel(11688458)
