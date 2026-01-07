@@ -111,45 +111,30 @@ def process_hotel(row, headers, url):
     except Exception as e:
         print(f"[EXCEPTION] {row.ittid} -> {e}")
 
-# --- MAIN --- #
-def upload_hotels():
+
+def upload_single_hotel(hotel_id):
     engine = get_database_engine()
     headers = get_headers()
     api_url = "http://127.0.0.1:8028/v1.0/hotels/input_hotel_all_details"
 
     metadata = MetaData()
-    hotel_table = Table('global_hotel_mapping_copy_2', metadata, autoload_with=engine)
-
-    batch_size = 10
-    offset = 0
-    start_id = 1689085
+    hotel_table = Table("global_hotel_mapping_copy_2", metadata, autoload_with=engine)
 
     with engine.connect() as conn:
-        total_rows = conn.execute(
-            text(f"SELECT COUNT(*) FROM global_hotel_mapping_copy_2 WHERE Id > {start_id}")
-        ).scalar()
+        result = conn.execute(
+            select(hotel_table).where(hotel_table.c.ittid == hotel_id).limit(1)
+        )
 
-        while offset < total_rows:
-            print(f"Processing rows with Id > {start_id} (Batch {offset + 1} to {offset + batch_size})")
+        row = result.fetchone()
 
-            result = conn.execute(
-                select(hotel_table)
-                .where(hotel_table.c.Id > start_id)
-                .offset(offset)
-                .limit(batch_size)
-            )
-            rows = result.fetchall()
+        if not row:
+            print(f"[NOT FOUND] Hotel Id {hotel_id} not found")
+            return
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                futures = [
-                    executor.submit(process_hotel, row, headers, api_url)
-                    for row in rows
-                ]
-                for _ in as_completed(futures):
-                    pass
+        print(f"[PROCESSING] Hotel Id {hotel_id}, ITTID {row.ittid}")
 
-            offset += batch_size
+        process_hotel(row, headers, api_url)
 
 
 if __name__ == "__main__":
-    upload_hotels()
+    upload_single_hotel(11688457)

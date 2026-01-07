@@ -342,11 +342,53 @@ class NotificationRepository:
         # Get notification with authorization check
         notification = self.get_notification_by_id(notification_id, user_id)
 
-        # Delete the notification
-        self.db.delete(notification)
-        self.db.commit()
+        print(
+            f"🔍 DEBUG: About to delete notification ID {notification_id} for user {user_id}"
+        )
+        print(
+            f"🔍 DEBUG: Found notification: {notification.id}, Title: {notification.title}"
+        )
 
-        return True
+        try:
+            # Use direct SQL delete instead of ORM delete to ensure it works
+            from sqlalchemy import text
+
+            # Execute direct SQL delete
+            result = self.db.execute(
+                text("DELETE FROM notifications WHERE id = :id AND user_id = :user_id"),
+                {"id": notification_id, "user_id": user_id},
+            )
+
+            print(f"🔍 DEBUG: Direct SQL delete affected {result.rowcount} rows")
+
+            # Commit the transaction
+            self.db.commit()
+
+            # Verify deletion with direct SQL
+            verification = self.db.execute(
+                text("SELECT COUNT(*) FROM notifications WHERE id = :id"),
+                {"id": notification_id},
+            ).scalar()
+
+            if verification == 0:
+                print(
+                    f"✅ DEBUG: Notification {notification_id} successfully deleted via direct SQL"
+                )
+                return True
+            else:
+                print(
+                    f"❌ DEBUG: Notification {notification_id} still exists after direct SQL delete!"
+                )
+                # Try to rollback and raise an error
+                self.db.rollback()
+                raise Exception(
+                    f"Failed to delete notification {notification_id} - database constraint or lock issue"
+                )
+
+        except Exception as e:
+            print(f"❌ DEBUG: Error during delete operation: {str(e)}")
+            self.db.rollback()
+            raise e
 
     @monitor_performance("delete_old_notifications")
     def delete_old_notifications(self, retention_days: int = 90) -> int:
