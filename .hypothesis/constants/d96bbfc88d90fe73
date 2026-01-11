@@ -1,4 +1,0 @@
-# file: D:\Rokon\ofc_git\HITA_full\backend\repositories\repository_config.py
-# hypothesis_version: 6.148.2
-
-[0.0, 1.0, 100, 300, 500, 1000, 10000, '_func', 'avg_query_time', 'avg_results', 'avg_time', 'cache_hit_rate', 'cache_hits', 'cache_misses', 'cached_queries', 'created_at', 'data', 'expires_at', 'inf', 'max_time', 'min_time', 'performance_stats', 'slow_queries', 'total_executions', 'total_queries', 'total_results', 'total_time']

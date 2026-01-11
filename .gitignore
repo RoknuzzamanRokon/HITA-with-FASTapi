@@ -62,3 +62,7 @@ utils/usage/
 test-*.*
 test_*.*
 *.md
+
+.hypothesis/
+.kiro/
+.vscode/

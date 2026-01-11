@@ -1,4 +1,0 @@
-# file: D:\Rokon\ofc_git\HITA_full\backend\services\point_service.py
-# hypothesis_version: 6.148.2
-
-[100, 'Active', 'Inactive', 'Unknown', 'allocated', 'created_at', 'deducted', 'deduction', 'giver_email', 'giver_id', 'id', 'points', 'received', 'receiver_email', 'receiver_id', 'recent_transactions', 'sent', 'total_points_used', 'transaction_type', 'transfer', 'type', 'users_with_points']

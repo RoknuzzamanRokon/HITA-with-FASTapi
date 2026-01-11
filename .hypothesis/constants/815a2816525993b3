@@ -1,4 +1,0 @@
-# file: D:\Rokon\ofc_git\HITA_full\backend\routes\notifications.py
-# hypothesis_version: 6.148.2
-
-[100, 404, '/', '/mark-all-read', '/unread-count', '/v1.0/notifications', '/{notification_id}', 'Not found', 'Notifications', '^(asc|desc)$', 'action', 'created_at', 'delete_notification', 'desc', 'description', 'message', 'notification_id', 'reason']
