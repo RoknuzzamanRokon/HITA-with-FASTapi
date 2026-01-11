@@ -104,7 +104,7 @@ PROVIDERS = [
     "adivahahotel", "grnconnect", "juniperhotel", "mikihotel",
     "paximumhotel", "adonishotel", "w2mhotel", "oryxhotel",
     "dotw", "hotelston", "letsflyhotel", "illusionshotel",
-    "innstanttravel", "roomerang", "kiwihotel"
+    "innstanttravel", "roomerang", "kiwihotel", "rnrhotel", "rakuten"
 ]
 
 SUFFIX_MAP = {

@@ -1,14 +1,15 @@
 import os
 import json
-import requests
-import signal
 import time
+import signal
 import threading
+import requests
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, MetaData, Table, select, update, desc
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from requests.exceptions import ReadTimeout, ConnectionError, HTTPError
 
 # =====================================================
 # CONFIG
@@ -20,8 +21,9 @@ API_BASE = "http://127.0.0.1:8028/v1.0"
 ENDPOINT = f"{API_BASE}/hotels/add_provider_all_details_with_ittid/"
 TABLE_NAME = "global_hotel_mapping_copy_2"
 
-BATCH_SIZE = 500
-MAX_WORKERS = 5
+BATCH_SIZE = 200
+MAX_WORKERS = 3
+MAX_RETRIES = 3
 
 # =====================================================
 # DATABASE
@@ -80,7 +82,7 @@ def get_headers():
                 "username": os.getenv("API_USER"),
                 "password": os.getenv("API_PASS"),
             },
-            timeout=10,
+            timeout=(5, 15),
         )
         resp.raise_for_status()
 
@@ -121,7 +123,6 @@ PROVIDERS = [
     "innstanttravel",
     "roomerang",
     "kiwihotel",
-    "rnrhotel",
     "rakuten",
 ]
 
@@ -197,17 +198,41 @@ def build_payloads(row):
 
 
 def post_payload(session, headers, payload):
-    resp = session.post(ENDPOINT, headers=headers, json=payload, timeout=15)
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = session.post(
+                ENDPOINT,
+                headers=headers,
+                json=payload,
+                timeout=(5, 30),
+            )
 
-    if resp.status_code == 401:
-        headers = get_headers()
-        resp = session.post(ENDPOINT, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 401:
+                headers = get_headers()
+                continue
 
-    if resp.status_code == 404:
-        return "not_found"
+            if resp.status_code == 404:
+                return "not_found"
 
-    resp.raise_for_status()
-    return "success"
+            resp.raise_for_status()
+            return "success"
+
+        except (ReadTimeout, ConnectionError):
+            print(
+                f"⏳ Timeout (attempt {attempt}/{MAX_RETRIES}) | "
+                f"ittid={payload['ittid']} | {payload['provider_name']}"
+            )
+            time.sleep(attempt * 2)
+
+        except HTTPError as e:
+            print(f"❌ HTTP {e.response.status_code}: {e}")
+            return "error"
+
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
+            return "error"
+
+    return "error"
 
 
 def process_row(row):
@@ -253,8 +278,8 @@ def save_progress(offset):
 def load_progress():
     try:
         with open("mapping_progress.json") as f:
-            data = json.load(f)
-            return data["offset"], data["success"], data["not_found"], data["error"]
+            d = json.load(f)
+            return d["offset"], d["success"], d["not_found"], d["error"]
     except:
         return 0, 0, 0, 0
 
@@ -273,7 +298,7 @@ def main():
     while not shutdown_requested:
         rows = fetch_rows(offset, BATCH_SIZE)
         if not rows:
-            print("✅ Completed all records")
+            print("✅ All records processed")
             break
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -300,6 +325,7 @@ def main():
         )
 
     save_progress(offset)
+
     print("\n🏁 FINAL SUMMARY")
     print(f"✅ Success: {success_count}")
     print(f"⚠️ Not Found: {not_found_count}")
