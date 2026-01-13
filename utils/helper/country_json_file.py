@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import pandas as pd
 import os
 import json
+import time
 
 load_dotenv()
 
@@ -323,8 +324,118 @@ PROVIDER_MAPPING_FOR_DB = {
 }
 
 
-if __name__ == "__main__":
+def process_all_suppliers():
+    """
+    Process all suppliers in PROVIDER_MAPPING_FOR_DB one by one.
+    This function will generate JSON files for all suppliers automatically.
+    """
     table = "global_hotel_mapping_copy_2"
-    supplier_name = "ean"
-    only_generate_a_supplier_json_files(engine, table, output_directory, supplier_name)
-    print("Supplier JSON files generated successfully!")
+    total_suppliers = len(PROVIDER_MAPPING_FOR_DB)
+
+    print("🚀 Starting to process ALL suppliers...")
+    print(f"📊 Total suppliers to process: {total_suppliers}")
+    print(f"⏰ Estimated time: {total_suppliers * 10}-{total_suppliers * 15} minutes")
+    print("=" * 80)
+
+    successful_suppliers = []
+    failed_suppliers = []
+
+    for i, supplier_name in enumerate(PROVIDER_MAPPING_FOR_DB.keys(), 1):
+        print(f"\n{'='*80}")
+        print(f"🔄 PROCESSING SUPPLIER {i}/{total_suppliers}: {supplier_name.upper()}")
+        print(f"{'='*80}")
+
+        supplier_start_time = time.time()
+
+        try:
+            only_generate_a_supplier_json_files(
+                engine, table, output_directory, supplier_name
+            )
+
+            supplier_end_time = time.time()
+            supplier_duration = supplier_end_time - supplier_start_time
+
+            print(f"✅ {supplier_name.upper()} - JSON files generated successfully!")
+            print(f"⏱️  Time taken: {supplier_duration:.1f} seconds")
+            successful_suppliers.append(supplier_name)
+
+        except Exception as e:
+            supplier_end_time = time.time()
+            supplier_duration = supplier_end_time - supplier_start_time
+
+            print(f"❌ Error processing {supplier_name}: {str(e)}")
+            print(f"⏱️  Time taken: {supplier_duration:.1f} seconds")
+            failed_suppliers.append(supplier_name)
+            continue
+
+        # Show remaining suppliers
+        remaining = total_suppliers - i
+        if remaining > 0:
+            supplier_list = list(PROVIDER_MAPPING_FOR_DB.keys())
+            next_supplier = supplier_list[i] if i < total_suppliers else "None"
+            print(f"📋 Remaining suppliers: {remaining}")
+            print(f"🔜 Next: {next_supplier}")
+
+    # Final summary
+    print(f"\n{'='*80}")
+    print(f"🎉 ALL SUPPLIERS PROCESSING COMPLETED!")
+    print(f"{'='*80}")
+    print(f"✅ Successful: {len(successful_suppliers)}/{total_suppliers}")
+    print(f"❌ Failed: {len(failed_suppliers)}/{total_suppliers}")
+
+    if successful_suppliers:
+        print(f"\n✅ Successfully processed suppliers:")
+        for supplier in successful_suppliers:
+            print(f"   - {supplier}")
+
+    if failed_suppliers:
+        print(f"\n❌ Failed suppliers:")
+        for supplier in failed_suppliers:
+            print(f"   - {supplier}")
+
+    print(f"\n📁 Output directory: {output_directory}")
+    print(f"{'='*80}")
+
+    print(f"\n🎉 All suppliers processed successfully!")
+    print(f"📁 Output directory: {output_directory}")
+
+
+def process_single_supplier(supplier_name):
+    """
+    Process a single supplier by name.
+    """
+    table = "global_hotel_mapping_copy_2"
+
+    if supplier_name not in PROVIDER_MAPPING_FOR_DB:
+        print(f"❌ Supplier '{supplier_name}' not found in mapping.")
+        print(f"Available suppliers: {', '.join(PROVIDER_MAPPING_FOR_DB.keys())}")
+        return False
+
+    print(f"🔄 Processing supplier: {supplier_name}")
+    try:
+        only_generate_a_supplier_json_files(
+            engine, table, output_directory, supplier_name
+        )
+        print(f"✅ {supplier_name} - JSON files generated successfully!")
+        return True
+    except Exception as e:
+        print(f"❌ Error processing {supplier_name}: {str(e)}")
+        return False
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--all":
+            # Process all suppliers
+            process_all_suppliers()
+        else:
+            # Process specific supplier
+            supplier_name = sys.argv[1]
+            process_single_supplier(supplier_name)
+    else:
+        # Default behavior - process single supplier (backward compatibility)
+        supplier_name = "mgholiday"
+        process_single_supplier(supplier_name)
+        print("Supplier JSON files generated successfully!")
