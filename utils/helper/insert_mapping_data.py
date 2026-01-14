@@ -226,7 +226,7 @@ def update_map_status(ittid, status="upd1"):
 
     try:
         with get_db_session() as session:
-            stmt = update(table).where(table.c.ittid == ittid).values(mapStatus=status)
+            stmt = update(table).where(table.c.ittid == str(ittid)).values(mapStatus=status)
             session.execute(stmt)
     except Exception as e:
         print(f"❌ Error updating mapStatus for ittid {ittid} to {status}: {e}")
