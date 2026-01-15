@@ -25,6 +25,7 @@ from schemas import (
 )
 from models import NotificationType, NotificationPriority, NotificationStatus, UserRole
 from security.audit_logging import AuditLogger, ActivityType, SecurityLevel
+from cache_config import cache, CacheConfig
 
 
 # Router setup
@@ -100,16 +101,26 @@ async def get_unread_count(
     db: Session = Depends(get_db),
 ):
     """
-    Get Unread Notification Count
+    Get Unread Notification Count (Cached)
 
     Retrieve the count of unread notifications for the authenticated user.
+    This endpoint is heavily cached (10 seconds) to reduce database load from frequent polling.
     """
     try:
-        # Create service instance
-        service = NotificationService(db)
+        # Build cache key for this user's unread count
+        cache_key = f"notification:unread_count:{current_user.id}"
 
-        # Get unread count
+        # Try to get from cache first
+        cached_response = cache.get(cache_key)
+        if cached_response is not None:
+            return UnreadCountResponse(**cached_response)
+
+        # Cache miss - query database
+        service = NotificationService(db)
         response = service.get_unread_count(current_user.id)
+
+        # Cache the response for 10 seconds (short TTL for near real-time updates)
+        cache.set(cache_key, response.dict(), ttl=10)
 
         return response
 
@@ -138,6 +149,10 @@ async def mark_notification_read(
 
         # Mark notification as read
         notification = service.mark_notification_read(notification_id, current_user.id)
+
+        # Invalidate unread count cache for this user
+        cache_key = f"notification:unread_count:{current_user.id}"
+        cache.delete(cache_key)
 
         # Convert to response format
         return NotificationResponse.model_validate(notification)
@@ -190,6 +205,10 @@ async def mark_all_notifications_read(
 
         # Mark all notifications as read
         response = service.mark_all_read(current_user.id)
+
+        # Invalidate unread count cache for this user
+        cache_key = f"notification:unread_count:{current_user.id}"
+        cache.delete(cache_key)
 
         return response
 
