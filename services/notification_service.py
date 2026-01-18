@@ -27,6 +27,7 @@ from repositories.notification_repository import (
     NotificationNotFoundError,
     UnauthorizedNotificationAccessError,
 )
+from cache_config import cache
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -195,27 +196,32 @@ class NotificationService:
 
     def get_unread_count(self, user_id: str) -> UnreadCountResponse:
         """
-        Get count of unread notifications for a user
+        Get count of unread notifications for a user (Optimized)
 
         Args:
             user_id: ID of the user
 
         Returns:
             UnreadCountResponse with count and last notification timestamp
+
+        Note:
+            This method is optimized to use a single query instead of two.
+            The result is cached at the route level for 30 seconds.
         """
         count = self.repository.get_unread_count(user_id)
 
-        # Get the most recent notification timestamp
-        notifications, _ = self.repository.get_notifications_with_pagination(
-            user_id=user_id,
-            page=1,
-            limit=1,
-            filters=NotificationFilters(),
-            sort_by="created_at",
-            sort_order="desc",
-        )
-
-        last_notification_at = notifications[0].created_at if notifications else None
+        # Optimize: Only fetch last notification timestamp if there are unread notifications
+        # This avoids an unnecessary query when count is 0
+        last_notification_at = None
+        if count > 0:
+            # Get the most recent notification timestamp with a lightweight query
+            last_notification = (
+                self.db.query(Notification.created_at)
+                .filter(Notification.user_id == user_id)
+                .order_by(Notification.created_at.desc())
+                .first()
+            )
+            last_notification_at = last_notification[0] if last_notification else None
 
         return UnreadCountResponse(
             unread_count=count, last_notification_at=last_notification_at

@@ -101,16 +101,25 @@ async def get_unread_count(
     db: Session = Depends(get_db),
 ):
     """
-    Get Unread Notification Count (Cached)
+    Get Unread Notification Count (Optimized with Caching)
 
     Retrieve the count of unread notifications for the authenticated user.
-    This endpoint is heavily cached (10 seconds) to reduce database load from frequent polling.
+
+    **Performance Optimizations:**
+    - Redis caching with 30-second TTL (reduces DB load by ~83%)
+    - Cache invalidation on notification state changes
+    - Lightweight response (no database joins)
+
+    **Recommended Frontend Polling:**
+    - Use 15-30 second intervals instead of 5 seconds
+    - Consider WebSocket for real-time updates
+    - Implement exponential backoff when no changes detected
     """
     try:
         # Build cache key for this user's unread count
         cache_key = f"notification:unread_count:{current_user.id}"
 
-        # Try to get from cache first
+        # Try to get from cache first (30-second TTL)
         cached_response = cache.get(cache_key)
         if cached_response is not None:
             return UnreadCountResponse(**cached_response)
@@ -119,8 +128,9 @@ async def get_unread_count(
         service = NotificationService(db)
         response = service.get_unread_count(current_user.id)
 
-        # Cache the response for 10 seconds (short TTL for near real-time updates)
-        cache.set(cache_key, response.dict(), ttl=10)
+        # Cache the response for 30 seconds
+        # This means: 5s polling = only 1 DB query per 30s = 83% reduction
+        cache.set(cache_key, response.dict(), ttl=30)
 
         return response
 
