@@ -46,8 +46,79 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1.0/auth/token")
 
-# Redis for token blacklist
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+# Redis for token blacklist - lazy connection with error handling
+_redis_client = None
+_redis_available = False
+
+
+def get_redis_client():
+    """Get Redis client with lazy initialization and error handling"""
+    global _redis_client, _redis_available
+
+    if _redis_client is None:
+        try:
+            _redis_client = redis.Redis(
+                host=os.getenv("REDIS_HOST", "localhost"),
+                port=int(os.getenv("REDIS_PORT", 6379)),
+                db=int(os.getenv("REDIS_DB", 0)),
+                password=os.getenv("REDIS_PASSWORD", None),
+                decode_responses=True,
+                socket_timeout=2,
+                socket_connect_timeout=2,
+            )
+            # Test connection
+            _redis_client.ping()
+            _redis_available = True
+            logger.info("Redis connection established successfully for auth")
+        except Exception as e:
+            logger.warning(
+                f"Redis not available for auth: {e}. Application will continue without Redis token blacklisting."
+            )
+            _redis_available = False
+            _redis_client = None
+
+    return _redis_client if _redis_available else None
+
+
+# Wrapper for backward compatibility
+class RedisClientWrapper:
+    """Wrapper for Redis operations that handles connection errors gracefully"""
+
+    def get(self, key: str):
+        """Get value from Redis (returns None if Redis unavailable)"""
+        client = get_redis_client()
+        if client:
+            try:
+                return client.get(key)
+            except Exception as e:
+                logger.warning(f"Redis get failed: {e}")
+                return None
+        return None
+
+    def setex(self, key: str, time: int, value: str):
+        """Set value in Redis with expiration (silently fails if Redis unavailable)"""
+        client = get_redis_client()
+        if client:
+            try:
+                return client.setex(key, time, value)
+            except Exception as e:
+                logger.warning(f"Redis setex failed: {e}")
+                return False
+        return False
+
+    def delete(self, key: str):
+        """Delete key from Redis (silently fails if Redis unavailable)"""
+        client = get_redis_client()
+        if client:
+            try:
+                return client.delete(key)
+            except Exception as e:
+                logger.warning(f"Redis delete failed: {e}")
+                return False
+        return False
+
+
+redis_client = RedisClientWrapper()
 
 
 # Pydantic models
@@ -860,7 +931,6 @@ async def regenerate_api_key(
         )
 
     new_api_key = generate_api_key(db, current_user.id)
-
 
     # Create notification for API key creation
     try:
