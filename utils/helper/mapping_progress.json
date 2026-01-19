@@ -1,1 +1,7 @@
-{"offset": 33500, "success_count": 360650, "not_found_count": 0, "error_count": 7073, "timestamp": 1768719462.5686262}
+{
+  "offset": 2700,
+  "success": 190,
+  "not_found": 10,
+  "error": 2500,
+  "timestamp": 1768788112.5180793
+}
