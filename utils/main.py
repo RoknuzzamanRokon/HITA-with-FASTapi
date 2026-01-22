@@ -13,9 +13,81 @@ import models
 import redis
 from dotenv import load_dotenv
 import os
+import logging
 
 load_dotenv()
-blacklist = redis.Redis(host="localhost", port=6379, db=0)
+
+logger = logging.getLogger(__name__)
+
+# Lazy Redis connection - only connects when needed
+_redis_client = None
+_redis_available = False
+
+def get_redis_client():
+    """Get Redis client with lazy initialization and error handling"""
+    global _redis_client, _redis_available
+    
+    if _redis_client is None:
+        try:
+            _redis_client = redis.Redis(
+                host=os.getenv('REDIS_HOST', 'localhost'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                db=int(os.getenv('REDIS_DB', 0)),
+                password=os.getenv('REDIS_PASSWORD', None),
+                socket_timeout=2,
+                socket_connect_timeout=2,
+                decode_responses=True
+            )
+            # Test connection
+            _redis_client.ping()
+            _redis_available = True
+            logger.info("Redis connection established successfully")
+        except Exception as e:
+            logger.warning(f"Redis not available: {e}. Application will continue without Redis.")
+            _redis_available = False
+            _redis_client = None
+    
+    return _redis_client if _redis_available else None
+
+# Create a wrapper class for backward compatibility
+class RedisBlacklistWrapper:
+    """Wrapper for Redis blacklist operations that handles connection errors gracefully"""
+    
+    def get(self, key: str):
+        """Get value from Redis (returns None if Redis unavailable)"""
+        client = get_redis_client()
+        if client:
+            try:
+                return client.get(key)
+            except Exception as e:
+                logger.warning(f"Redis get failed: {e}")
+                return None
+        return None
+    
+    def setex(self, key: str, time: int, value: str):
+        """Set value in Redis with expiration (silently fails if Redis unavailable)"""
+        client = get_redis_client()
+        if client:
+            try:
+                return client.setex(key, time, value)
+            except Exception as e:
+                logger.warning(f"Redis setex failed: {e}")
+                return False
+        return False
+    
+    def exists(self, key: str):
+        """Check if key exists in Redis (returns 0 if Redis unavailable)"""
+        client = get_redis_client()
+        if client:
+            try:
+                return client.exists(key)
+            except Exception as e:
+                logger.warning(f"Redis exists failed: {e}")
+                return 0
+        return 0
+
+# Backward compatibility - create wrapper instance
+blacklist = RedisBlacklistWrapper()
 
 PER_REQUEST_POINT_DEDUCTION = os.getenv("PER_REQUEST_POINT_DEDUCTION")
 

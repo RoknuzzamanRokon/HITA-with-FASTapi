@@ -130,6 +130,70 @@ def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
         return False
 
 
+# def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
+#     """
+#     Check if the user's IP is whitelisted
+
+#     Args:
+#         user_id: User ID to check whitelist for
+#         request: FastAPI request object to extract IP
+#         db: Database session
+
+#     Returns:
+#         bool: True if IP is whitelisted or no whitelist exists, False if blocked
+#     """
+#     print(f"🚀 IP Whitelist Function Called - Starting check for user: {user_id}")
+#     try:
+#         print(f"🔍 IP Whitelist Check - User ID: {user_id}")
+
+#         # Extract client IP using the middleware helper function
+#         client_ip = get_client_ip(request)
+
+#         print(f"🌐 Detected Client IP: {client_ip}")
+
+#         if not client_ip:
+#             print("⚠️ Could not determine client IP, allowing access (fail open)")
+#             return True
+
+#         # Check if user has any IP whitelist entries
+#         whitelist_entries = (
+#             db.query(models.UserIPWhitelist)
+#             .filter(
+#                 models.UserIPWhitelist.user_id == user_id,
+#                 models.UserIPWhitelist.is_active == True,
+#             )
+#             .all()
+#         )
+
+#         print(f"📋 Found {len(whitelist_entries)} whitelist entries for user")
+
+#         # REQUIRE IP WHITELIST: If no whitelist entries exist, DENY access
+#         if not whitelist_entries:
+#             print(
+#                 "❌ No whitelist entries found, DENYING access (IP whitelist required)"
+#             )
+#             return False
+
+#         # Check if current IP is in whitelist
+#         whitelisted_ips = [entry.ip_address for entry in whitelist_entries]
+#         print(f"🔒 Whitelisted IPs: {whitelisted_ips}")
+
+#         is_whitelisted = client_ip in whitelisted_ips
+#         print(f"🎯 IP {client_ip} whitelisted: {is_whitelisted}")
+
+#         return is_whitelisted
+
+#     except Exception as e:
+#         # If there's an error checking whitelist, fail open (allow access)
+#         print(f"❌ Error checking IP whitelist: {e}")
+#         print(f"❌ Exception type: {type(e).__name__}")
+#         print(f"❌ Exception details: {str(e)}")
+#         import traceback
+
+#         print(f"❌ Traceback: {traceback.format_exc()}")
+#         return True
+
+
 def serialize_datetime_objects(obj):
     """Convert datetime objects to ISO format strings for JSON serialization."""
     if hasattr(obj, "__dict__"):
@@ -2170,70 +2234,6 @@ def get_all_hotels(
             "note": "resume_key is automatically required for subsequent requests",
         },
     }
-
-
-def check_ip_whitelist(user_id: str, request: Request, db: Session) -> bool:
-    """
-    Check if the user's IP is whitelisted
-
-    Args:
-        user_id: User ID to check whitelist for
-        request: FastAPI request object to extract IP
-        db: Database session
-
-    Returns:
-        bool: True if IP is whitelisted or no whitelist exists, False if blocked
-    """
-    print(f"🚀 IP Whitelist Function Called - Starting check for user: {user_id}")
-    try:
-        print(f"🔍 IP Whitelist Check - User ID: {user_id}")
-
-        # Extract client IP using the middleware helper function
-        client_ip = get_client_ip(request)
-
-        print(f"🌐 Detected Client IP: {client_ip}")
-
-        if not client_ip:
-            print("⚠️ Could not determine client IP, allowing access (fail open)")
-            return True
-
-        # Check if user has any IP whitelist entries
-        whitelist_entries = (
-            db.query(models.UserIPWhitelist)
-            .filter(
-                models.UserIPWhitelist.user_id == user_id,
-                models.UserIPWhitelist.is_active == True,
-            )
-            .all()
-        )
-
-        print(f"📋 Found {len(whitelist_entries)} whitelist entries for user")
-
-        # REQUIRE IP WHITELIST: If no whitelist entries exist, DENY access
-        if not whitelist_entries:
-            print(
-                "❌ No whitelist entries found, DENYING access (IP whitelist required)"
-            )
-            return False
-
-        # Check if current IP is in whitelist
-        whitelisted_ips = [entry.ip_address for entry in whitelist_entries]
-        print(f"🔒 Whitelisted IPs: {whitelisted_ips}")
-
-        is_whitelisted = client_ip in whitelisted_ips
-        print(f"🎯 IP {client_ip} whitelisted: {is_whitelisted}")
-
-        return is_whitelisted
-
-    except Exception as e:
-        # If there's an error checking whitelist, fail open (allow access)
-        print(f"❌ Error checking IP whitelist: {e}")
-        print(f"❌ Exception type: {type(e).__name__}")
-        print(f"❌ Exception details: {str(e)}")
-        import traceback
-
-        print(f"❌ Traceback: {traceback.format_exc()}")
-        return True
 
 
 @router.get("/get-all-ittid", status_code=status.HTTP_200_OK)

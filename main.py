@@ -34,6 +34,7 @@ from routes.audit_dashboard import router as audit_router
 from routes.dashboard import router as dashboard_router
 from routes.export import router as export_router
 from routes.export_jobs import router as export_jobs_router
+from routes.notifications import router as notifications_router
 
 from routes.hotelRawData import router as raw_content_data
 from routes.hotelFormattingData import router as hotel_formatting_data
@@ -56,8 +57,22 @@ from middleware.ip_middleware import IPAddressMiddleware
 from middleware.api_logging import create_api_logging_middleware
 from middleware.auth_middleware import AuthenticationMiddleware
 
-
 app = FastAPI()
+
+create_security_middleware_stack(app)
+
+# Add IP address middleware to properly extract client IPs
+app.add_middleware(
+    IPAddressMiddleware,
+    trusted_proxies=["127.0.0.1", "::1", "192.168.0.0/16", "10.0.0.0/8"],
+)
+
+# Add trusted host middleware to handle proxy headers
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"],  # Configure this based on your deployment
+)
+
 
 # Add CORS middleware first (runs last)
 app.add_middleware(
@@ -204,6 +219,7 @@ app.include_router(audit_router)
 app.include_router(dashboard_router)
 app.include_router(export_router)
 app.include_router(export_jobs_router)
+app.include_router(notifications_router)
 
 
 app.include_router(raw_content_data)
