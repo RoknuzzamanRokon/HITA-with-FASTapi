@@ -16,13 +16,15 @@ DATABASE_URL = os.getenv("DB_CONNECTION")
 
 engine = create_engine(
     DATABASE_URL,
-    pool_size=5,          # Number of connections to maintain in the pool
-    max_overflow=10,      # Additional connections beyond pool_size
-    pool_timeout=30,      # Timeout for getting connection from pool
-    pool_recycle=3600,    # Recycle connections after 1 hour
-    pool_pre_ping=True,   # Validate connections before use
-    echo=False            # Set to True for SQL debugging
+    pool_size=10,  # Increased pool size for better concurrency
+    max_overflow=20,  # Increased overflow for burst traffic
+    pool_timeout=15,  # Reduced timeout for faster failover
+    pool_recycle=1800,  # Recycle connections more frequently (30 min)
+    pool_pre_ping=True,  # Validate connections before use
+    pool_use_lifo=True,  # Use LIFO for better connection reuse
+    echo=False,  # Set to True for SQL debugging
 )
+
 
 @event.listens_for(engine, "connect")
 def enable_sqlite_fk_constraints(dbapi_connection, connection_record):
@@ -36,8 +38,10 @@ def enable_sqlite_fk_constraints(dbapi_connection, connection_record):
         cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout for locks
         cursor.close()
 
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 # Dependency to get DB session
 def get_db() -> Generator[Session, None, None]:
@@ -46,6 +50,7 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
 
 # Connection pool health check
 def get_pool_status():
@@ -56,5 +61,5 @@ def get_pool_status():
         "checked_in": pool.checkedin(),
         "checked_out": pool.checkedout(),
         "overflow": pool.overflow(),
-        "invalid": pool.invalid()
+        "invalid": pool.invalid(),
     }
