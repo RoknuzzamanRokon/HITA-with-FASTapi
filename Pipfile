@@ -31,6 +31,7 @@ psutil = "*"
 aiohttp = "*"
 rapidfuzz = "*"
 openpyxl = "*"
+typesense = "*"
 
 [dev-packages]
 pytest = "*"
