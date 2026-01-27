@@ -311,6 +311,38 @@ async def get_hotel_details_internal(
         return None
 
 
+def _load_and_format_hotel_details(supplier_code: str, hotel_id: str) -> Optional[Dict]:
+    """Load hotel JSON from disk and map to our format (no permission checks)."""
+    file_path = os.path.join(RAW_BASE_DIR, supplier_code, f"{hotel_id}.json")
+
+    if not os.path.exists(file_path):
+        return None
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = json.load(f)
+
+    return map_to_our_format(supplier_code, content)
+
+
+_hotel_details_semaphore = asyncio.Semaphore(
+    int(os.getenv("HOTEL_DETAILS_CONCURRENCY", "8"))
+)
+
+
+async def _get_hotel_details_internal_fast(
+    supplier_code: str, hotel_id: str
+) -> Optional[Dict]:
+    """Concurrent, file-based details loader for pre-filtered provider mappings."""
+    try:
+        async with _hotel_details_semaphore:
+            return await asyncio.to_thread(
+                _load_and_format_hotel_details, supplier_code, hotel_id
+            )
+    except Exception as e:
+        print(f"Error getting hotel details for {supplier_code}/{hotel_id}: {str(e)}")
+        return None
+
+
 class ProviderHotelIdentity(BaseModel):
     provider_id: str
     provider_name: str
@@ -1183,26 +1215,30 @@ async def get_hotels_using_ittid_list(
                 )
 
                 formatted_provider_mappings = []
-                for mapping in provider_mappings:
-                    # Get full hotel details for this provider mapping
-                    hotel_details = await get_hotel_details_internal(
-                        supplier_code=mapping.provider_name,
-                        hotel_id=mapping.provider_id,
-                        current_user=current_user,
-                        db=db,
+                if provider_mappings:
+                    details_list = await asyncio.gather(
+                        *[
+                            _get_hotel_details_internal_fast(
+                                mapping.provider_name, mapping.provider_id
+                            )
+                            for mapping in provider_mappings
+                        ]
                     )
 
-                    # FILTER: Only include mappings with non-null full_details
-                    if hotel_details is not None:
-                        mapping_data = {
-                            "id": mapping.id,
-                            "ittid": mapping.ittid,
-                            "provider_name": mapping.provider_name,
-                            "provider_id": mapping.provider_id,
-                            "updated_at": mapping.updated_at,
-                            "full_details": hotel_details,
-                        }
-                        formatted_provider_mappings.append(mapping_data)
+                    for mapping, hotel_details in zip(
+                        provider_mappings, details_list
+                    ):
+                        # FILTER: Only include mappings with non-null full_details
+                        if hotel_details is not None:
+                            mapping_data = {
+                                "id": mapping.id,
+                                "ittid": mapping.ittid,
+                                "provider_name": mapping.provider_name,
+                                "provider_id": mapping.provider_id,
+                                "updated_at": mapping.updated_at,
+                                "full_details": hotel_details,
+                            }
+                            formatted_provider_mappings.append(mapping_data)
 
                 # Only include hotel in result if it has valid provider mappings
                 if formatted_provider_mappings:
@@ -1246,26 +1282,30 @@ async def get_hotels_using_ittid_list(
                     provider_mappings = all_provider_mappings
 
                 formatted_provider_mappings = []
-                for mapping in provider_mappings:
-                    # Get full hotel details for this provider mapping
-                    hotel_details = await get_hotel_details_internal(
-                        supplier_code=mapping.provider_name,
-                        hotel_id=mapping.provider_id,
-                        current_user=current_user,
-                        db=db,
+                if provider_mappings:
+                    details_list = await asyncio.gather(
+                        *[
+                            _get_hotel_details_internal_fast(
+                                mapping.provider_name, mapping.provider_id
+                            )
+                            for mapping in provider_mappings
+                        ]
                     )
 
-                    # FILTER: Only include mappings with non-null full_details
-                    if hotel_details is not None:
-                        mapping_data = {
-                            "id": mapping.id,
-                            "ittid": mapping.ittid,
-                            "provider_name": mapping.provider_name,
-                            "provider_id": mapping.provider_id,
-                            "updated_at": mapping.updated_at,
-                            "full_details": hotel_details,
-                        }
-                        formatted_provider_mappings.append(mapping_data)
+                    for mapping, hotel_details in zip(
+                        provider_mappings, details_list
+                    ):
+                        # FILTER: Only include mappings with non-null full_details
+                        if hotel_details is not None:
+                            mapping_data = {
+                                "id": mapping.id,
+                                "ittid": mapping.ittid,
+                                "provider_name": mapping.provider_name,
+                                "provider_id": mapping.provider_id,
+                                "updated_at": mapping.updated_at,
+                                "full_details": hotel_details,
+                            }
+                            formatted_provider_mappings.append(mapping_data)
 
                 # Only include hotel in result if it has valid provider mappings
                 if formatted_provider_mappings:
@@ -1375,6 +1415,9 @@ async def get_hotel_using_ittid(
                 detail=f"Cannot active supplier with this ittid '{ittid}'. No supplier mappings found for this hotel.",
             )
 
+        final_allowed_providers = None
+        temp_deactivated_suppliers = []
+
         # Check user-specific permissions for general users
         if current_user.role == models.UserRole.GENERAL_USER:
             # Get all user permissions (including temp deactivated ones)
@@ -1427,6 +1470,19 @@ async def get_hotel_using_ittid(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Cannot access suppliers for this ittid '{ittid}'. Available suppliers: {', '.join(available_suppliers)}. Contact admin for access.",
                 )
+        else:
+            # For super/admin users, pre-load temporarily deactivated suppliers once
+            all_permissions = [
+                permission.provider_name
+                for permission in db.query(UserProviderPermission)
+                .filter(UserProviderPermission.user_id == current_user.id)
+                .all()
+            ]
+
+            for perm in all_permissions:
+                if perm.startswith("TEMP_DEACTIVATED_"):
+                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
+                    temp_deactivated_suppliers.append(original_name)
 
         print(
             f"✅ Active suppliers found for ITTID {ittid}: {len(all_provider_mappings)} suppliers"
@@ -1444,32 +1500,6 @@ async def get_hotel_using_ittid(
         # Get provider mappings for response (based on user role)
         if current_user.role == models.UserRole.GENERAL_USER:
             # For general users, only show accessible provider mappings (excluding temp deactivated)
-            # Use the same logic as above to get final allowed providers
-            all_permissions = [
-                permission.provider_name
-                for permission in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
-
-            # Separate active and temporarily deactivated suppliers
-            temp_deactivated_suppliers = []
-            allowed_providers = []
-
-            for perm in all_permissions:
-                if perm.startswith("TEMP_DEACTIVATED_"):
-                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                    temp_deactivated_suppliers.append(original_name)
-                else:
-                    allowed_providers.append(perm)
-
-            # Remove temporarily deactivated suppliers from allowed providers
-            final_allowed_providers = [
-                provider
-                for provider in allowed_providers
-                if provider not in temp_deactivated_suppliers
-            ]
-
             provider_mappings = (
                 db.query(models.ProviderMapping)
                 .filter(
@@ -1479,21 +1509,6 @@ async def get_hotel_using_ittid(
                 .all()
             )
         else:
-            # For super/admin users, check for temporarily deactivated suppliers
-            all_permissions = [
-                permission.provider_name
-                for permission in db.query(UserProviderPermission)
-                .filter(UserProviderPermission.user_id == current_user.id)
-                .all()
-            ]
-
-            # Get temporarily deactivated suppliers for super/admin users
-            temp_deactivated_suppliers = []
-            for perm in all_permissions:
-                if perm.startswith("TEMP_DEACTIVATED_"):
-                    original_name = perm.replace("TEMP_DEACTIVATED_", "")
-                    temp_deactivated_suppliers.append(original_name)
-
             # Filter out temporarily deactivated suppliers from all provider mappings
             if temp_deactivated_suppliers:
                 provider_mappings = [
@@ -1506,26 +1521,26 @@ async def get_hotel_using_ittid(
 
         # Enhanced provider mappings with full details
         enhanced_provider_mappings = []
-        for pm in provider_mappings:
-            # Get full hotel details for this provider mapping
-            hotel_details = await get_hotel_details_internal(
-                supplier_code=pm.provider_name,
-                hotel_id=pm.provider_id,
-                current_user=current_user,
-                db=db,
+        if provider_mappings:
+            details_list = await asyncio.gather(
+                *[
+                    _get_hotel_details_internal_fast(pm.provider_name, pm.provider_id)
+                    for pm in provider_mappings
+                ]
             )
 
-            # Create simplified provider mapping with only essential fields
-            pm_data = {
-                "id": pm.id,
-                "ittid": pm.ittid,
-                "giata_code": pm.giata_code,
-                "provider_name": pm.provider_name,
-                "provider_id": pm.provider_id,
-                "updated_at": pm.updated_at,
-                "full_details": hotel_details,
-            }
-            enhanced_provider_mappings.append(pm_data)
+            for pm, hotel_details in zip(provider_mappings, details_list):
+                # Create simplified provider mapping with only essential fields
+                pm_data = {
+                    "id": pm.id,
+                    "ittid": pm.ittid,
+                    "giata_code": pm.giata_code,
+                    "provider_name": pm.provider_name,
+                    "provider_id": pm.provider_id,
+                    "updated_at": pm.updated_at,
+                    "full_details": hotel_details,
+                }
+                enhanced_provider_mappings.append(pm_data)
 
         # Serialize the response with enhanced provider mappings
         response_data = {
