@@ -183,7 +183,7 @@ def fetch_all_mappings(offset=0, limit=10000):
         stmt = (
             select(table)
             .where(table.c.mapStatus != "upd1")
-            .where(table.c.mapStatus != "new id")
+            # .where(table.c.mapStatus != "new id")
             .order_by(desc(table.c.ittid))
             .offset(offset)
             .limit(limit)
@@ -254,7 +254,7 @@ def post_mapping(session, headers, payload):
             print(
                 f"⚠️ Hotel with ittid '{payload['ittid']}' not found (404). Marking as 'new id'"
             )
-            update_map_status(payload["ittid"], "new id")
+            update_map_status(payload["ittid"], "new id 2")
             with counter_lock:
                 not_found_count += 1
             return None  # Return None to indicate this was handled but not successful

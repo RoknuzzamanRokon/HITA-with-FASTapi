@@ -31,9 +31,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration - Use port 8000 (confirmed working)
-API_BASE = "http://127.0.0.1:8000"  # Use port 8000 instead of overloaded 8028
+API_BASE = "http://127.0.0.1:8028"  # Use port 8000 instead of overloaded 8028
 ENDPOINT = f"{API_BASE}/v1.0/hotels/add_provider_all_details_with_ittid/"
-TABLE_NAME = "global_hotel_mapping_copy_2"  # Use same table as working script
+TABLE_NAME = "global_hotel_mapping_copy_2_new"  # Use same table as working script
 
 # Optimized for throughput but not overwhelming the server
 BATCH_SIZE = 100  # Reduced batch size
@@ -92,19 +92,23 @@ class DatabaseManager:
             session.close()
 
     async def fetch_batch(self, offset: int, limit: int) -> List[Any]:
-        """Fetch batch of rows asynchronously"""
+        """Fetch batch of rows asynchronously - only NULL mapStatus records"""
         loop = asyncio.get_event_loop()
 
         def _fetch():
             with self.get_session() as session:
                 stmt = (
                     select(self.table)
-                    .where(self.table.c.mapStatus.notin_(["upd1", "new id"]))
+                    .where(self.table.c.mapStatus.is_(None))
                     .order_by(desc(self.table.c.ittid))
                     .offset(offset)
                     .limit(limit)
                 )
-                return session.execute(stmt).fetchall()
+                results = session.execute(stmt).fetchall()
+                logger.info(
+                    f"Fetched {len(results)} records with NULL mapStatus (offset={offset}, limit={limit})"
+                )
+                return results
 
         return await loop.run_in_executor(None, _fetch)
 
@@ -114,15 +118,19 @@ class DatabaseManager:
 
         def _bulk_update():
             with self.get_session() as session:
+                updated_count = 0
                 for ittid, status in updates.items():
-                    session.execute(
+                    result = session.execute(
                         update(self.table)
                         .where(self.table.c.ittid == ittid)
                         .values(mapStatus=status)
                     )
+                    updated_count += result.rowcount
                 session.commit()
+                return updated_count
 
-        await loop.run_in_executor(None, _bulk_update)
+        updated_count = await loop.run_in_executor(None, _bulk_update)
+        logger.info(f"Successfully updated {updated_count} records in database")
 
 
 db_manager = DatabaseManager()
@@ -224,7 +232,7 @@ class AsyncHttpClient:
                         if response.status == 404:
                             return "not_found"
 
-                        if response.status == 200:
+                        if response.status in [200, 201]:
                             return "success"
 
                         # For other status codes, log and retry
@@ -496,9 +504,15 @@ async def process_batch(offset: int) -> bool:
     if batch_updates["success"] or batch_updates["not_found"]:
         update_dict = {}
         for ittid in batch_updates["success"]:
-            update_dict[ittid] = "upd1"
+            update_dict[ittid] = "upd2"
         for ittid in batch_updates["not_found"]:
             update_dict[ittid] = "new id"
+
+        # Log the updates being made
+        if update_dict:
+            logger.info(
+                f"Updating {len(update_dict)} records: Success={len(batch_updates['success'])}, NotFound={len(batch_updates['not_found'])}"
+            )
 
         await db_manager.bulk_update_status(update_dict)
 
