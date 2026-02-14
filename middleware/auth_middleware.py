@@ -18,7 +18,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     
     def __init__(self, app):
         super().__init__(app)
-        self.SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+        self.SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
         self.ALGORITHM = "HS256"
         
         # Paths that don't require authentication

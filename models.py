@@ -524,3 +524,99 @@ class ExportJob(Base):
 
     # Relationships
     user = relationship("User", backref="export_jobs")
+
+
+# Blog Models
+
+
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+
+    id = Column(String(50), primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    slug = Column(String(255), unique=True, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    excerpt = Column(Text, nullable=True)
+    author = Column(String(100), nullable=False)
+    category_id = Column(String(50), ForeignKey("blog_categories.id"), nullable=True)
+    featured_image = Column(String(500), nullable=True)
+    status = Column(
+        SQLEnum("draft", "published", name="blog_status_enum"),
+        default="draft",
+        nullable=False,
+        index=True,
+    )
+    view_count = Column(Integer, default=0, nullable=False)
+    read_time = Column(Integer, nullable=True)  # estimated read time in minutes
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    published_at = Column(DateTime, nullable=True, index=True)
+    meta_title = Column(String(255), nullable=True)
+    meta_description = Column(Text, nullable=True)
+
+    # Relationships
+    category = relationship("BlogCategory", back_populates="posts")
+    tags = relationship("BlogTag", secondary="blog_post_tags", back_populates="posts")
+    analytics = relationship("BlogAnalytics", back_populates="post")
+
+
+class BlogCategory(Base):
+    __tablename__ = "blog_categories"
+
+    id = Column(String(50), primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    posts = relationship("BlogPost", back_populates="category")
+
+    @hybrid_property
+    def post_count(self):
+        """Get count of published posts in this category"""
+        return len([post for post in self.posts if post.status == "published"])
+
+
+class BlogTag(Base):
+    __tablename__ = "blog_tags"
+
+    id = Column(String(50), primary_key=True, index=True)
+    name = Column(String(50), nullable=False, unique=True)
+    slug = Column(String(50), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    posts = relationship("BlogPost", secondary="blog_post_tags", back_populates="tags")
+
+    @hybrid_property
+    def post_count(self):
+        """Get count of published posts with this tag"""
+        return len([post for post in self.posts if post.status == "published"])
+
+
+class BlogPostTag(Base):
+    __tablename__ = "blog_post_tags"
+
+    post_id = Column(String(50), ForeignKey("blog_posts.id"), primary_key=True)
+    tag_id = Column(String(50), ForeignKey("blog_tags.id"), primary_key=True)
+
+
+class BlogAnalytics(Base):
+    __tablename__ = "blog_analytics"
+
+    id = Column(String(50), primary_key=True, index=True)
+    post_id = Column(
+        String(50), ForeignKey("blog_posts.id"), nullable=False, index=True
+    )
+    visitor_ip = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    referrer = Column(String(500), nullable=True)
+    session_id = Column(String(255), nullable=True)
+    viewed_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    read_duration = Column(Integer, nullable=True)  # in seconds
+
+    # Relationships
+    post = relationship("BlogPost", back_populates="analytics")
