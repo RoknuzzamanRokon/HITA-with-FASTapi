@@ -58,8 +58,10 @@ async def get_audit_analytics(
         base_query = base_query.filter(models.UserActivityLog.user_id == user_id)
 
     # 1. Daily Activity Timeline (for line/area chart)
+    date_expr = func.date(models.UserActivityLog.created_at)
+
     daily_activity = db.query(
-        func.date(models.UserActivityLog.created_at).label("date"),
+        date_expr.label("date"),
         func.count(models.UserActivityLog.id).label("count"),
     ).filter(models.UserActivityLog.created_at >= start_date)
 
@@ -68,11 +70,7 @@ async def get_audit_analytics(
             models.UserActivityLog.user_id == user_id
         )
 
-    daily_activity = (
-        daily_activity.group_by(func.date(models.UserActivityLog.created_at))
-        .order_by(func.date(models.UserActivityLog.created_at))
-        .all()
-    )
+    daily_activity = daily_activity.group_by(date_expr).order_by(date_expr).all()
 
     # 2. Activity Breakdown by Type (for pie/donut chart)
     activity_by_type = db.query(
@@ -224,8 +222,10 @@ async def get_audit_analytics(
     user_mgmt_stats = user_mgmt_stats.first()
 
     # 7. Hourly Activity Pattern (for heatmap)
+    hour_expr = func.extract("hour", models.UserActivityLog.created_at)
+
     hourly_pattern = db.query(
-        func.extract("hour", models.UserActivityLog.created_at).label("hour"),
+        hour_expr.label("hour"),
         func.count(models.UserActivityLog.id).label("count"),
     ).filter(models.UserActivityLog.created_at >= start_date)
 
@@ -234,11 +234,7 @@ async def get_audit_analytics(
             models.UserActivityLog.user_id == user_id
         )
 
-    hourly_pattern = (
-        hourly_pattern.group_by(func.extract("hour", models.UserActivityLog.created_at))
-        .order_by("hour")
-        .all()
-    )
+    hourly_pattern = hourly_pattern.group_by(hour_expr).order_by("hour").all()
 
     # 8. Recent Critical Events (for alerts)
     recent_critical = db.query(models.UserActivityLog).filter(
@@ -391,17 +387,19 @@ async def get_user_activity_graph(
     start_date = datetime.utcnow() - timedelta(days=days)
 
     # Get daily activity
+    date_expr_activity = func.date(models.UserActivityLog.created_at)
+
     daily_activity = (
         db.query(
-            func.date(models.UserActivityLog.created_at).label("date"),
+            date_expr_activity.label("date"),
             func.count(models.UserActivityLog.id).label("count"),
         )
         .filter(
             models.UserActivityLog.user_id == user_id,
             models.UserActivityLog.created_at >= start_date,
         )
-        .group_by(func.date(models.UserActivityLog.created_at))
-        .order_by(func.date(models.UserActivityLog.created_at))
+        .group_by(date_expr_activity)
+        .order_by(date_expr_activity)
         .all()
     )
 
@@ -501,17 +499,19 @@ async def get_my_activity(
     user_id = current_user.id
 
     # Get daily activity
+    date_expr_my_activity = func.date(models.UserActivityLog.created_at)
+
     daily_activity = (
         db.query(
-            func.date(models.UserActivityLog.created_at).label("date"),
+            date_expr_my_activity.label("date"),
             func.count(models.UserActivityLog.id).label("count"),
         )
         .filter(
             models.UserActivityLog.user_id == user_id,
             models.UserActivityLog.created_at >= start_date,
         )
-        .group_by(func.date(models.UserActivityLog.created_at))
-        .order_by(func.date(models.UserActivityLog.created_at))
+        .group_by(date_expr_my_activity)
+        .order_by(date_expr_my_activity)
         .all()
     )
 
@@ -617,49 +617,54 @@ async def get_my_activity(
     )
 
     # Hourly pattern (using HOUR function for MySQL compatibility)
+    hour_expr_my = func.hour(models.UserActivityLog.created_at)
+
     hourly_pattern = (
         db.query(
-            func.hour(models.UserActivityLog.created_at).label("hour"),
+            hour_expr_my.label("hour"),
             func.count(models.UserActivityLog.id).label("count"),
         )
         .filter(
             models.UserActivityLog.user_id == user_id,
             models.UserActivityLog.created_at >= start_date,
         )
-        .group_by(func.hour(models.UserActivityLog.created_at))
+        .group_by(hour_expr_my)
         .order_by("hour")
         .all()
     )
 
     # Most active day
+    date_expr_most_active = func.date(models.UserActivityLog.created_at)
+
     most_active_day = (
         db.query(
-            func.date(models.UserActivityLog.created_at).label("date"),
+            date_expr_most_active.label("date"),
             func.count(models.UserActivityLog.id).label("count"),
         )
         .filter(
             models.UserActivityLog.user_id == user_id,
             models.UserActivityLog.created_at >= start_date,
         )
-        .group_by(func.date(models.UserActivityLog.created_at))
+        .group_by(date_expr_most_active)
         .order_by(desc("count"))
         .first()
     )
 
     # Day of week pattern (using DAYOFWEEK function for MySQL compatibility)
     # MySQL DAYOFWEEK returns 1=Sunday, 2=Monday, ..., 7=Saturday
+    # Use the same expression in SELECT and GROUP BY to satisfy ONLY_FULL_GROUP_BY
+    day_of_week_expr = func.dayofweek(models.UserActivityLog.created_at) - 1
+
     day_of_week_pattern = (
         db.query(
-            (func.dayofweek(models.UserActivityLog.created_at) - 1).label(
-                "day_of_week"
-            ),
+            day_of_week_expr.label("day_of_week"),
             func.count(models.UserActivityLog.id).label("count"),
         )
         .filter(
             models.UserActivityLog.user_id == user_id,
             models.UserActivityLog.created_at >= start_date,
         )
-        .group_by(func.dayofweek(models.UserActivityLog.created_at))
+        .group_by(day_of_week_expr)
         .order_by("day_of_week")
         .all()
     )

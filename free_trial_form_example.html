@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Free Trial Registration</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .form-container {
+        background: white;
+        max-width: 600px;
+        width: 100%;
+        padding: 40px;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+
+      h2 {
+        color: #333;
+        margin-bottom: 10px;
+        font-size: 28px;
+      }
+
+      .subtitle {
+        color: #666;
+        margin-bottom: 30px;
+        font-size: 14px;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+      }
+
+      label .required {
+        color: #e74c3c;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        padding: 12px 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+        font-family: inherit;
+      }
+
+      input:focus,
+      textarea:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 100px;
+      }
+
+      button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 14px 20px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .message {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        font-size: 14px;
+        display: none;
+      }
+
+      .message.show {
+        display: block;
+      }
+
+      .success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .loading {
+        background-color: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+
+      .char-count {
+        font-size: 12px;
+        color: #999;
+        text-align: right;
+        margin-top: 5px;
+      }
+
+      @media (max-width: 600px) {
+        .form-container {
+          padding: 30px 20px;
+        }
+
+        h2 {
+          font-size: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="form-container">
+      <h2>🚀 Start Your Free Trial</h2>
+      <p class="subtitle">
+        Fill out the form below and we'll get back to you shortly.
+      </p>
+
+      <form id="freeTrialForm">
+        <div class="form-group">
+          <label for="username">
+            Full Name <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="John Doe"
+            required
+            maxlength="100"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="business_name">
+            Business Name <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="business_name"
+            name="business_name"
+            placeholder="Acme Corporation"
+            required
+            maxlength="200"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="email">
+            Email Address <span class="required">*</span>
+          </label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            placeholder="john@acme.com"
+            required
+            maxlength="255"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="phone_number">
+            Phone Number <span class="required">*</span>
+          </label>
+          <input
+            type="tel"
+            id="phone_number"
+            name="phone_number"
+            placeholder="+1 (555) 123-4567"
+            required
+            maxlength="20"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="message"> Message (Optional) </label>
+          <textarea
+            id="message"
+            name="message"
+            placeholder="Tell us about your needs or any questions you have..."
+            maxlength="2000"
+          ></textarea>
+          <div class="char-count">
+            <span id="charCount">0</span> / 2000 characters
+          </div>
+        </div>
+
+        <button type="submit" id="submitBtn">Submit Request</button>
+      </form>
+
+      <div id="message" class="message"></div>
+    </div>
+
+    <script>
+      const form = document.getElementById("freeTrialForm");
+      const messageDiv = document.getElementById("message");
+      const submitBtn = document.getElementById("submitBtn");
+      const messageTextarea = document.getElementById("message");
+      const charCount = document.getElementById("charCount");
+
+      // Character counter for message field
+      messageTextarea.addEventListener("input", () => {
+        const length = messageTextarea.value.length;
+        charCount.textContent = length;
+
+        if (length > 1900) {
+          charCount.style.color = "#e74c3c";
+        } else {
+          charCount.style.color = "#999";
+        }
+      });
+
+      // Show message
+      function showMessage(text, type) {
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${type} show`;
+
+        // Auto-hide after 5 seconds for success messages
+        if (type === "success") {
+          setTimeout(() => {
+            messageDiv.classList.remove("show");
+          }, 5000);
+        }
+      }
+
+      // Form submission
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        // Disable button and show loading
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Submitting...";
+        showMessage("Submitting your request...", "loading");
+
+        // Collect form data
+        const formData = {
+          username: document.getElementById("username").value.trim(),
+          business_name: document.getElementById("business_name").value.trim(),
+          email: document.getElementById("email").value.trim(),
+          phone_number: document.getElementById("phone_number").value.trim(),
+          message: messageTextarea.value.trim() || null,
+        };
+
+        try {
+          const response = await fetch(
+            "http://localhost:8000/api/free-trial/submit",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(formData),
+            },
+          );
+
+          const data = await response.json();
+
+          if (response.ok) {
+            showMessage(
+              "✓ Request submitted successfully! We will contact you soon.",
+              "success",
+            );
+            form.reset();
+            charCount.textContent = "0";
+          } else {
+            const errorMsg =
+              data.detail || "Failed to submit request. Please try again.";
+            showMessage("✗ " + errorMsg, "error");
+          }
+        } catch (error) {
+          console.error("Submission error:", error);
+          showMessage(
+            "✗ Network error. Please check your connection and try again.",
+            "error",
+          );
+        } finally {
+          // Re-enable button
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Submit Request";
+        }
+      });
+
+      // Phone number formatting (optional)
+      document.getElementById("phone_number").addEventListener("input", (e) => {
+        let value = e.target.value.replace(/\D/g, "");
+        if (value.length > 0) {
+          if (value.length <= 3) {
+            e.target.value = value;
+          } else if (value.length <= 6) {
+            e.target.value = `(${value.slice(0, 3)}) ${value.slice(3)}`;
+          } else {
+            e.target.value = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`;
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

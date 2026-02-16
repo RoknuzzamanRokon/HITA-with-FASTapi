@@ -64,6 +64,26 @@ class NotificationStatus(str, Enum):
     READ = "read"
 
 
+# Free Trial Request Status
+class FreeTrialStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CONTACTED = "contacted"
+
+    # Notification Status
+    class NotificationStatus(str, Enum):
+        UNREAD = "unread"
+        READ = "read"
+
+    # Free Trial Request Status
+    class FreeTrialStatus(str, Enum):
+        PENDING = "pending"
+        APPROVED = "approved"
+        REJECTED = "rejected"
+        CONTACTED = "contacted"
+
+
 # User Model
 class User(Base):
     __tablename__ = "users"
@@ -620,3 +640,31 @@ class BlogAnalytics(Base):
 
     # Relationships
     post = relationship("BlogPost", back_populates="analytics")
+
+
+# Free Trial Request Model
+class FreeTrialRequest(Base):
+    __tablename__ = "free_trial_requests"
+
+    id = Column(String(50), primary_key=True, index=True)
+    username = Column(String(100), nullable=False)
+    business_name = Column(String(200), nullable=False)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    phone_number = Column(String(20), nullable=False)
+    message = Column(Text, nullable=True)  # User's message/inquiry
+    status = Column(
+        SQLEnum(
+            *[s.value for s in FreeTrialStatus],
+            name="free_trial_status_enum",
+            native_enum=False
+        ),
+        default=FreeTrialStatus.PENDING.value,
+        nullable=False,
+        index=True,
+    )
+    notes = Column(Text, nullable=True)  # Admin notes
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    updated_by = Column(String(100), nullable=True)  # Email of superuser who updated

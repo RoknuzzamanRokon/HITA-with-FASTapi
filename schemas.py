@@ -773,3 +773,77 @@ class NotificationFilters(BaseModel):
     created_before: Optional[datetime] = Field(
         None, description="Filter notifications created before this timestamp"
     )
+
+
+# --- Free Trial Schemas ---
+class FreeTrialRequestCreate(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    business_name: str = Field(..., min_length=1, max_length=200)
+    email: EmailStr
+    phone_number: str = Field(..., min_length=7, max_length=20)
+    message: Optional[str] = Field(
+        None, max_length=2000, description="Optional message or inquiry from user"
+    )
+
+    @validator("phone_number")
+    def validate_phone(cls, value):
+        # Basic phone validation - remove spaces and check for valid characters
+        cleaned = (
+            value.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        )
+        if not cleaned.replace("+", "").isdigit():
+            raise ValueError(
+                "Phone number must contain only digits, spaces, hyphens, or parentheses"
+            )
+        return value
+
+    @validator("username", "business_name")
+    def validate_not_empty(cls, value):
+        if not value.strip():
+            raise ValueError("Field cannot be empty or whitespace only")
+        return value.strip()
+
+    @validator("message")
+    def validate_message(cls, value):
+        if value and not value.strip():
+            return None  # Convert empty/whitespace to None
+        return value.strip() if value else None
+
+
+class FreeTrialRequestUpdate(BaseModel):
+    status: Optional[str] = Field(
+        None, description="Status: pending, approved, rejected, contacted"
+    )
+    notes: Optional[str] = Field(None, max_length=2000)
+
+    @validator("status")
+    def validate_status(cls, value):
+        if value and value not in ["pending", "approved", "rejected", "contacted"]:
+            raise ValueError(
+                "Invalid status. Must be: pending, approved, rejected, or contacted"
+            )
+        return value
+
+
+class FreeTrialRequestResponse(BaseModel):
+    id: str
+    username: str
+    business_name: str
+    email: str
+    phone_number: str
+    message: Optional[str]
+    status: str
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    updated_by: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class FreeTrialRequestListResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    data: List[FreeTrialRequestResponse]
