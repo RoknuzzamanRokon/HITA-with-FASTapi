@@ -351,11 +351,21 @@ async def get_current_user(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub") or payload.get("s")  # Support all token formats
-        user_id: str = payload.get("user_id") or payload.get("uid") or payload.get("i")  # Support all token formats
-        token_type: str = payload.get("type") or payload.get("t")  # Support all token formats
+        username: str = payload.get("sub") or payload.get(
+            "s"
+        )  # Support all token formats
+        user_id: str = (
+            payload.get("user_id") or payload.get("uid") or payload.get("i")
+        )  # Support all token formats
+        token_type: str = payload.get("type") or payload.get(
+            "t"
+        )  # Support all token formats
 
-        if username is None or user_id is None or (token_type != "access" and token_type != "a"):
+        if (
+            username is None
+            or user_id is None
+            or (token_type != "access" and token_type != "a")
+        ):
             raise credentials_exception
         token_data = TokenData(username=username, user_id=user_id)
     except JWTError:
@@ -447,7 +457,7 @@ async def ultra_fast_token(
     # ⚡ EXTREME PERFORMANCE: Check token cache first (fastest path)
     cache_key = f"auth_cache:{form_data.username}"
     cached_token = redis_client.get(cache_key)
-    
+
     if cached_token:
         # Ultra-fast cache validation - minimal JWT decoding
         try:
@@ -463,40 +473,42 @@ async def ultra_fast_token(
     try:
         # Direct SQL query bypassing ORM overhead
         result = db.execute(
-            text("""
+            text(
+                """
                 SELECT id, username, hashed_password, role, is_active 
                 FROM users 
                 WHERE username = :username AND is_active = TRUE 
                 LIMIT 1
-            """),
-            {"username": form_data.username}
+            """
+            ),
+            {"username": form_data.username},
         ).fetchone()
-        
+
         if not result:
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+
         user_id, username, hashed_password, role_value, is_active = result
-        
+
         # ⚡ EXTREME PERFORMANCE: Optimized password verification
         # Use direct bcrypt verification without helper overhead
         if not pwd_context.verify(form_data.password, hashed_password):
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # ⚡ EXTREME PERFORMANCE: Ultra-minimal JWT payload
     now_timestamp = int(datetime.utcnow().timestamp())
     access_exp_timestamp = now_timestamp + (ACCESS_TOKEN_EXPIRE_MINUTES * 60)
-    
+
     # Super-compact token format
     access_payload = {
-        "s": username,           # sub -> s (1 char)
-        "i": user_id,            # user_id -> i (1 char)
-        "r": role_value,         # role -> r (1 char)
+        "s": username,  # sub -> s (1 char)
+        "i": user_id,  # user_id -> i (1 char)
+        "r": role_value,  # role -> r (1 char)
         "e": access_exp_timestamp,  # exp -> e (1 char)
-        "t": "a",               # type -> t (1 char)
-        "n": now_timestamp       # iat -> n (1 char)
+        "t": "a",  # type -> t (1 char)
+        "n": now_timestamp,  # iat -> n (1 char)
     }
 
     # ⚡ EXTREME PERFORMANCE: Direct JWT encoding with pre-configured options
@@ -504,15 +516,16 @@ async def ultra_fast_token(
 
     # ⚡ EXTREME PERFORMANCE: Async Redis cache with minimal overhead
     cache_ttl = int(ACCESS_TOKEN_EXPIRE_MINUTES * 60 * 0.8)
-    
+
     # Fire-and-forget cache operation (don't wait for completion)
     import asyncio
+
     async def cache_token():
         try:
             redis_client.setex(cache_key, cache_ttl, access_token)
         except:
             pass  # Cache failure doesn't affect response
-    
+
     # Schedule caching without blocking
     asyncio.create_task(cache_token())
 
@@ -529,7 +542,7 @@ async def ultra_fast_token(
             )
         except:
             pass  # Logging failure doesn't affect authentication
-    
+
     # Schedule logging without blocking
     asyncio.create_task(log_auth())
 
@@ -1291,36 +1304,37 @@ async def auth_health_check(
 async def performance_test():
     """
     **Performance Test Endpoint**
-    
+
     Test authentication performance without actual authentication.
     Returns timing information for benchmarking.
-    
+
     **Use Cases:**
     - Benchmarking authentication speed
     - Performance monitoring
     - Load testing
     - System tuning
-    
+
     **Returns:**
     - Timestamp
     - Performance metrics
     - System status
     """
     start_time = datetime.utcnow()
-    
+
     # Simulate minimal processing
     import time
+
     time.sleep(0.001)  # 1ms delay to simulate minimal work
-    
+
     end_time = datetime.utcnow()
     processing_time_ms = (end_time - start_time).total_seconds() * 1000
-    
+
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
         "processing_time_ms": processing_time_ms,
         "target_performance": "<100ms",
-        "optimization_level": "extreme"
+        "optimization_level": "extreme",
     }
 
 
@@ -1457,13 +1471,17 @@ async def authenticate_for_export(
     """
     Flexible authentication for export endpoints.
 
-    - Super Users and Admin Users: Can use either API Key OR JWT Token
+    - Super Users and Admin Users: Bearer Token only (no API key needed)
     - General Users: Must use API Key only
 
     Returns authenticated user if valid.
     """
-    # Try API key authentication first (works for all user types)
+    # Check what authentication methods are provided
     api_key = request.headers.get("X-API-Key")
+    auth_header = request.headers.get("Authorization")
+    has_bearer = auth_header and auth_header.startswith("Bearer ")
+
+    # Try API key authentication first (for General Users)
     if api_key:
         user = (
             db.query(models.User)
@@ -1479,21 +1497,31 @@ async def authenticate_for_export(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="API Key has expired. Please contact your administrator for a new key.",
                     )
-            return user
 
-    # Try JWT token authentication (only for Super Users and Admin Users)
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
+            # Only general users should use API keys for export
+            if user.role == models.UserRole.GENERAL_USER:
+                return user
+            else:
+                # Super/Admin users should use Bearer token instead
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Super Users and Admin Users must use Bearer Token for export endpoints. Please provide Authorization header.",
+                )
+
+    # Try JWT token authentication (for Super Users and Admin Users)
+    if has_bearer:
         token = auth_header.split(" ")[1]
         try:
             # Check if token is blacklisted
             if not redis_client.get(f"blacklist:{token}"):
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-                username: str = payload.get("sub")
-                user_id: str = payload.get("user_id")
-                token_type: str = payload.get("type")
 
-                if username and user_id and token_type == "access":
+                # Support both standard and shortened key formats
+                username: str = payload.get("sub") or payload.get("s")
+                user_id: str = payload.get("user_id") or payload.get("i")
+                token_type: str = payload.get("type") or payload.get("t")
+
+                if username and user_id and token_type in ["access", "a"]:
                     user = get_user_by_id(db, user_id)
                     if user and user.is_active:
                         # Only allow Super Users and Admin Users to use JWT tokens
@@ -1554,11 +1582,13 @@ async def get_user_by_api_key_or_token(
             # Check if token is blacklisted
             if not redis_client.get(f"blacklist:{token}"):
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-                username: str = payload.get("sub")
-                user_id: str = payload.get("user_id")
-                token_type: str = payload.get("type")
 
-                if username and user_id and token_type == "access":
+                # Support both standard and shortened key formats
+                username: str = payload.get("sub") or payload.get("s")
+                user_id: str = payload.get("user_id") or payload.get("i")
+                token_type: str = payload.get("type") or payload.get("t")
+
+                if username and user_id and token_type in ["access", "a"]:
                     user = get_user_by_id(db, user_id)
                     if user and user.is_active:
                         return user
