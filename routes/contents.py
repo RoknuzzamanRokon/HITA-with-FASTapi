@@ -1225,9 +1225,7 @@ async def get_hotels_using_ittid_list(
                         ]
                     )
 
-                    for mapping, hotel_details in zip(
-                        provider_mappings, details_list
-                    ):
+                    for mapping, hotel_details in zip(provider_mappings, details_list):
                         # FILTER: Only include mappings with non-null full_details
                         if hotel_details is not None:
                             mapping_data = {
@@ -1292,9 +1290,7 @@ async def get_hotels_using_ittid_list(
                         ]
                     )
 
-                    for mapping, hotel_details in zip(
-                        provider_mappings, details_list
-                    ):
+                    for mapping, hotel_details in zip(provider_mappings, details_list):
                         # FILTER: Only include mappings with non-null full_details
                         if hotel_details is not None:
                             mapping_data = {
@@ -3281,7 +3277,6 @@ from client import get_typesense_client
 def autocomplete_hotel_typesense(
     query: str = Query(..., description="Partial hotel name", min_length=2),
     limit: int = Query(10, description="Maximum number of results", ge=1, le=50),
-    current_user: Annotated[models.User, Depends(get_current_user)] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -3335,10 +3330,6 @@ def autocomplete_hotel_typesense(
         query = query.strip()
         if not query:
             return {"results": [], "count": 0, "search_time_ms": 0}
-
-        # Optional: Deduct points for general users (if you want to apply the same logic)
-        if current_user and current_user.role == models.UserRole.GENERAL_USER:
-            deduct_points_for_general_user(current_user, db)
 
         # Get Typesense client
         client = get_typesense_client()

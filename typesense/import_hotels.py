@@ -1,18 +1,49 @@
 import csv
 import typesense
+import os
+from dotenv import load_dotenv
 
-TYPESENSE_API_KEY = "xyz123"
-HOST = "localhost"
-PORT = "8108"
+# Load environment variables
+load_dotenv()
 
-CSV_PATH = (
-    r"D:\Rokon\ofc_git\HITA_full\backend\static\hotelcontent\itt_hotel_basic_info.csv"
+# Get configuration from environment variables
+TYPESENSE_HOST = os.getenv("TYPESENSE_HOST", "localhost")
+TYPESENSE_PORT = os.getenv("TYPESENSE_PORT", "8108")
+TYPESENSE_PROTOCOL = os.getenv("TYPESENSE_PROTOCOL", "http")
+TYPESENSE_API_KEY = os.getenv("TYPESENSE_API_KEY", "xyz123")
+
+# CSV path - use relative path that works on both Windows and Linux
+CSV_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "static",
+    "hotelcontent",
+    "itt_hotel_basic_info.csv",
 )
+
 BATCH_SIZE = 5000
+
+print(f"🔧 Configuration:")
+print(f"   Host: {TYPESENSE_HOST}")
+print(f"   Port: {TYPESENSE_PORT}")
+print(f"   Protocol: {TYPESENSE_PROTOCOL}")
+print(f"   CSV Path: {CSV_PATH}")
+print()
+
+# Check if CSV file exists
+if not os.path.exists(CSV_PATH):
+    print(f"❌ Error: CSV file not found at {CSV_PATH}")
+    print(f"Please ensure the file exists at this location.")
+    exit(1)
 
 client = typesense.Client(
     {
-        "nodes": [{"host": HOST, "port": PORT, "protocol": "http"}],
+        "nodes": [
+            {
+                "host": TYPESENSE_HOST,
+                "port": TYPESENSE_PORT,
+                "protocol": TYPESENSE_PROTOCOL,
+            }
+        ],
         "api_key": TYPESENSE_API_KEY,
         "connection_timeout_seconds": 30,
     }

@@ -1,9 +1,32 @@
 import typesense
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get configuration from environment variables
+TYPESENSE_HOST = os.getenv("TYPESENSE_HOST", "localhost")
+TYPESENSE_PORT = os.getenv("TYPESENSE_PORT", "8108")
+TYPESENSE_PROTOCOL = os.getenv("TYPESENSE_PROTOCOL", "http")
+TYPESENSE_API_KEY = os.getenv("TYPESENSE_API_KEY", "xyz123")
+
+print(f"🔧 Connecting to Typesense:")
+print(f"   Host: {TYPESENSE_HOST}")
+print(f"   Port: {TYPESENSE_PORT}")
+print(f"   Protocol: {TYPESENSE_PROTOCOL}")
+print()
 
 client = typesense.Client(
     {
-        "nodes": [{"host": "localhost", "port": "8108", "protocol": "http"}],
-        "api_key": "xyz123",
+        "nodes": [
+            {
+                "host": TYPESENSE_HOST,
+                "port": TYPESENSE_PORT,
+                "protocol": TYPESENSE_PROTOCOL,
+            }
+        ],
+        "api_key": TYPESENSE_API_KEY,
         "connection_timeout_seconds": 10,
     }
 )

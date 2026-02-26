@@ -206,6 +206,26 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=422, content={"detail": serializable_errors})
 
 
+app.include_router(auth_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
+app.include_router(hotels_demo_router, prefix="/api")
+app.include_router(hotels_router, prefix="/api")
+app.include_router(contents_router, prefix="/api")
+app.include_router(permissions_router, prefix="/api")
+app.include_router(delete_router, prefix="/api")
+app.include_router(mapping_router, prefix="/api")
+app.include_router(health_router, prefix="/api")
+app.include_router(cache_router, prefix="/api")
+app.include_router(cache_users_router, prefix="/api")
+app.include_router(audit_router, prefix="/api")
+app.include_router(dashboard_router, prefix="/api")
+app.include_router(export_router, prefix="/api")
+app.include_router(export_jobs_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
+app.include_router(blog_router, prefix="/api")
+app.include_router(free_trial_router, prefix="/api")
+
+# Also include without /api prefix for backward compatibility
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(hotels_demo_router)
@@ -226,6 +246,17 @@ app.include_router(blog_router)
 app.include_router(free_trial_router)
 
 
+app.include_router(raw_content_data, prefix="/api")
+app.include_router(hotel_formatting_data, prefix="/api")
+app.include_router(hotel_row_data_collection, prefix="/api")
+app.include_router(locations_router, prefix="/api")
+app.include_router(db_health_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
+app.include_router(analytics_dashboard_router, prefix="/api")
+app.include_router(ml_mapping_router, prefix="/api")
+app.include_router(api_logging_management_router, prefix="/api")
+
+# Also include without /api prefix for backward compatibility
 app.include_router(raw_content_data)
 app.include_router(hotel_formatting_data)
 app.include_router(hotel_row_data_collection)

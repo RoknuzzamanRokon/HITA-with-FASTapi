@@ -69,6 +69,9 @@ def grant_provider_permissions(
 
     granted_providers = []
     for provider_name in provider_names:
+        # Initialize existing_permission to None
+        existing_permission = None
+
         # For admin/super users, we need to handle activation differently
         # since they get all suppliers by default, not through explicit permissions
         if user.role in [UserRole.ADMIN_USER, UserRole.SUPER_USER]:
@@ -83,6 +86,7 @@ def grant_provider_permissions(
             if existing_temp_deactivation:
                 # Remove temporary deactivation to reactivate the supplier
                 db.delete(existing_temp_deactivation)
+                granted_providers.append(provider_name)
             # For admin/super users, we don't need to add explicit permissions
             # since they get all suppliers by default
         else:
@@ -93,16 +97,16 @@ def grant_provider_permissions(
                 .first()
             )
 
-        if not existing_permission:
-            # Create new permission
-            new_permission = UserProviderPermission(
-                user_id=user_id, provider_name=provider_name
-            )
-            db.add(new_permission)
-        else:
-            # Optionally update fields here if needed
-            # For now we do nothing, just skip to avoid duplicate
-            pass
+            if not existing_permission:
+                # Create new permission
+                new_permission = UserProviderPermission(
+                    user_id=user_id, provider_name=provider_name
+                )
+                db.add(new_permission)
+                granted_providers.append(provider_name)
+            else:
+                # Permission already exists, skip
+                pass
 
     db.commit()
 
