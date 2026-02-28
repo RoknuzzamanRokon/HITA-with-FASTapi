@@ -62,3 +62,5 @@ utils/usage/
 test-*.*
 test_*.*
 *.md
+
+blog_posts/
