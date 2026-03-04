@@ -51,6 +51,7 @@ from routes.analytics import (
 )
 from routes.ml_mapping import router as ml_mapping_router
 from routes.api_logging_management import router as api_logging_management_router
+from routes.setting import router as setting_router
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -255,6 +256,7 @@ app.include_router(analytics_router, prefix="/api")
 app.include_router(analytics_dashboard_router, prefix="/api")
 app.include_router(ml_mapping_router, prefix="/api")
 app.include_router(api_logging_management_router, prefix="/api")
+app.include_router(setting_router, prefix="/api")
 
 # Also include without /api prefix for backward compatibility
 app.include_router(raw_content_data)
@@ -266,6 +268,7 @@ app.include_router(analytics_router)
 app.include_router(analytics_dashboard_router)
 app.include_router(ml_mapping_router)
 app.include_router(api_logging_management_router)
+app.include_router(setting_router)
 
 
 # Compute absolute path to the directory containing this file
