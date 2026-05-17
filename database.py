@@ -3,7 +3,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
 from dotenv import load_dotenv
-from urllib.parse import quote_plus
 import os
 from sqlalchemy.engine import Engine
 import sqlalchemy.dialects.sqlite  # Import the SQLite dialect directly
@@ -12,19 +11,9 @@ import sqlalchemy.dialects.sqlite  # Import the SQLite dialect directly
 load_dotenv()
 
 # Database Configuration
-# Build URL from individual parts to avoid password encoding issues
-_db_user = os.getenv("DB_USER")
-_db_pass = os.getenv("DB_PASSWORD")
-_db_host_port = os.getenv("DB_HOST", "localhost")
-_db_name = os.getenv("DB_NAME")
-
-if _db_user and _db_pass and _db_host_port and _db_name:
-    # Safely encode the password to handle special characters
-    _encoded_pass = quote_plus(_db_pass)
-    DATABASE_URL = f"mysql+pymysql://{_db_user}:{_encoded_pass}@{_db_host_port}/{_db_name}"
-else:
-    # Fallback to DB_CONNECTION if individual parts are not set
-    DATABASE_URL = os.getenv("DB_CONNECTION")
+# DB_CONNECTION must contain the password already URL-encoded.
+# e.g. DB_CONNECTION=mysql+pymysql://user:p%40ss@host:port/dbname
+DATABASE_URL = os.getenv("DB_CONNECTION")
 
 # DATABASE_URL = "sqlite:///./hita.db"
 
