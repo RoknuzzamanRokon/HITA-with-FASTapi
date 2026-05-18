@@ -147,6 +147,49 @@ def _ensure_unique_slug(
         counter += 1
 
 
+@router.get("/stats", response_model=dict)
+async def get_blog_stats(db: Session = Depends(get_db)):
+    """Public endpoint: total posts, categories with post counts, tags with post counts."""
+    total_posts = db.query(func.count(BlogPost.id)).filter(BlogPost.status == "published").scalar() or 0
+    total_drafts = db.query(func.count(BlogPost.id)).filter(BlogPost.status == "draft").scalar() or 0
+
+    categories = db.query(BlogCategory).options(joinedload(BlogCategory.posts)).all()
+    category_stats = [
+        {
+            "id": cat.id,
+            "name": cat.name,
+            "slug": cat.slug,
+            "post_count": len([p for p in cat.posts if p.status == "published"]),
+        }
+        for cat in categories
+    ]
+    category_stats.sort(key=lambda x: x["post_count"], reverse=True)
+
+    tags = db.query(BlogTag).options(joinedload(BlogTag.posts)).all()
+    tag_stats = [
+        {
+            "id": tag.id,
+            "name": tag.name,
+            "slug": tag.slug,
+            "post_count": len([p for p in tag.posts if p.status == "published"]),
+        }
+        for tag in tags
+    ]
+    tag_stats.sort(key=lambda x: x["post_count"], reverse=True)
+
+    return {
+        "success": True,
+        "data": {
+            "total_published": total_posts,
+            "total_drafts": total_drafts,
+            "total_categories": len(categories),
+            "total_tags": len(tags),
+            "categories": category_stats,
+            "tags": tag_stats,
+        },
+    }
+
+
 @router.get("/posts", response_model=dict)
 async def get_blog_posts(
     page: int = Query(1, ge=1),
@@ -204,6 +247,18 @@ async def get_blog_posts(
     posts = query.offset((page - 1) * limit).limit(limit).all()
     total_pages = max(1, (total + limit - 1) // limit)
 
+    # Category summary for context
+    categories = db.query(BlogCategory).options(joinedload(BlogCategory.posts)).all()
+    category_summary = [
+        {
+            "id": cat.id,
+            "name": cat.name,
+            "slug": cat.slug,
+            "post_count": len([p for p in cat.posts if p.status == "published"]),
+        }
+        for cat in categories
+    ]
+
     return {
         "success": True,
         "data": {
@@ -212,6 +267,7 @@ async def get_blog_posts(
             "page": page,
             "limit": limit,
             "total_pages": total_pages,
+            "category_summary": category_summary,
         },
     }
 
