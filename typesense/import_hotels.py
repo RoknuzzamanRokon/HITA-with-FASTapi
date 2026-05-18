@@ -20,7 +20,7 @@ CSV_PATH = os.path.join(
     "itt_hotel_basic_info.csv",
 )
 
-BATCH_SIZE = 5000
+BATCH_SIZE = 100
 
 print(f"🔧 Configuration:")
 print(f"   Host: {TYPESENSE_HOST}")
@@ -45,7 +45,7 @@ client = typesense.Client(
             }
         ],
         "api_key": TYPESENSE_API_KEY,
-        "connection_timeout_seconds": 30,
+        "connection_timeout_seconds": 120,
     }
 )
 
