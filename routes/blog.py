@@ -193,7 +193,7 @@ async def get_blog_stats(db: Session = Depends(get_db)):
 @router.get("/posts", response_model=dict)
 async def get_blog_posts(
     page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=500),
     category: Optional[str] = Query(None),
     tag: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
@@ -510,7 +510,7 @@ async def search_blog_posts(
     q: str = Query(..., min_length=1),
     category: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     query = db.query(BlogPost).options(joinedload(BlogPost.category), joinedload(BlogPost.tags))
