@@ -178,7 +178,7 @@ class RateLimitManager:
         
         # Rate limit configurations
         self.limits = {
-            'user_creation': {'limit': 5, 'window': 300},      # 5 per 5 minutes
+            'user_creation': {'limit': 20, 'window': 300},      # 20 per 5 minutes
             'password_reset': {'limit': 3, 'window': 300},     # 3 per 5 minutes
             'login_attempt': {'limit': 10, 'window': 300},     # 10 per 5 minutes
             'user_update': {'limit': 20, 'window': 300},       # 20 per 5 minutes
